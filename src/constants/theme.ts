@@ -1,65 +1,87 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Celestial Archive — Design System
+ * Spec §11: Cyanotype/blueprint direction. Not a generic dark-mode space app.
+ * Reference point: historical star charts, cyanotype botanical plates, blueprint documentation.
  */
 
-import '@/global.css';
-
-import { Platform } from 'react-native';
-
+// ---- Color Tokens ----
 export const Colors = {
-  light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-  },
-  dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
-  },
+  /** Primary background, nearly everywhere. Deep Prussian blue — not black. */
+  blueprint: "#14213D",
+  /** Secondary surfaces, card backgrounds, dividers. */
+  cyanotype: "#6E8CB0",
+  /** Inset surface (ledger rows, text-safe export zones). Used sparingly — never dominant. */
+  parchment: "#EDE6D8",
+  /** Moon-phase illustration + light-travel numerals. Warm gold = moonlight/starlight. */
+  starlight: "#F4E9C1",
+  /**
+   * The single interactive accent: buttons, moon-phase glyph outline, key data callouts.
+   * Red reference: astronomers use red light to preserve night vision.
+   */
+  ember: "#C1553A",
+  /** High-contrast text on parchment/starlight surfaces. */
+  ink: "#0C1524",
+  /** Deeper variant of blueprint for subtle depth on cards. */
+  blueprintDark: "#0C1524",
+  /** Lighter blueprint for surface overlays. */
+  blueprintLight: "#1E3057",
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+export type ColorToken = keyof typeof Colors;
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
+// ---- Typography ----
+/** Font family names — must match the loaded font names from @expo-google-fonts */
+export const FontFamily = {
+  /** Fraunces: Display / headlines / milestone titles. Soft old-style serif. */
+  display: "Fraunces_400Regular",
+  displayItalic: "Fraunces_400Regular_Italic",
+  displaySemiBold: "Fraunces_600SemiBold",
+  displayBold: "Fraunces_700Bold",
+  /** Manrope: Body / UI / data labels. Geometric humanist sans. */
+  sans: "Manrope_400Regular",
+  sansLight: "Manrope_300Light",
+  sansMedium: "Manrope_500Medium",
+  sansSemiBold: "Manrope_600SemiBold",
+  sansBold: "Manrope_700Bold",
+  /** JetBrains Mono: Numeric data (distances, dates, coordinates). */
+  mono: "JetBrainsMono_400Regular",
+  monoMedium: "JetBrainsMono_500Medium",
+} as const;
 
+// ---- Spacing — 8pt scale ----
 export const Spacing = {
-  half: 2,
-  one: 4,
-  two: 8,
-  three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
+  xs:  4,
+  sm:  8,
+  md:  16,
+  lg:  24,
+  xl:  32,
+  xxl: 48,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+// ---- Border radius ----
+export const Radius = {
+  /** Data chips, tags */
+  sm: 4,
+  /** Cards */
+  md: 16,
+  /** Full pill — use sparingly */
+  full: 9999,
+} as const;
+
+// ---- Typography scale ----
+export const FontSize = {
+  xs:   11,
+  sm:   13,
+  md:   15,
+  lg:   17,
+  xl:   22,
+  xxl:  28,
+  hero: 40,
+} as const;
+
+// ---- Common style helpers ----
+export const divider = {
+  height: 1,
+  backgroundColor: Colors.cyanotype,
+  opacity: 0.3,
+} as const;
