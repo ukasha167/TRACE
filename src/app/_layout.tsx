@@ -64,7 +64,8 @@ export default function RootLayout() {
             color: Colors.starlight,
           },
           headerShadowVisible: false,
-          headerBackTitle: "",
+          // Show only the chevron — no "Back" / screen name text anywhere in the app
+          headerBackButtonDisplayMode: "minimal",
           contentStyle: { backgroundColor: Colors.blueprint },
           animation: "slide_from_right",
         }}
@@ -105,7 +106,8 @@ export default function RootLayout() {
           name="milestone/[id]"
           options={{
             title: "",
-            headerTransparent: true,
+            headerStyle: { backgroundColor: Colors.blueprint },
+            headerShadowVisible: false,
             headerTintColor: Colors.starlight,
           }}
         />
