@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   View,
   Text,
@@ -6,10 +6,15 @@ import {
   TouchableOpacity,
   Alert,
 } from "react-native";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { Milestone, MilestoneType } from "@/types";
 import { Colors, FontFamily, FontSize, Spacing } from "@/constants/theme";
 import { useMilestonesStore } from "@/store/useMilestonesStore";
+import { getMoonPhase } from "@/lib/astronomy/moonPhase";
+import { toLocalNoon } from "@/lib/astronomy/dateUtils";
+import { MoonPhaseGlyph } from "@/components/MoonPhaseGlyph";
+
+const route = (path: string) => path as Href;
 
 // Type display config
 const TYPE_CONFIG: Record<MilestoneType, { label: string; symbol: string }> = {
@@ -29,12 +34,21 @@ export function MilestoneListRow({ milestone, showLine = true }: MilestoneListRo
   const deleteMilestone = useMilestonesStore((s) => s.deleteMilestone);
   const config = TYPE_CONFIG[milestone.type];
 
+  // Compute moon phase for this milestone's date (synchronous, pure)
+  const moonPhase = useMemo(
+    () => getMoonPhase(toLocalNoon(milestone.date)),
+    [milestone.date]
+  );
+
   const handlePress = () => {
-    // Phase 3 will route to the full Cosmic Card detail
-    // For now, show a quick action sheet
+    // Navigate to Cosmic Card detail screen
+    router.push(route(`/milestone/${milestone.id}`));
+  };
+
+  const handleLongPress = () => {
     Alert.alert(
       milestone.title,
-      formatDate(milestone.date),
+      `${formatDate(milestone.date)}\n${moonPhase.phaseName} · ${Math.round(moonPhase.phaseFraction * 100)}% illuminated`,
       [
         {
           text: "Delete",
@@ -63,10 +77,12 @@ export function MilestoneListRow({ milestone, showLine = true }: MilestoneListRo
     <View style={styles.wrapper}>
       {/* Ledger node — sits on the vertical line */}
       <View style={styles.ledgerNode}>
-        {/* Moon phase placeholder — Phase 3 will replace with computed glyph */}
-        <View style={styles.phaseGlyph}>
-          <Text style={styles.phaseGlyphText}>☽</Text>
-        </View>
+        {/* Real computed moon phase glyph */}
+        <MoonPhaseGlyph
+          phaseFraction={moonPhase.phaseFraction}
+          phaseIndex={moonPhase.phaseIndex}
+          size={32}
+        />
         {showLine && <View style={styles.ledgerLineSegment} />}
       </View>
 
@@ -74,9 +90,10 @@ export function MilestoneListRow({ milestone, showLine = true }: MilestoneListRo
       <TouchableOpacity
         style={styles.card}
         onPress={handlePress}
+        onLongPress={handleLongPress}
         activeOpacity={0.75}
         accessibilityRole="button"
-        accessibilityLabel={`${milestone.title}, ${formatDate(milestone.date)}`}
+        accessibilityLabel={`${milestone.title}, ${formatDate(milestone.date)}, ${moonPhase.phaseName}`}
       >
         {/* Type badge */}
         <View style={styles.badgeRow}>
@@ -122,21 +139,6 @@ const styles = StyleSheet.create({
   ledgerNode: {
     width: 32,
     alignItems: "center",
-  },
-  phaseGlyph: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: Colors.ember,
-    backgroundColor: Colors.blueprintLight,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1,
-  },
-  phaseGlyphText: {
-    fontSize: 15,
-    color: Colors.starlight,
   },
   ledgerLineSegment: {
     flex: 1,
