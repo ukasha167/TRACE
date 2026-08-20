@@ -9,10 +9,13 @@ import {
   Platform,
   KeyboardAvoidingView,
   Pressable,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { router } from "expo-router";
-import { MilestoneType } from "@/types";
+import * as Location from "expo-location";
+import { MilestoneType, type MilestoneLocation } from "@/types";
 import { Colors, FontFamily, FontSize, Spacing, Radius } from "@/constants/theme";
 import { useMilestonesStore } from "@/store/useMilestonesStore";
 import { toLocalNoon, toDateString } from "@/lib/astronomy/dateUtils";
@@ -31,12 +34,16 @@ export default function NewMilestoneScreen() {
   // Form state
   const [title, setTitle] = useState("");
   const [type, setType] = useState<MilestoneType>("birthday");
-  const [date, setDate] = useState<Date>(
-    toLocalNoon(toDateString(new Date()))
-  );
+  const [date, setDate] = useState<Date>(toLocalNoon(toDateString(new Date())));
   const [notes, setNotes] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(Platform.OS === "ios");
   const [titleError, setTitleError] = useState(false);
+
+  // Location state — always optional
+  const [location, setLocation] = useState<MilestoneLocation | null>(null);
+  const [manualLabel, setManualLabel] = useState("");
+  const [locationMode, setLocationMode] = useState<"none" | "gps" | "manual">("none");
+  const [gpsLoading, setGpsLoading] = useState(false);
 
   const formattedDate = date.toLocaleDateString("en-US", {
     year: "numeric",
@@ -54,20 +61,88 @@ export default function NewMilestoneScreen() {
     []
   );
 
+  // GPS capture — requests permission, fetches coordinates, reverse-geocodes
+  const handleUseGPS = useCallback(async () => {
+    setGpsLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Location permission denied",
+          "The milestone will be saved without a location. You can type one manually instead.",
+          [{ text: "OK" }]
+        );
+        setLocationMode("manual");
+        return;
+      }
+
+      const coords = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      // Reverse geocode to a human-readable label
+      let label = `${coords.coords.latitude.toFixed(4)}°, ${coords.coords.longitude.toFixed(4)}°`;
+      try {
+        const [geo] = await Location.reverseGeocodeAsync({
+          latitude: coords.coords.latitude,
+          longitude: coords.coords.longitude,
+        });
+        if (geo) {
+          const parts = [geo.city, geo.region, geo.country].filter(Boolean);
+          if (parts.length > 0) label = parts.join(", ");
+        }
+      } catch {
+        // Reverse geocoding failure — fall back to coordinates
+      }
+
+      setLocation({
+        latitude: coords.coords.latitude,
+        longitude: coords.coords.longitude,
+        label,
+      });
+      setLocationMode("gps");
+    } catch (err) {
+      Alert.alert("Could not get location", "Try entering it manually instead.");
+      setLocationMode("manual");
+    } finally {
+      setGpsLoading(false);
+    }
+  }, []);
+
+  // Manual text entry handler
+  const handleManualLabelCommit = useCallback(() => {
+    const trimmed = manualLabel.trim();
+    if (!trimmed) {
+      setLocation(null);
+      return;
+    }
+    // Without actual coordinates, set lat/lng to 0 — angle rendering won't fire
+    // but the label is stored for display. Spec §10 says GPS is the only coord source.
+    setLocation({ latitude: 0, longitude: 0, label: trimmed });
+  }, [manualLabel]);
+
+  const handleClearLocation = useCallback(() => {
+    setLocation(null);
+    setManualLabel("");
+    setLocationMode("none");
+  }, []);
+
   const handleSave = useCallback(() => {
     if (!title.trim()) {
       setTitleError(true);
       return;
     }
+    // Only pass location if we have real coordinates (GPS), not manual-only text
+    const finalLocation = location && location.latitude !== 0 ? location : null;
     addMilestone({
       title: title.trim(),
       type,
       date: toDateString(date),
       notes: notes.trim() || undefined,
-      location: null, // Phase 8
+      location: finalLocation,
     });
     router.back();
-  }, [title, type, date, notes, addMilestone]);
+  }, [title, type, date, notes, location, addMilestone]);
 
   return (
     <KeyboardAvoidingView
@@ -178,11 +253,91 @@ export default function NewMilestoneScreen() {
           />
         </View>
 
-        {/* ---- Location note ---- */}
-        <View style={styles.locationNote}>
-          <Text style={styles.locationNoteText}>
-            📍 Location can be added in Phase 8 to enable moon-orientation rendering.
+        {/* ---- Location (optional) ---- */}
+        <View style={styles.fieldGroup}>
+          <Text style={styles.fieldLabel}>
+            LOCATION <Text style={styles.optionalTag}>(optional)</Text>
           </Text>
+          <Text style={styles.fieldHint}>
+            Enables tilt-corrected moon orientation for this milestone's sky view.
+          </Text>
+
+          {/* Confirmed location display */}
+          {location && location.latitude !== 0 && (
+            <View style={styles.locationConfirmed}>
+              <Text style={styles.locationConfirmedLabel}>📍 {location.label}</Text>
+              <Text style={styles.locationCoords}>
+                {location.latitude.toFixed(4)}°, {location.longitude.toFixed(4)}°
+              </Text>
+              <TouchableOpacity onPress={handleClearLocation} style={styles.locationClearBtn}>
+                <Text style={styles.locationClearText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Manual label only (no coords) */}
+          {location && location.latitude === 0 && (
+            <View style={styles.locationConfirmed}>
+              <Text style={styles.locationConfirmedLabel}>📍 {location.label}</Text>
+              <Text style={styles.locationManualNote}>
+                Manual entry — moon orientation unavailable without coordinates.
+              </Text>
+              <TouchableOpacity onPress={handleClearLocation} style={styles.locationClearBtn}>
+                <Text style={styles.locationClearText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Action buttons when no location set yet */}
+          {!location && locationMode === "none" && (
+            <View style={styles.locationActions}>
+              <TouchableOpacity
+                style={styles.locationGpsButton}
+                onPress={handleUseGPS}
+                disabled={gpsLoading}
+                accessibilityRole="button"
+                accessibilityLabel="Use current GPS location"
+              >
+                {gpsLoading ? (
+                  <ActivityIndicator size="small" color={Colors.starlight} />
+                ) : (
+                  <Text style={styles.locationGpsText}>📍 Use Current Location</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.locationManualButton}
+                onPress={() => setLocationMode("manual")}
+                accessibilityRole="button"
+              >
+                <Text style={styles.locationManualText}>Enter manually</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Manual text input */}
+          {!location && locationMode === "manual" && (
+            <View style={styles.locationManualInput}>
+              <TextInput
+                style={styles.textInput}
+                value={manualLabel}
+                onChangeText={setManualLabel}
+                placeholder="e.g. Lahore, Pakistan"
+                placeholderTextColor={Colors.cyanotype + "88"}
+                selectionColor={Colors.ember}
+                returnKeyType="done"
+                onSubmitEditing={handleManualLabelCommit}
+                onBlur={handleManualLabelCommit}
+                autoFocus
+                accessibilityLabel="Location label"
+              />
+              <TouchableOpacity
+                onPress={() => setLocationMode("none")}
+                style={styles.locationClearBtn}
+              >
+                <Text style={styles.locationClearText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -325,19 +480,80 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
 
-  // ---- Location note ----
-  locationNote: {
-    backgroundColor: Colors.cyanotype + "18",
-    borderRadius: Radius.sm,
-    padding: Spacing.sm,
-    borderLeftWidth: 2,
-    borderLeftColor: Colors.cyanotype + "66",
-  },
-  locationNoteText: {
+  // ---- Location field ----
+  fieldHint: {
     fontFamily: FontFamily.sans,
     fontSize: FontSize.sm,
     color: Colors.cyanotype,
+    opacity: 0.7,
     lineHeight: 18,
+    marginBottom: Spacing.sm,
+  },
+  locationActions: {
+    gap: Spacing.sm,
+  },
+  locationGpsButton: {
+    backgroundColor: Colors.blueprintLight,
+    borderWidth: 1,
+    borderColor: Colors.ember + "66",
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.sm + 4,
+    alignItems: "center",
+  },
+  locationGpsText: {
+    fontFamily: FontFamily.sansMedium,
+    fontSize: FontSize.md,
+    color: Colors.ember,
+  },
+  locationManualButton: {
+    paddingVertical: Spacing.xs,
+    alignItems: "center",
+  },
+  locationManualText: {
+    fontFamily: FontFamily.sans,
+    fontSize: FontSize.sm,
+    color: Colors.cyanotype,
+    opacity: 0.7,
+    textDecorationLine: "underline",
+  },
+  locationConfirmed: {
+    backgroundColor: Colors.blueprintLight,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.cyanotype + "44",
+    padding: Spacing.md,
+    gap: Spacing.xs,
+  },
+  locationConfirmedLabel: {
+    fontFamily: FontFamily.sansSemiBold,
+    fontSize: FontSize.md,
+    color: Colors.starlight,
+  },
+  locationCoords: {
+    fontFamily: FontFamily.mono,
+    fontSize: FontSize.sm,
+    color: Colors.cyanotype,
+    opacity: 0.7,
+  },
+  locationManualNote: {
+    fontFamily: FontFamily.sans,
+    fontSize: FontSize.xs,
+    color: Colors.cyanotype,
+    opacity: 0.6,
+    lineHeight: 16,
+  },
+  locationManualInput: {
+    gap: Spacing.xs,
+  },
+  locationClearBtn: {
+    alignSelf: "flex-start",
+    marginTop: 2,
+  },
+  locationClearText: {
+    fontFamily: FontFamily.sansMedium,
+    fontSize: FontSize.sm,
+    color: Colors.ember,
+    opacity: 0.8,
   },
 
   // ---- Footer ----
