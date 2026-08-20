@@ -22,6 +22,7 @@ import { toLocalNoon } from "@/lib/astronomy/dateUtils";
 import { MoonPhaseGlyph } from "@/components/MoonPhaseGlyph";
 import { useApod } from "@/hooks/useApod";
 import { getLightTravelFact } from "@/lib/astronomy/lightTravel";
+import { getBrightLimbAngle } from "@/lib/astronomy/brightLimb";
 import { useSettingsStore } from "@/store/useSettingsStore";
 
 const route = (path: string) => path as Href;
@@ -169,6 +170,12 @@ export default function MilestoneDetailScreen() {
     };
   }, [milestone, distanceUnit]);
 
+  // Bright-limb angle — only when location has real coordinates (lat !== 0)
+  const brightLimbAngleDeg = useMemo(() => {
+    if (!milestone?.location || milestone.location.latitude === 0) return null;
+    return getBrightLimbAngle(toLocalNoon(milestone.date), milestone.location);
+  }, [milestone]);
+
   // APOD data — null date skips the hook entirely
   const apod = useApod(milestone?.date ?? null);
 
@@ -245,6 +252,7 @@ export default function MilestoneDetailScreen() {
               phaseFraction={moonPhase.phaseFraction}
               phaseIndex={moonPhase.phaseIndex}
               size={72}
+              brightLimbAngleDeg={brightLimbAngleDeg}
             />
             <View style={styles.moonInfo}>
               <Text style={styles.moonPhaseName}>{moonPhase.phaseName}</Text>
@@ -252,9 +260,11 @@ export default function MilestoneDetailScreen() {
                 {formatIllumination(moonPhase.phaseFraction)} illuminated
               </Text>
               <Text style={styles.moonAngleNote}>
-                {milestone.location
-                  ? `📍 ${milestone.location.label}`
-                  : "Phase orientation available with location (Phase 8)"}
+                {brightLimbAngleDeg != null
+                  ? `📍 ${milestone.location!.label} · ${brightLimbAngleDeg.toFixed(1)}° tilt`
+                  : milestone.location
+                  ? "No coordinates — use GPS when adding a milestone for tilt"
+                  : "Add location when creating a milestone to see tilt"}
               </Text>
             </View>
           </View>
