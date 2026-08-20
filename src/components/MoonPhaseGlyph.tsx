@@ -3,10 +3,12 @@ import { View, StyleSheet, ViewStyle } from "react-native";
 import { Colors } from "@/constants/theme";
 
 interface MoonPhaseGlyphProps {
-  phaseFraction: number; // 0.0–1.0 illuminated fraction
-  phaseIndex: number;    // 0–7 for icon lookup
+  phaseFraction: number;          // 0.0–1.0 illuminated fraction
+  phaseIndex: number;             // 0–7 for icon lookup
   size?: number;
   accentColor?: string;
+  /** Bright-limb tilt angle in degrees (from getBrightLimbAngle). Null = no tilt correction. */
+  brightLimbAngleDeg?: number | null;
 }
 
 /**
@@ -33,24 +35,16 @@ export function MoonPhaseGlyph({
   phaseIndex,
   size = 40,
   accentColor = Colors.ember,
+  brightLimbAngleDeg = null,
 }: MoonPhaseGlyphProps) {
   const r = size / 2;
 
-  // Waxing (new→full, phaseIndex 0–4): lit side on RIGHT
-  // Waning (full→new, phaseIndex 5–7): lit side on LEFT
   const isWaxing = phaseIndex <= 4;
-
-  // Terminator oval semi-minor axis
   const b = r * Math.abs(2 * phaseFraction - 1);
-
-  // Above 0.5 = gibbous → oval fills the dark half with lit color
-  // Below 0.5 = crescent → oval covers part of lit half with dark color
   const isGibbous = phaseFraction > 0.5;
-
-  // Edge cases: new moon (all dark) and full moon (all lit) skip the oval
   const showOval = b > 0.5;
 
-  return (
+  const glyph = (
     <View
       style={[
         styles.base,
@@ -107,6 +101,23 @@ export function MoonPhaseGlyph({
       )}
     </View>
   );
+
+  // If a bright-limb angle is available, rotate the glyph to match the observer's sky
+  if (brightLimbAngleDeg != null) {
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          transform: [{ rotate: `${brightLimbAngleDeg}deg` }],
+        }}
+      >
+        {glyph}
+      </View>
+    );
+  }
+
+  return glyph;
 }
 
 const styles = StyleSheet.create({
