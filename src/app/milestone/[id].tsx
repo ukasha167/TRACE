@@ -330,9 +330,14 @@ export default function MilestoneDetailScreen() {
           </View>
         )}
 
-        {/* ---- Export placeholder ---- */}
-        <TouchableOpacity style={styles.exportButton} disabled>
-          <Text style={styles.exportButtonText}>Export Card — Phase 7</Text>
+        {/* ---- Export button ---- */}
+        <TouchableOpacity
+          style={styles.exportButton}
+          onPress={() => router.push(route(`/export/${milestone.id}`))}
+          accessibilityRole="button"
+          accessibilityLabel="Export card"
+        >
+          <Text style={styles.exportButtonText}>Export Card</Text>
         </TouchableOpacity>
 
         {/* ---- Delete ---- */}
@@ -724,19 +729,15 @@ const styles = StyleSheet.create({
   // ---- Action buttons ----
   exportButton: {
     borderRadius: Radius.md,
-    backgroundColor: Colors.cyanotype + "22",
-    borderWidth: 1,
-    borderColor: Colors.cyanotype + "44",
-    borderStyle: "dashed",
+    backgroundColor: Colors.ember,
     padding: Spacing.md,
     alignItems: "center",
     marginBottom: Spacing.sm,
-    opacity: 0.5,
   },
   exportButtonText: {
-    fontFamily: FontFamily.sansMedium,
+    fontFamily: FontFamily.sansBold,
     fontSize: FontSize.md,
-    color: Colors.cyanotype,
+    color: "#fff",
   },
   deleteButton: {
     borderRadius: Radius.md,
