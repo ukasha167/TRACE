@@ -21,6 +21,8 @@ import {
 import { toLocalNoon } from "@/lib/astronomy/dateUtils";
 import { MoonPhaseGlyph } from "@/components/MoonPhaseGlyph";
 import { useApod } from "@/hooks/useApod";
+import { getLightTravelFact } from "@/lib/astronomy/lightTravel";
+import { useSettingsStore } from "@/store/useSettingsStore";
 
 const route = (path: string) => path as Href;
 
@@ -154,14 +156,18 @@ export default function MilestoneDetailScreen() {
 
   const milestone = getMilestone(id);
 
-  const { moonPhase, planetaryAges } = useMemo(() => {
-    if (!milestone) return { moonPhase: null, planetaryAges: null };
+  const distanceUnit = useSettingsStore((s) => s.distanceUnit);
+
+  const { moonPhase, planetaryAges, lightTravelFact } = useMemo(() => {
+    if (!milestone) return { moonPhase: null, planetaryAges: null, lightTravelFact: null };
     const mDate = toLocalNoon(milestone.date);
+    const today = new Date();
     return {
       moonPhase: getMoonPhase(mDate),
-      planetaryAges: getAllPlanetaryAges(mDate, new Date()),
+      planetaryAges: getAllPlanetaryAges(mDate, today),
+      lightTravelFact: getLightTravelFact(mDate, today, distanceUnit),
     };
-  }, [milestone]);
+  }, [milestone, distanceUnit]);
 
   // APOD data — null date skips the hook entirely
   const apod = useApod(milestone?.date ?? null);
@@ -276,14 +282,53 @@ export default function MilestoneDetailScreen() {
           </View>
         </View>
 
-        {/* ---- Light-travel placeholder ---- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>LIGHT-TRAVEL FACT</Text>
-          <View style={styles.placeholder}>
-            <Text style={styles.placeholderIcon}>✦</Text>
-            <Text style={styles.placeholderText}>Curated dataset — Phase 6</Text>
+        {/* ---- Light-travel fact ---- */}
+        {lightTravelFact && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>LIGHT-TRAVEL FACT</Text>
+            <View style={styles.lightCard}>
+              {/* Main sentence */}
+              <Text style={styles.lightSentence}>{lightTravelFact.sentence}</Text>
+
+              {/* Landmark detail row */}
+              {lightTravelFact.landmark && (
+                <View style={styles.lightLandmarkRow}>
+                  <Text style={styles.lightLandmarkName}>
+                    {lightTravelFact.landmark.name}
+                  </Text>
+                  <Text style={styles.lightLandmarkDist}>
+                    {distanceUnit === "ly"
+                      ? `${lightTravelFact.landmark.distanceLightYears < 1
+                          ? `${(lightTravelFact.landmark.distanceLightYears * 365.25).toFixed(1)} ly-days`
+                          : `${lightTravelFact.landmark.distanceLightYears.toLocaleString()} ly`}`
+                      : `${(lightTravelFact.landmark.distanceLightYears * 9.4607e12).toExponential(2)} km`}
+                  </Text>
+                </View>
+              )}
+
+              {/* Alt-unit footnote */}
+              <View style={styles.lightAltRow}>
+                <Text style={styles.lightAltLabel}>
+                  {distanceUnit === "ly" ? "IN KILOMETRES" : "IN LIGHT-YEARS"}
+                </Text>
+                <Text style={styles.lightAltValue}>
+                  {distanceUnit === "ly"
+                    ? `${(lightTravelFact.distanceKm / 1e12).toFixed(2)} trillion km`
+                    : `${lightTravelFact.distanceLightYears < 1
+                        ? `${(lightTravelFact.distanceLightYears * 365.25).toFixed(0)} light-days`
+                        : `${lightTravelFact.distanceLightYears.toFixed(2)} ly`}`}
+                </Text>
+              </View>
+
+              {/* Source note */}
+              {lightTravelFact.landmark && (
+                <Text style={styles.lightSourceNote} numberOfLines={2}>
+                  {lightTravelFact.landmark.distanceUncertaintyNote}
+                </Text>
+              )}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* ---- Export placeholder ---- */}
         <TouchableOpacity style={styles.exportButton} disabled>
@@ -612,6 +657,68 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.cyanotype,
     flex: 1,
+  },
+
+  // ---- Light-travel card ----
+  lightCard: {
+    backgroundColor: Colors.blueprintLight,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.cyanotype + "44",
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  lightSentence: {
+    fontFamily: FontFamily.displayItalic,
+    fontSize: FontSize.lg,
+    color: Colors.starlight,
+    lineHeight: 26,
+    letterSpacing: -0.2,
+  },
+  lightLandmarkRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: Spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: Colors.cyanotype + "33",
+  },
+  lightLandmarkName: {
+    fontFamily: FontFamily.sansSemiBold,
+    fontSize: FontSize.sm,
+    color: Colors.cyanotype,
+    flex: 1,
+  },
+  lightLandmarkDist: {
+    fontFamily: FontFamily.mono,
+    fontSize: FontSize.sm,
+    color: Colors.cyanotype,
+    opacity: 0.7,
+  },
+  lightAltRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  lightAltLabel: {
+    fontFamily: FontFamily.mono,
+    fontSize: FontSize.xs,
+    color: Colors.cyanotype,
+    letterSpacing: 1.5,
+    opacity: 0.5,
+  },
+  lightAltValue: {
+    fontFamily: FontFamily.mono,
+    fontSize: FontSize.xs,
+    color: Colors.cyanotype,
+    opacity: 0.6,
+  },
+  lightSourceNote: {
+    fontFamily: FontFamily.mono,
+    fontSize: 10,
+    color: Colors.cyanotype,
+    opacity: 0.4,
+    lineHeight: 14,
   },
 
   // ---- Action buttons ----
