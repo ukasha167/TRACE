@@ -116,6 +116,13 @@ export default function RootLayout() {
           options={{
             title: "Export Card",
             presentation: "modal",
+            headerStyle: { backgroundColor: Colors.blueprint },
+            headerTintColor: Colors.starlight,
+            headerTitleStyle: {
+              fontFamily: FontFamily.displaySemiBold,
+              fontSize: 18,
+              color: Colors.starlight,
+            },
           }}
         />
       </Stack>
