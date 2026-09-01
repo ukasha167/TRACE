@@ -1,200 +1,122 @@
 import React, { useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { router, type Href } from "expo-router";
-import { Milestone, MilestoneType } from "@/types";
-import { Colors, FontFamily, FontSize, Spacing } from "@/constants/theme";
-import { useMilestonesStore } from "@/store/useMilestonesStore";
-import { getMoonPhase } from "@/lib/astronomy/moonPhase";
-import { toLocalNoon } from "@/lib/astronomy/dateUtils";
-import { MoonPhaseGlyph } from "@/components/MoonPhaseGlyph";
+import { Colors, Spacing, Type, FontFamily, FontSize, sectionNumber } from "@/constants/theme";
+import { MoonPhaseGlyph } from "./MoonPhaseGlyph";
+import { getMoonPhase, formatIllumination, describePhase } from "@/lib/astronomy/moonPhase";
+import { getBrightLimbAngle } from "@/lib/astronomy/brightLimb";
+import { toLocalNight, toLocalDayStart } from "@/lib/astronomy/dateUtils";
+import type { Milestone } from "@/types";
 
 const route = (path: string) => path as Href;
 
-// Type display config
-const TYPE_CONFIG: Record<MilestoneType, { label: string; symbol: string }> = {
-  birthday:    { label: "Birthday",    symbol: "🎂" },
-  anniversary: { label: "Anniversary", symbol: "💫" },
-  graduation:  { label: "Graduation",  symbol: "🎓" },
-  custom:      { label: "Custom",      symbol: "✦"  },
+const TYPE_LABELS: Record<Milestone["type"], string> = {
+  birthday: "BIRTHDAY",
+  anniversary: "ANNIVERSARY",
+  graduation: "GRADUATION",
+  custom: "RECORD",
 };
 
-interface MilestoneListRowProps {
+interface Props {
   milestone: Milestone;
-  /** Whether to show the ledger line below this row */
-  showLine?: boolean;
+  index: number;
+  isLast: boolean;
 }
 
-export function MilestoneListRow({ milestone, showLine = true }: MilestoneListRowProps) {
-  const deleteMilestone = useMilestonesStore((s) => s.deleteMilestone);
-  const config = TYPE_CONFIG[milestone.type];
+/**
+ * A single row of the record ledger.
+ *
+ * Layout is a Swiss three-column split: index number, content block, moon plate.
+ * The glyph is informative as well as decorative — it is that date's real phase
+ * at its real tilt.
+ *
+ * No text is truncated. The row grows to fit its title and notes.
+ */
+export function MilestoneListRow({ milestone, index, isLast }: Props) {
+  const tz = milestone.location?.timezoneOffsetMin;
 
-  // Compute moon phase for this milestone's date (synchronous, pure)
-  const moonPhase = useMemo(
-    () => getMoonPhase(toLocalNoon(milestone.date)),
-    [milestone.date]
-  );
+  const { phase, tilt } = useMemo(() => {
+    const night = toLocalNight(milestone.date, tz);
+    return {
+      phase: getMoonPhase(night, toLocalDayStart(milestone.date, tz)),
+      tilt:
+        milestone.location && milestone.location.latitude !== 0
+          ? getBrightLimbAngle(night, milestone.location)
+          : null,
+    };
+  }, [milestone, tz]);
 
-  const handlePress = () => {
-    // Navigate to Cosmic Card detail screen
-    router.push(route(`/milestone/${milestone.id}`));
-  };
-
-  const handleLongPress = () => {
-    Alert.alert(
-      milestone.title,
-      `${formatDate(milestone.date)}\n${moonPhase.phaseName} · ${Math.round(moonPhase.phaseFraction * 100)}% illuminated`,
-      [
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Delete milestone?",
-              `"${milestone.title}" will be permanently removed.`,
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Delete",
-                  style: "destructive",
-                  onPress: () => deleteMilestone(milestone.id),
-                },
-              ]
-            );
-          },
-        },
-        { text: "Dismiss", style: "cancel" },
-      ]
-    );
-  };
+  const [year, month, day] = milestone.date.split("-");
 
   return (
-    <View style={styles.wrapper}>
-      {/* Ledger node — sits on the vertical line */}
-      <View style={styles.ledgerNode}>
-        {/* Real computed moon phase glyph */}
-        <MoonPhaseGlyph
-          phaseFraction={moonPhase.phaseFraction}
-          phaseIndex={moonPhase.phaseIndex}
-          size={32}
-        />
-        {showLine && <View style={styles.ledgerLineSegment} />}
+    <TouchableOpacity
+      style={[styles.row, !isLast && styles.rowRule]}
+      activeOpacity={0.6}
+      accessibilityRole="button"
+      accessibilityLabel={`${milestone.title}, ${describePhase(phase)}`}
+      onPress={() => router.push(route(`/milestone/${milestone.id}`))}
+    >
+      <Text style={styles.index}>{sectionNumber(index + 1)}</Text>
+
+      <View style={styles.content}>
+        <Text style={styles.type}>{TYPE_LABELS[milestone.type]}</Text>
+        <Text style={styles.title}>{milestone.title}</Text>
+        <Text style={styles.date}>
+          {day}.{month}.{year}
+        </Text>
+        <Text style={styles.phase}>
+          {describePhase(phase)}
+          <Text style={styles.phaseData}>
+            {"   "}
+            {formatIllumination(phase.phaseFraction)}
+          </Text>
+        </Text>
+        {milestone.notes ? (
+          <Text style={styles.notes}>{milestone.notes}</Text>
+        ) : null}
       </View>
 
-      {/* Card */}
-      <TouchableOpacity
-        style={styles.card}
-        onPress={handlePress}
-        onLongPress={handleLongPress}
-        activeOpacity={0.75}
-        accessibilityRole="button"
-        accessibilityLabel={`${milestone.title}, ${formatDate(milestone.date)}, ${moonPhase.phaseName}`}
-      >
-        {/* Type badge */}
-        <View style={styles.badgeRow}>
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeBadgeText}>
-              {config.symbol} {config.label}
-            </Text>
-          </View>
-        </View>
-
-        {/* Title + date */}
-        <Text style={styles.title}>{milestone.title}</Text>
-        <Text style={styles.date}>{formatDate(milestone.date)}</Text>
-
-        {/* Notes preview */}
-        {milestone.notes ? (
-          <Text style={styles.notes} numberOfLines={2}>
-            {milestone.notes}
-          </Text>
-        ) : null}
-      </TouchableOpacity>
-    </View>
+      <MoonPhaseGlyph
+        phaseFraction={phase.phaseFraction}
+        phaseIndex={phase.phaseIndex}
+        size={34}
+        brightLimbAngleDeg={tilt}
+        platePadding={8}
+      />
+    </TouchableOpacity>
   );
-}
-
-function formatDate(dateStr: string): string {
-  // Parse manually to avoid timezone shift — same principle as toLocalNoon
-  const [year, month, day] = dateStr.split("-").map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
+  row: {
     flexDirection: "row",
-    marginBottom: Spacing.md,
+    alignItems: "flex-start",
+    gap: Spacing.md,
+    paddingVertical: Spacing.lg,
   },
-
-  // ---- Ledger column ----
-  ledgerNode: {
-    width: 32,
-    alignItems: "center",
+  rowRule: { borderBottomWidth: 1, borderBottomColor: Colors.rule },
+  index: {
+    fontFamily: FontFamily.mono,
+    fontSize: FontSize.label,
+    color: Colors.inkMuted,
+    width: 30,
+    marginTop: 3,
   },
-  ledgerLineSegment: {
-    flex: 1,
-    width: 1,
-    backgroundColor: Colors.cyanotype,
-    opacity: 0.25,
+  content: { flex: 1 },
+  type: { ...Type.label, marginBottom: Spacing.xs },
+  title: { ...Type.heading },
+  date: {
+    fontFamily: FontFamily.monoMedium,
+    fontSize: FontSize.small,
+    color: Colors.signal,
     marginTop: 2,
   },
-
-  // ---- Card ----
-  card: {
-    flex: 1,
-    marginLeft: Spacing.md,
-    backgroundColor: Colors.blueprintLight,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.cyanotype + "44",
-    padding: Spacing.md,
-    marginBottom: 4,
+  phase: {
+    fontFamily: FontFamily.regular,
+    fontSize: FontSize.small,
+    color: Colors.inkMuted,
+    marginTop: Spacing.sm,
   },
-  badgeRow: {
-    flexDirection: "row",
-    marginBottom: Spacing.xs + 2,
-  },
-  typeBadge: {
-    backgroundColor: Colors.blueprint,
-    borderRadius: 4,
-    paddingHorizontal: Spacing.xs + 2,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: Colors.cyanotype + "55",
-  },
-  typeBadgeText: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
-    letterSpacing: 0.5,
-  },
-  title: {
-    fontFamily: FontFamily.displaySemiBold,
-    fontSize: FontSize.lg,
-    color: Colors.starlight,
-    letterSpacing: -0.2,
-    marginBottom: 2,
-  },
-  date: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.sm,
-    color: Colors.cyanotype,
-  },
-  notes: {
-    fontFamily: FontFamily.sans,
-    fontSize: FontSize.sm,
-    color: Colors.cyanotype,
-    opacity: 0.7,
-    marginTop: Spacing.xs,
-    lineHeight: 18,
-  },
+  phaseData: { fontFamily: FontFamily.monoMedium, color: Colors.ink },
+  notes: { ...Type.small, marginTop: Spacing.sm },
 });
