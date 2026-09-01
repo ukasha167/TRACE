@@ -5,6 +5,13 @@ export interface MilestoneLocation {
   latitude: number;
   longitude: number;
   label: string; // human-readable, e.g. "Lahore, Pakistan" — reverse-geocoded or manually entered
+  /**
+   * Minutes from UTC at the milestone's own date (not today's offset).
+   * Spec §6.1 — this is what lets a user viewing from another country still
+   * see the sky as it was over the milestone's actual location.
+   * Optional for backwards compatibility with milestones saved before this field existed.
+   */
+  timezoneOffsetMin?: number;
 }
 
 export interface Milestone {
@@ -12,7 +19,7 @@ export interface Milestone {
   title: string;                     // user-provided, e.g. "My Birthday"
   type: MilestoneType;
   date: string;                      // "YYYY-MM-DD" — ALWAYS date-only, no time component
-  location: MilestoneLocation | null; // null = angle rendering unavailable; everything else still works
+  location: MilestoneLocation | null; // null = sky render + tilt unavailable; everything else still works
   notes?: string;
   createdAt: string;                 // ISO 8601 datetime
 }
@@ -26,10 +33,67 @@ export interface MoonSnapshot {
   phaseFraction: number;             // 0.0–1.0, illuminated fraction
   phaseName: MoonPhaseName;
   phaseIndex: number;                // 0–7, for icon/glyph lookup
+  /**
+   * Spec §6.2. True only when the exact syzygy instant for a PRIMARY phase
+   * (New / First Quarter / Full / Last Quarter) falls inside this local day.
+   * The 8-way phaseName bucket labels anything within ±1.85 days of full as
+   * "Full Moon" — down to ~87% illumination. Never present phaseName as a
+   * precise claim without checking this flag.
+   */
+  isTruePhase: boolean;
+  /** True while waxing (new -> full), false while waning. From SunCalc, not inferred. */
+  waxing: boolean;
   brightLimbAngleDeg: number | null; // null unless a location was available
+  altitudeDeg: number | null;        // peak altitude that night, null without location
+  riseLocal: string | null;          // "HH:mm", null without location
+  setLocal: string | null;           // "HH:mm", null without location
+}
+
+// ---- Recurrence (spec §6.3) ----
+export interface MoonReturn {
+  year: number;
+  age: number;                 // years since the source date
+  offsetYears: number;         // 11, 19, 30, 38 ... the recurrence interval
+  phaseOffsetDays: number;     // circular distance from the source phase, in days
+  phaseFraction: number;       // illuminated fraction on that anniversary
+  direction: "past" | "future";
+  /** Why this year recurs — "Metonic cycle", "11-year cycle", "11 + 19 years". */
+  cycleLabel: string;
+}
+
+export interface RarityStat {
+  thresholdPct: number;        // e.g. 99
+  frequency: number;           // measured fraction of days meeting it
+  oneInN: number;              // 1 / frequency, for display
+  matchingYears: number[];     // which of THIS person's anniversaries qualified
+  totalYears: number;
+}
+
+// ---- Sky (spec §7) ----
+export interface Star {
+  hr: number;       // Bright Star Catalog number
+  ra: number;       // right ascension, degrees, J2000
+  dec: number;      // declination, degrees, J2000
+  mag: number;      // visual magnitude
+  name?: string;    // Bayer/Flamsteed designation from the catalog
+  proper?: string;  // IAU-approved proper name, where one exists (333 of them)
+}
+
+export interface SkyBody {
+  id: string;
+  label: string;
+  altitudeDeg: number;
+  azimuthDeg: number;   // north-based clockwise
+  magnitude: number;
 }
 
 // ---- NASA APOD (cached) ----
+/**
+ * Spec §8.3. "illustrative" = the day's pick is a diagram/chart/map/artist's
+ * concept rather than an image of the sky. Roughly 1 in 20 dates.
+ */
+export type ApodKind = "photograph" | "illustrative" | "video";
+
 export interface ApodCacheEntry {
   date: string;                      // "YYYY-MM-DD" — also the cache key
   title: string;
@@ -37,33 +101,13 @@ export interface ApodCacheEntry {
   url: string;                       // standard-res — use for all in-app display
   hdurl: string | null;              // high-res — ONLY for the final export card, fetched on demand
   mediaType: "image" | "video";
+  kind: ApodKind;                    // classified at the fetch boundary
   copyright: string | null;          // null = public domain
   fetchedAt: string;                 // ISO datetime — for debugging only, NOT a TTL (cache never expires)
-}
-
-// ---- Light-travel dataset (bundled, static) ----
-export interface LightTravelObject {
-  id: string;
-  name: string;                          // "Ring Nebula (M57)"
-  distanceLightYears: number;            // best-estimate midpoint
-  distanceUncertaintyNote: string;       // REQUIRED — every object must state its uncertainty
-  source: string;                        // REQUIRED — where the number came from
-  category: "nebula" | "galaxy" | "star" | "star_cluster" | "planet_moon";
-}
-
-// ---- Hubble/JWST curated dataset (bundled, static, Phase 9) ----
-export interface HubbleJwstImage {
-  id: string;
-  title: string;
-  telescope: "Hubble" | "JWST";
-  observationDate: string;   // "YYYY-MM-DD" — real, sourced date, never estimated
-  imageUrl: string;
-  source: string;            // REQUIRED — the release page this was sourced from
 }
 
 // ---- Settings ----
 export interface AppSettings {
   nasaApiKey: string | null; // null = fall back to DEMO_KEY with an in-app rate-limit warning
-  distanceUnit: "ly" | "km";
   hasCompletedOnboarding: boolean;
 }
