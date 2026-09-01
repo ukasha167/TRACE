@@ -3,13 +3,13 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
-    "@expo-google-fonts/fraunces": "^0.4.1",
+    "@expo-google-fonts/archivo": "^0.4.2",
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",
-    "@expo-google-fonts/manrope": "^0.4.2",
     "@expo/ui": "~57.0.11",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "9.1.0",
     "@shopify/react-native-skia": "2.6.2",
+    "astronomy-engine": "^2.1.19",
     "date-fns": "^4.4.0",
     "expo": "~57.0.14",
     "expo-constants": "~57.0.12",
@@ -22,6 +22,7 @@
     "expo-linking": "~57.0.6",
     "expo-location": "~57.0.11",
     "expo-router": "~57.0.14",
+    "expo-sensors": "~57.0.2",
     "expo-sharing": "~57.0.13",
     "expo-splash-screen": "~57.0.7",
     "expo-status-bar": "~57.0.1",
@@ -43,8 +44,10 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@types/node": "^26.4.0",
     "@types/react": "~19.2.2",
     "@types/suncalc": "^1.9.2",
+    "tsx": "^4.23.13",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -53,7 +56,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "tsx --tsconfig tsconfig.json --test \"src/**/__tests__/*.test.ts\""
   },
   "private": true
 }
