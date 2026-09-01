@@ -15,38 +15,43 @@ import * as Sharing from "expo-sharing";
 import { useCanvasRef } from "@shopify/react-native-skia";
 import { Colors, FontFamily, FontSize, Spacing, Radius } from "@/constants/theme";
 import { useMilestonesStore } from "@/store/useMilestonesStore";
-import { getCachedApod } from "@/lib/apod/apodCache";
-import { getMoonPhase, formatIllumination } from "@/lib/astronomy/moonPhase";
-import { getLightTravelFact } from "@/lib/astronomy/lightTravel";
-import { toLocalNoon } from "@/lib/astronomy/dateUtils";
-import { useSettingsStore } from "@/store/useSettingsStore";
+import {
+  getMoonPhase,
+  formatIllumination,
+  describePhase,
+} from "@/lib/astronomy/moonPhase";
+import { getBrightLimbAngle } from "@/lib/astronomy/brightLimb";
+import { getMoonReturns } from "@/lib/astronomy/moonReturn";
+import { toLocalNight, toLocalDayStart } from "@/lib/astronomy/dateUtils";
 import { ExportCardCanvas, CARD_SIZES, type CardFormat } from "@/components/ExportCardCanvas";
-import { useApod } from "@/hooks/useApod";
 
 export default function ExportScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { width: screenWidth } = useWindowDimensions();
 
   const getMilestone = useMilestonesStore((s) => s.getMilestone);
-  const distanceUnit = useSettingsStore((s) => s.distanceUnit);
   const milestone = getMilestone(id);
 
   const canvasRef = useCanvasRef();
   const [format, setFormat] = useState<CardFormat>("story");
   const [exporting, setExporting] = useState(false);
 
-  // Use the same APOD hook so we get whatever is cached
-  const apod = useApod(milestone?.date ?? null);
-  const apodData = apod.status === "success" ? apod.data : null;
-
-  const { moonPhase, lightFact } = useMemo(() => {
-    if (!milestone) return { moonPhase: null, lightFact: null };
-    const mDate = toLocalNoon(milestone.date);
+  const { moonPhase, moonReturns, brightLimbAngleDeg } = useMemo(() => {
+    if (!milestone)
+      return { moonPhase: null, moonReturns: null, brightLimbAngleDeg: null };
+    const tz = milestone.location?.timezoneOffsetMin;
+    const all = getMoonReturns(milestone.date, { tzOffsetMin: tz });
+    const night = toLocalNight(milestone.date, tz);
     return {
-      moonPhase: getMoonPhase(mDate),
-      lightFact: getLightTravelFact(mDate, new Date(), distanceUnit),
+      moonPhase: getMoonPhase(night, toLocalDayStart(milestone.date, tz)),
+      brightLimbAngleDeg:
+        milestone.location && milestone.location.latitude !== 0
+          ? getBrightLimbAngle(night, milestone.location)
+          : null,
+      moonReturns:
+        milestone.type === "birthday" ? all.filter((r) => r.age > 0) : all,
     };
-  }, [milestone, distanceUnit]);
+  }, [milestone]);
 
   // Preview fits the screen with some horizontal padding
   const previewPad = Spacing.lg * 2;
@@ -94,7 +99,7 @@ export default function ExportScreen() {
     }
   }, [canvasRef, milestone, format, id]);
 
-  if (!milestone || !moonPhase || !lightFact) {
+  if (!milestone || !moonPhase || !moonReturns) {
     return (
       <View style={styles.root}>
         <Text style={styles.errorText}>Milestone not found.</Text>
@@ -145,32 +150,17 @@ export default function ExportScreen() {
           <ExportCardCanvas
             ref={canvasRef}
             milestone={milestone}
-            apod={apodData}
             moonPhaseFraction={moonPhase.phaseFraction}
             moonPhaseIndex={moonPhase.phaseIndex}
-            moonPhaseName={moonPhase.phaseName}
+            moonPhaseName={describePhase(moonPhase)}
             moonPhaseIllumination={formatIllumination(moonPhase.phaseFraction)}
-            lightSentence={lightFact.sentence}
+            brightLimbAngleDeg={brightLimbAngleDeg}
+            moonReturns={moonReturns}
             format={format}
             previewWidth={previewWidth}
           />
         </View>
       </View>
-
-      {/* ---- APOD status note ---- */}
-      {apod.status === "loading" && (
-        <View style={styles.apodStatusRow}>
-          <ActivityIndicator size="small" color={Colors.cyanotype} />
-          <Text style={styles.apodStatusText}>Loading NASA image…</Text>
-        </View>
-      )}
-      {(apod.status === "video" || apod.status === "error") && (
-        <Text style={styles.apodStatusText}>
-          {apod.status === "video"
-            ? "This day's APOD is a video — card renders without image."
-            : "APOD unavailable — card renders without image."}
-        </Text>
-      )}
 
       {/* ---- Export button ---- */}
       <View style={styles.footer}>
@@ -182,7 +172,7 @@ export default function ExportScreen() {
           accessibilityLabel="Share card"
         >
           {exporting ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={Colors.paper} />
           ) : (
             <Text style={styles.exportButtonText}>Share Card</Text>
           )}
@@ -212,12 +202,12 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.blueprint,
+    backgroundColor: Colors.paper,
   },
   errorText: {
-    fontFamily: FontFamily.sans,
-    fontSize: FontSize.md,
-    color: Colors.cyanotype,
+    fontFamily: FontFamily.regular,
+    fontSize: FontSize.body,
+    color: Colors.inkMuted,
     textAlign: "center",
     marginTop: Spacing.xxl,
   },
@@ -231,12 +221,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.cyanotype + "22",
+    borderBottomColor: Colors.inkMuted + "22",
   },
   formatLabel: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
+    fontSize: FontSize.label,
+    color: Colors.inkMuted,
     letterSpacing: 2,
   },
   formatChips: {
@@ -248,20 +238,20 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs + 2,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Colors.cyanotype + "44",
-    backgroundColor: Colors.blueprintLight,
+    borderColor: Colors.inkMuted + "44",
+    backgroundColor: Colors.rule,
   },
   formatChipSelected: {
-    borderColor: Colors.ember,
-    backgroundColor: Colors.ember + "22",
+    borderColor: Colors.signal,
+    backgroundColor: Colors.signal + "22",
   },
   formatChipText: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.sm,
-    color: Colors.cyanotype,
+    fontSize: FontSize.small,
+    color: Colors.inkMuted,
   },
   formatChipTextSelected: {
-    color: Colors.ember,
+    color: Colors.signal,
   },
 
   // ---- Preview ----
@@ -272,31 +262,11 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   previewContainer: {
-    borderRadius: Radius.md,
+    borderRadius: Radius.plate,
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    elevation: 16,
   },
 
   // ---- APOD status ----
-  apodStatusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.xs,
-    paddingBottom: Spacing.sm,
-  },
-  apodStatusText: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
-    opacity: 0.6,
-    textAlign: "center",
-    paddingBottom: Spacing.sm,
-  },
 
   // ---- Footer ----
   footer: {
@@ -305,11 +275,11 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === "ios" ? Spacing.xl : Spacing.md,
     gap: Spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: Colors.cyanotype + "22",
+    borderTopColor: Colors.inkMuted + "22",
   },
   exportButton: {
-    backgroundColor: Colors.ember,
-    borderRadius: Radius.md,
+    backgroundColor: Colors.signal,
+    borderRadius: Radius.plate,
     paddingVertical: Spacing.md,
     alignItems: "center",
   },
@@ -317,21 +287,21 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   exportButtonText: {
-    fontFamily: FontFamily.sansBold,
-    fontSize: FontSize.md,
-    color: "#fff",
+    fontFamily: FontFamily.bold,
+    fontSize: FontSize.body,
+    color: Colors.paper,
     letterSpacing: 0.3,
   },
   cancelButton: {
-    borderRadius: Radius.md,
+    borderRadius: Radius.plate,
     borderWidth: 1,
-    borderColor: Colors.cyanotype + "44",
+    borderColor: Colors.inkMuted + "44",
     paddingVertical: Spacing.sm + 4,
     alignItems: "center",
   },
   cancelButtonText: {
-    fontFamily: FontFamily.sansMedium,
-    fontSize: FontSize.md,
-    color: Colors.cyanotype,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.body,
+    color: Colors.inkMuted,
   },
 });
