@@ -1,74 +1,62 @@
 import React from "react";
-import { View, StyleSheet, ViewStyle } from "react-native";
-import { Colors } from "@/constants/theme";
+import { View, StyleSheet } from "react-native";
+import { Colors, Radius } from "@/constants/theme";
 
 interface MoonPhaseGlyphProps {
-  phaseFraction: number;          // 0.0–1.0 illuminated fraction
-  phaseIndex: number;             // 0–7 for icon lookup
+  phaseFraction: number; // 0.0–1.0 illuminated fraction
+  phaseIndex: number; // 0–7
   size?: number;
-  accentColor?: string;
-  /** Bright-limb tilt angle in degrees (from getBrightLimbAngle). Null = no tilt correction. */
+  /** Bright-limb tilt in degrees (getBrightLimbAngle). Null = no tilt correction. */
   brightLimbAngleDeg?: number | null;
+  /**
+   * "plate" sets the moon into a dark square, the way a figure is tipped into a
+   * printed page — the default on paper surfaces.
+   * "bare" draws the moon alone, for use on a surface that is already dark.
+   */
+  variant?: "plate" | "bare";
+  /** Padding between the moon and the plate edge. */
+  platePadding?: number;
 }
 
 /**
- * Moon Phase Glyph — React Native Views renderer.
+ * Moon phase glyph, drawn with plain Views.
  *
- * Renders the accurate crescent/gibbous shape using three stacked views
- * clipped by the outer circle's overflow:hidden:
- *   1. Dark base circle (blueprint color)
- *   2. Lit half-circle on the appropriate side (starlight)
- *   3. Terminator oval — dark if crescent, lit if gibbous
+ * Three stacked layers clipped by the outer circle's overflow:
+ *   1. dark base circle
+ *   2. lit half-circle on the correct side
+ *   3. terminator ellipse — dark when crescent, lit when gibbous
  *
- * Phase 7 will add a Skia `Path` version for the export card where
- * sub-pixel accuracy and HD rendering matter. This version serves
- * all in-app UI chrome including list rows and the detail screen.
+ * Geometry:
+ *   - phaseIndex 1–3 waxing, lit side RIGHT; 5–7 waning, lit side LEFT.
+ *     (0 and 4 are new/full, where the lit side is moot.)
+ *   - terminator semi-minor axis b = r × |2f − 1|, so b = r at new/full and
+ *     b = 0 at the quarters, continuous throughout.
  *
- * Geometry reference:
- *   - phaseIndex 0–4 = waxing → lit side is on the RIGHT
- *   - phaseIndex 5–7 = waning → lit side is on the LEFT
- *   - terminator semi-minor axis b = r × |2f − 1|
- *     (b=r at new/full, b=0 at quarter, continuous in between)
+ * Phase 7 adds a Skia Path version for the export card, where sub-pixel
+ * accuracy matters. This one serves every in-app surface.
  */
 export function MoonPhaseGlyph({
   phaseFraction,
   phaseIndex,
   size = 40,
-  accentColor = Colors.ember,
   brightLimbAngleDeg = null,
+  variant = "plate",
+  platePadding = 10,
 }: MoonPhaseGlyphProps) {
   const r = size / 2;
-
   const isWaxing = phaseIndex <= 4;
   const b = r * Math.abs(2 * phaseFraction - 1);
   const isGibbous = phaseFraction > 0.5;
   const showOval = b > 0.5;
 
-  const glyph = (
-    <View
-      style={[
-        styles.base,
-        {
-          width: size,
-          height: size,
-          borderRadius: r,
-          borderColor: accentColor,
-        },
-      ]}
-    >
-      {/* Lit half — clipped to a rectangle via overflow:hidden, the outer
-          circle clips the corners so only a proper semicircle shows */}
+  const moon = (
+    <View style={[styles.base, { width: size, height: size, borderRadius: r }]}>
       <View
         style={[
-          styles.litHalfContainer,
-          {
-            width: r,
-            height: size,
-            ...(isWaxing ? { right: 0 } : { left: 0 }),
-          },
+          styles.litHalf,
+          { width: r, height: size, ...(isWaxing ? { right: 0 } : { left: 0 }) },
         ]}
       >
-        {/* The full starlight circle, positioned so only the lit half is visible */}
         <View
           style={[
             styles.litCircle,
@@ -82,7 +70,6 @@ export function MoonPhaseGlyph({
         />
       </View>
 
-      {/* Terminator oval — painted on top of the lit half */}
       {showOval && (
         <View
           style={[
@@ -90,10 +77,8 @@ export function MoonPhaseGlyph({
             {
               width: b * 2,
               height: size,
-              // borderRadius: b makes it an oval (pill with radius = half width)
-              // Since height > width (when b < r), this produces the ellipse shape
               borderRadius: b,
-              backgroundColor: isGibbous ? Colors.starlight : Colors.blueprint,
+              backgroundColor: isGibbous ? Colors.moonlight : Colors.plate,
               left: r - b,
             },
           ]}
@@ -102,9 +87,8 @@ export function MoonPhaseGlyph({
     </View>
   );
 
-  // If a bright-limb angle is available, rotate the glyph to match the observer's sky
-  if (brightLimbAngleDeg != null) {
-    return (
+  const tilted =
+    brightLimbAngleDeg != null ? (
       <View
         style={{
           width: size,
@@ -112,32 +96,31 @@ export function MoonPhaseGlyph({
           transform: [{ rotate: `${brightLimbAngleDeg}deg` }],
         }}
       >
-        {glyph}
+        {moon}
       </View>
+    ) : (
+      moon
     );
-  }
 
-  return glyph;
+  if (variant === "bare") return tilted;
+
+  return (
+    <View style={[styles.plate, { padding: platePadding }]}>{tilted}</View>
+  );
 }
 
 const styles = StyleSheet.create({
+  plate: {
+    backgroundColor: Colors.plate,
+    borderRadius: Radius.plate,
+    alignSelf: "flex-start",
+  },
   base: {
+    backgroundColor: Colors.plate,
     overflow: "hidden",
-    backgroundColor: Colors.blueprint,
-    borderWidth: 1.5,
+    position: "relative",
   },
-  litHalfContainer: {
-    position: "absolute",
-    top: 0,
-    overflow: "hidden",
-  },
-  litCircle: {
-    position: "absolute",
-    top: 0,
-    backgroundColor: Colors.starlight,
-  },
-  terminator: {
-    position: "absolute",
-    top: 0,
-  },
+  litHalf: { position: "absolute", top: 0, overflow: "hidden" },
+  litCircle: { position: "absolute", top: 0, backgroundColor: Colors.moonlight },
+  terminator: { position: "absolute", top: 0 },
 });
