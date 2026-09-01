@@ -16,9 +16,7 @@ import { useSettingsStore } from "@/store/useSettingsStore";
 
 export default function SettingsScreen() {
   const nasaApiKey = useSettingsStore((s) => s.nasaApiKey);
-  const distanceUnit = useSettingsStore((s) => s.distanceUnit);
   const setNasaApiKey = useSettingsStore((s) => s.setNasaApiKey);
-  const setDistanceUnit = useSettingsStore((s) => s.setDistanceUnit);
 
   // Local draft for the key input — only committed on Save
   const [keyDraft, setKeyDraft] = useState(nasaApiKey ?? "");
@@ -96,8 +94,8 @@ export default function SettingsScreen() {
                 styles.statusDot,
                 {
                   backgroundColor: usingDemo
-                    ? Colors.ember
-                    : Colors.starlight,
+                    ? Colors.signal
+                    : Colors.ink,
                 },
               ]}
             />
@@ -120,8 +118,8 @@ export default function SettingsScreen() {
                 setKeySaved(false);
               }}
               placeholder="Paste your API key here"
-              placeholderTextColor={Colors.cyanotype + "88"}
-              selectionColor={Colors.ember}
+              placeholderTextColor={Colors.inkMuted + "88"}
+              selectionColor={Colors.signal}
               secureTextEntry={!keyVisible}
               autoCapitalize="none"
               autoCorrect={false}
@@ -167,63 +165,11 @@ export default function SettingsScreen() {
           {/* Active key preview */}
           <View style={styles.activeKeyRow}>
             <Text style={styles.activeKeyLabel}>ACTIVE KEY</Text>
-            <Text style={styles.activeKeyValue} numberOfLines={1}>
+            <Text style={styles.activeKeyValue}>
               {activeKey.length > 12
                 ? `${activeKey.slice(0, 6)}••••${activeKey.slice(-4)}`
                 : activeKey}
             </Text>
-          </View>
-        </View>
-
-        <View style={styles.divider} />
-
-        {/* ---- Distance Unit ---- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>DISTANCE UNIT</Text>
-          <Text style={styles.sectionDesc}>
-            Used in Phase 6 light-travel facts.
-          </Text>
-
-          <View style={styles.unitToggleRow}>
-            <TouchableOpacity
-              style={[
-                styles.unitChip,
-                distanceUnit === "ly" && styles.unitChipSelected,
-              ]}
-              onPress={() => setDistanceUnit("ly")}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: distanceUnit === "ly" }}
-            >
-              <Text
-                style={[
-                  styles.unitChipText,
-                  distanceUnit === "ly" && styles.unitChipTextSelected,
-                ]}
-              >
-                Light-years
-              </Text>
-              <Text style={styles.unitChipSub}>ly</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.unitChip,
-                distanceUnit === "km" && styles.unitChipSelected,
-              ]}
-              onPress={() => setDistanceUnit("km")}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: distanceUnit === "km" }}
-            >
-              <Text
-                style={[
-                  styles.unitChipText,
-                  distanceUnit === "km" && styles.unitChipTextSelected,
-                ]}
-              >
-                Kilometres
-              </Text>
-              <Text style={styles.unitChipSub}>km</Text>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -259,7 +205,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.blueprint,
+    backgroundColor: Colors.paper,
   },
   scrollContent: {
     paddingHorizontal: Spacing.md,
@@ -273,26 +219,26 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
+    fontSize: FontSize.label,
+    color: Colors.inkMuted,
     letterSpacing: 2,
     marginBottom: Spacing.sm,
   },
   sectionDesc: {
-    fontFamily: FontFamily.sans,
-    fontSize: FontSize.sm,
-    color: Colors.cyanotype,
+    fontFamily: FontFamily.regular,
+    fontSize: FontSize.small,
+    color: Colors.inkMuted,
     lineHeight: 20,
     opacity: 0.75,
     marginBottom: Spacing.md,
   },
   link: {
-    color: Colors.cyanotype,
+    color: Colors.inkMuted,
     textDecorationLine: "underline",
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.cyanotype,
+    backgroundColor: Colors.inkMuted,
     opacity: 0.15,
     marginBottom: Spacing.lg,
   },
@@ -311,8 +257,8 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
+    fontSize: FontSize.label,
+    color: Colors.inkMuted,
     letterSpacing: 0.3,
   },
   inputRow: {
@@ -323,15 +269,15 @@ const styles = StyleSheet.create({
   },
   keyInput: {
     flex: 1,
-    backgroundColor: Colors.blueprintLight,
+    backgroundColor: Colors.rule,
     borderWidth: 1,
-    borderColor: Colors.cyanotype + "44",
-    borderRadius: Radius.md,
+    borderColor: Colors.inkMuted + "44",
+    borderRadius: Radius.plate,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm + 4,
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.sm,
-    color: Colors.starlight,
+    fontSize: FontSize.small,
+    color: Colors.ink,
     letterSpacing: 0.5,
   },
   visibilityToggle: {
@@ -339,13 +285,13 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm + 4,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Colors.cyanotype + "44",
-    backgroundColor: Colors.blueprintLight,
+    borderColor: Colors.inkMuted + "44",
+    backgroundColor: Colors.rule,
   },
   visibilityToggleText: {
-    fontFamily: FontFamily.sansMedium,
-    fontSize: FontSize.sm,
-    color: Colors.cyanotype,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
+    color: Colors.inkMuted,
   },
   keyActions: {
     flexDirection: "row",
@@ -354,18 +300,18 @@ const styles = StyleSheet.create({
   },
   saveKeyButton: {
     flex: 1,
-    backgroundColor: Colors.ember,
+    backgroundColor: Colors.signal,
     borderRadius: Radius.sm,
     paddingVertical: Spacing.sm + 2,
     alignItems: "center",
   },
   saveKeyButtonSaved: {
-    backgroundColor: Colors.cyanotype,
+    backgroundColor: Colors.inkMuted,
   },
   saveKeyButtonText: {
-    fontFamily: FontFamily.sansBold,
-    fontSize: FontSize.sm,
-    color: "#fff",
+    fontFamily: FontFamily.bold,
+    fontSize: FontSize.small,
+    color: Colors.paper,
     letterSpacing: 0.3,
   },
   clearKeyButton: {
@@ -373,95 +319,62 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm + 2,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Colors.ember + "66",
+    borderColor: Colors.signal + "66",
     alignItems: "center",
   },
   clearKeyButtonText: {
-    fontFamily: FontFamily.sansMedium,
-    fontSize: FontSize.sm,
-    color: Colors.ember,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
+    color: Colors.signal,
   },
   activeKeyRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
-    backgroundColor: Colors.blueprintLight,
+    backgroundColor: Colors.rule,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Colors.cyanotype + "33",
+    borderColor: Colors.inkMuted + "33",
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
   },
   activeKeyLabel: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
+    fontSize: FontSize.label,
+    color: Colors.inkMuted,
     letterSpacing: 1.5,
     opacity: 0.6,
   },
   activeKeyValue: {
     flex: 1,
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.sm,
-    color: Colors.starlight,
+    fontSize: FontSize.small,
+    color: Colors.ink,
     textAlign: "right",
   },
 
   // ---- Distance unit ----
-  unitToggleRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  unitChip: {
-    flex: 1,
-    backgroundColor: Colors.blueprintLight,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.cyanotype + "44",
-    paddingVertical: Spacing.md,
-    alignItems: "center",
-    gap: 2,
-  },
-  unitChipSelected: {
-    borderColor: Colors.ember,
-    backgroundColor: Colors.ember + "22",
-  },
-  unitChipText: {
-    fontFamily: FontFamily.sansSemiBold,
-    fontSize: FontSize.md,
-    color: Colors.cyanotype,
-  },
-  unitChipTextSelected: {
-    color: Colors.ember,
-  },
-  unitChipSub: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
-    opacity: 0.5,
-    letterSpacing: 1,
-  },
 
   // ---- About ----
   aboutCard: {
-    backgroundColor: Colors.blueprintLight,
-    borderRadius: Radius.md,
+    backgroundColor: Colors.rule,
+    borderRadius: Radius.plate,
     borderWidth: 1,
-    borderColor: Colors.cyanotype + "33",
+    borderColor: Colors.inkMuted + "33",
     padding: Spacing.lg,
     alignItems: "center",
     gap: Spacing.xs,
   },
   aboutAppName: {
-    fontFamily: FontFamily.displayBold,
+    fontFamily: FontFamily.bold,
     fontSize: 32,
-    color: Colors.starlight,
+    color: Colors.ink,
     letterSpacing: 6,
   },
   aboutTagline: {
-    fontFamily: FontFamily.displayItalic,
-    fontSize: FontSize.md,
-    color: Colors.cyanotype,
+    fontFamily: FontFamily.regular,
+    fontSize: FontSize.body,
+    color: Colors.inkMuted,
     marginBottom: Spacing.sm,
   },
   aboutMeta: {
@@ -470,8 +383,8 @@ const styles = StyleSheet.create({
   },
   aboutMetaRow: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
+    fontSize: FontSize.label,
+    color: Colors.inkMuted,
     opacity: 0.5,
     letterSpacing: 0.3,
   },
