@@ -1,16 +1,11 @@
 import {
-  Fraunces_400Regular,
-  Fraunces_400Regular_Italic,
-  Fraunces_600SemiBold,
-  Fraunces_700Bold,
-} from "@expo-google-fonts/fraunces";
-import {
-  Manrope_300Light,
-  Manrope_400Regular,
-  Manrope_500Medium,
-  Manrope_600SemiBold,
-  Manrope_700Bold,
-} from "@expo-google-fonts/manrope";
+  Archivo_300Light,
+  Archivo_400Regular,
+  Archivo_500Medium,
+  Archivo_600SemiBold,
+  Archivo_700Bold,
+  Archivo_900Black,
+} from "@expo-google-fonts/archivo";
 import {
   JetBrainsMono_400Regular,
   JetBrainsMono_500Medium,
@@ -19,113 +14,84 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { useEffect } from "react";
-import { StatusBar, View } from "react-native";
-import { Colors, FontFamily } from "@/constants/theme";
+import { StatusBar } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { Colors, FontFamily, FontSize, Tracking } from "@/constants/theme";
 
-// Prevent auto-hide until fonts are loaded
 SplashScreen.preventAutoHideAsync();
+
+/**
+ * Headers are near-silent: paper ground, a small uppercase mono label, a
+ * hairline rule underneath. The page's own display type carries the title, so
+ * the chrome shouldn't compete with it.
+ */
+const HEADER_TITLE = {
+  fontFamily: FontFamily.monoMedium,
+  fontSize: FontSize.label,
+  letterSpacing: Tracking.label,
+  color: Colors.ink,
+} as const;
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    [FontFamily.display]: Fraunces_400Regular,
-    [FontFamily.displayItalic]: Fraunces_400Regular_Italic,
-    [FontFamily.displaySemiBold]: Fraunces_600SemiBold,
-    [FontFamily.displayBold]: Fraunces_700Bold,
-    [FontFamily.sansLight]: Manrope_300Light,
-    [FontFamily.sans]: Manrope_400Regular,
-    [FontFamily.sansMedium]: Manrope_500Medium,
-    [FontFamily.sansSemiBold]: Manrope_600SemiBold,
-    [FontFamily.sansBold]: Manrope_700Bold,
+    [FontFamily.thin]: Archivo_300Light,
+    [FontFamily.regular]: Archivo_400Regular,
+    [FontFamily.medium]: Archivo_500Medium,
+    [FontFamily.semibold]: Archivo_600SemiBold,
+    [FontFamily.bold]: Archivo_700Bold,
+    [FontFamily.black]: Archivo_900Black,
     [FontFamily.mono]: JetBrainsMono_400Regular,
     [FontFamily.monoMedium]: JetBrainsMono_500Medium,
   });
 
   useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
+    if (fontsLoaded || fontError) SplashScreen.hideAsync();
   }, [fontsLoaded, fontError]);
 
-  // Don't render anything until fonts are ready — prevents flash of system font
-  if (!fontsLoaded && !fontError) {
-    return null;
-  }
+  // Nothing renders in a fallback face and then pops.
+  if (!fontsLoaded && !fontError) return null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: Colors.blueprint }}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.blueprint} />
+    // GestureHandlerRootView must wrap the whole app, or any GestureDetector
+    // below it throws at render time (the immersive sky view uses one).
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.paper }}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.paper} />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: Colors.blueprint },
-          headerTintColor: Colors.starlight,
-          headerTitleStyle: {
-            fontFamily: FontFamily.displaySemiBold,
-            fontSize: 18,
-            color: Colors.starlight,
-          },
+          headerStyle: { backgroundColor: Colors.paper },
+          headerTintColor: Colors.ink,
+          headerTitleStyle: HEADER_TITLE,
           headerShadowVisible: false,
-          // Show only the chevron — no "Back" / screen name text anywhere in the app
           headerBackButtonDisplayMode: "minimal",
-          contentStyle: { backgroundColor: Colors.blueprint },
+          contentStyle: { backgroundColor: Colors.paper },
           animation: "slide_from_right",
         }}
       >
-        <Stack.Screen
-          name="index"
-          options={{
-            title: "Cosmic Milestones",
-            headerTitleStyle: {
-              fontFamily: FontFamily.displaySemiBold,
-              fontSize: 20,
-              color: Colors.starlight,
-            },
-          }}
-        />
-        <Stack.Screen
-          name="age-converter"
-          options={{
-            title: "Planetary Ages",
-            presentation: "card",
-          }}
-        />
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="age-converter" options={{ title: "PLANETARY AGES" }} />
         <Stack.Screen
           name="settings"
-          options={{
-            title: "Settings",
-            presentation: "modal",
-          }}
+          options={{ title: "SETTINGS", presentation: "modal" }}
         />
         <Stack.Screen
           name="milestone/new"
-          options={{
-            title: "New Milestone",
-            presentation: "modal",
-          }}
+          options={{ title: "NEW RECORD", presentation: "modal" }}
         />
         <Stack.Screen
-          name="milestone/[id]"
-          options={{
-            title: "",
-            headerStyle: { backgroundColor: Colors.blueprint },
-            headerShadowVisible: false,
-            headerTintColor: Colors.starlight,
-          }}
+          name="milestone/edit/[id]"
+          options={{ title: "EDIT RECORD", presentation: "modal" }}
+        />
+        <Stack.Screen name="milestone/[id]" options={{ title: "" }} />
+        <Stack.Screen name="ledger/[id]" options={{ title: "" }} />
+        <Stack.Screen
+          name="sky/[id]"
+          options={{ headerShown: false, animation: "fade" }}
         />
         <Stack.Screen
           name="export/[id]"
-          options={{
-            title: "Export Card",
-            presentation: "modal",
-            headerStyle: { backgroundColor: Colors.blueprint },
-            headerTintColor: Colors.starlight,
-            headerTitleStyle: {
-              fontFamily: FontFamily.displaySemiBold,
-              fontSize: 18,
-              color: Colors.starlight,
-            },
-          }}
+          options={{ title: "EXPORT", presentation: "modal" }}
         />
       </Stack>
-    </View>
+    </GestureHandlerRootView>
   );
 }
