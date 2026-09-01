@@ -1,4 +1,5 @@
 import type { ApodCacheEntry } from "@/types";
+import { classifyApod } from "./apodClassify";
 
 const BASE_URL = "https://api.nasa.gov/planetary/apod";
 
@@ -96,6 +97,10 @@ export async function fetchApod(
     url: raw.url,
     hdurl: raw.hdurl ?? null,
     mediaType: raw.media_type,
+    kind: classifyApod({
+      mediaType: raw.media_type,
+      explanation: raw.explanation ?? "",
+    }),
     copyright: raw.copyright?.replace(/\n/g, " ").trim() ?? null,
     fetchedAt: new Date().toISOString(),
   };
