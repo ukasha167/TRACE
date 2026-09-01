@@ -137,7 +137,7 @@ export default function AgeConverterScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.blueprint,
+    backgroundColor: Colors.paper,
   },
   scrollContent: {
     paddingHorizontal: Spacing.md,
@@ -151,31 +151,31 @@ const styles = StyleSheet.create({
   },
   headerLabel: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
+    fontSize: FontSize.label,
+    color: Colors.inkMuted,
     letterSpacing: 2,
     marginBottom: Spacing.xs,
   },
   headerDate: {
-    fontFamily: FontFamily.displaySemiBold,
-    fontSize: FontSize.xxl,
-    color: Colors.starlight,
+    fontFamily: FontFamily.semibold,
+    fontSize: FontSize.title,
+    color: Colors.ink,
     letterSpacing: -0.5,
     lineHeight: 34,
   },
   headerSub: {
-    fontFamily: FontFamily.sans,
-    fontSize: FontSize.md,
-    color: Colors.cyanotype,
+    fontFamily: FontFamily.regular,
+    fontSize: FontSize.body,
+    color: Colors.inkMuted,
     marginTop: Spacing.xs,
   },
 
   // ---- Picker card ----
   pickerCard: {
-    backgroundColor: Colors.blueprintLight,
+    backgroundColor: Colors.rule,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.cyanotype + "44",
+    borderColor: Colors.inkMuted + "44",
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     marginBottom: Spacing.lg,
@@ -189,15 +189,15 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   androidPickerLabel: {
-    fontFamily: FontFamily.sansMedium,
-    fontSize: FontSize.sm,
-    color: Colors.cyanotype,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
+    color: Colors.inkMuted,
     marginBottom: 4,
   },
   androidPickerValue: {
-    fontFamily: FontFamily.displaySemiBold,
-    fontSize: FontSize.lg,
-    color: Colors.starlight,
+    fontFamily: FontFamily.semibold,
+    fontSize: FontSize.lead,
+    color: Colors.ink,
   },
   todayButton: {
     marginTop: Spacing.sm,
@@ -205,13 +205,13 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs + 2,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.ember,
+    borderColor: Colors.signal,
     alignSelf: "center",
   },
   todayButtonText: {
-    fontFamily: FontFamily.sansMedium,
-    fontSize: FontSize.sm,
-    color: Colors.ember,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
+    color: Colors.signal,
   },
 
   // ---- Section divider ----
@@ -224,13 +224,13 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: Colors.cyanotype,
+    backgroundColor: Colors.inkMuted,
     opacity: 0.3,
   },
   dividerLabel: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
+    fontSize: FontSize.label,
+    color: Colors.inkMuted,
     letterSpacing: 2,
   },
 
@@ -242,8 +242,8 @@ const styles = StyleSheet.create({
   // ---- Footer ----
   footerNote: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
+    fontSize: FontSize.label,
+    color: Colors.inkMuted,
     opacity: 0.6,
     textAlign: "center",
     marginTop: Spacing.lg,
