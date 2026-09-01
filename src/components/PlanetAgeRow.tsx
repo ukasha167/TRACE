@@ -65,14 +65,14 @@ export function PlanetAgeRow({ planet, ageYears }: PlanetAgeRowProps) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: Colors.blueprintLight,
+    backgroundColor: Colors.rule,
     borderRadius: 12,
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.sm + 6, // extra room for progress bar
     marginBottom: Spacing.sm,
     borderWidth: 1,
-    borderColor: Colors.cyanotype + "44",
+    borderColor: Colors.inkMuted + "44",
     overflow: "hidden",
     flexDirection: "row",
     alignItems: "center",
@@ -100,15 +100,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   planetName: {
-    fontFamily: FontFamily.sansSemiBold,
-    fontSize: FontSize.md,
-    color: Colors.starlight,
+    fontFamily: FontFamily.semibold,
+    fontSize: FontSize.body,
+    color: Colors.ink,
     letterSpacing: 0.2,
   },
   periodLabel: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.xs,
-    color: Colors.cyanotype,
+    fontSize: FontSize.label,
+    color: Colors.inkMuted,
     marginTop: 2,
   },
   right: {
@@ -118,14 +118,14 @@ const styles = StyleSheet.create({
   },
   ageValue: {
     fontFamily: FontFamily.mono,
-    fontSize: FontSize.xl,
-    color: Colors.starlight,
+    fontSize: FontSize.heading,
+    color: Colors.ink,
     letterSpacing: -0.5,
   },
   ageUnit: {
-    fontFamily: FontFamily.sansMedium,
-    fontSize: FontSize.sm,
-    color: Colors.cyanotype,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
+    color: Colors.inkMuted,
   },
   progressTrack: {
     position: "absolute",
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 3,
-    backgroundColor: Colors.cyanotype + "22",
+    backgroundColor: Colors.inkMuted + "22",
   },
   progressFill: {
     height: "100%",
