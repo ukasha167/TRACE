@@ -1,169 +1,95 @@
-import React, { useRef, useCallback, useMemo } from "react";
+import React from "react";
 import {
   Canvas,
   useCanvasRef,
   useFont,
-  useImage,
-  Image as SkiaImage,
   Rect,
-  RoundedRect,
   Fill,
   Group,
   Text as SkiaText,
-  LinearGradient,
-  vec,
   Path,
   Skia,
   Circle,
-  Paint,
 } from "@shopify/react-native-skia";
 import {
-  Fraunces_700Bold,
-  Fraunces_400Regular_Italic,
-  Fraunces_400Regular,
-} from "@expo-google-fonts/fraunces";
+  Archivo_900Black,
+  Archivo_600SemiBold,
+  Archivo_400Regular,
+} from "@expo-google-fonts/archivo";
 import {
-  Manrope_600SemiBold,
-  Manrope_400Regular,
-} from "@expo-google-fonts/manrope";
-import { JetBrainsMono_400Regular } from "@expo-google-fonts/jetbrains-mono";
-import type { Milestone, ApodCacheEntry } from "@/types";
+  JetBrainsMono_400Regular,
+  JetBrainsMono_500Medium,
+} from "@expo-google-fonts/jetbrains-mono";
+import type { Milestone, MoonReturn } from "@/types";
 import { Colors } from "@/constants/theme";
 
-// ---- Card dimensions ----
 export const CARD_SIZES = {
-  story:  { w: 1080, h: 1920 },
+  story: { w: 1080, h: 1920 },
   square: { w: 1080, h: 1080 },
 } as const;
 
 export type CardFormat = keyof typeof CARD_SIZES;
 
-// ---- Moon phase glyph via Skia Path ----
-function moonPhasePath(
-  cx: number,
-  cy: number,
-  r: number,
-  phaseFraction: number,
-  phaseIndex: number
-): ReturnType<typeof Skia.Path.Make> {
-  const isWaxing = phaseIndex <= 4;
+/**
+ * Builds the lit region of the moon as a closed path.
+ *
+ * The boundary is two arcs: the illuminated limb (a semicircle of radius r) and
+ * the terminator (a semi-ellipse with horizontal semi-axis b = r|2f-1| and
+ * vertical semi-axis r). At the quarters b = 0 and the terminator is a straight
+ * line; at new/full b = r and it coincides with the limb.
+ *
+ * Constructed for a WAXING moon (lit on the right). Waning is the same shape
+ * mirrored about the vertical centre line, which the caller applies as a
+ * transform rather than duplicating the angle arithmetic.
+ */
+function litMoonPath(cx: number, cy: number, r: number, phaseFraction: number) {
   const b = r * Math.abs(2 * phaseFraction - 1);
   const isGibbous = phaseFraction > 0.5;
-
   const path = Skia.Path.Make();
 
-  // Full circle clip (used as base; lit portions drawn within)
-  // The caller will clip children to this
-  path.addCircle(cx, cy, r);
+  // Limb: top -> right -> bottom.
+  path.arcToOval(
+    { x: cx - r, y: cy - r, width: r * 2, height: r * 2 },
+    -90,
+    180,
+    true
+  );
+  // Terminator: bottom -> top. Through the LEFT extreme when gibbous (lit
+  // region is more than half), through the RIGHT extreme when crescent.
+  path.arcToOval(
+    { x: cx - b, y: cy - r, width: b * 2, height: r * 2 },
+    90,
+    isGibbous ? 180 : -180,
+    false
+  );
+  path.close();
   return path;
 }
 
-/**
- * Moon Phase Glyph — Skia implementation for the export card.
- * Renders the accurate crescent/gibbous shape using Skia primitives.
- * Uses save/restore for circular clipping.
- */
-function SkiaMoonGlyph({
-  cx,
-  cy,
-  r,
-  phaseFraction,
-  phaseIndex,
-  accentColor = Colors.ember,
-}: {
-  cx: number;
-  cy: number;
-  r: number;
-  phaseFraction: number;
-  phaseIndex: number;
-  accentColor?: string;
-}) {
-  const isWaxing = phaseIndex <= 4;
-  const isGibbous = phaseFraction > 0.5;
-  const b = r * Math.abs(2 * phaseFraction - 1);
-
-  // Clip path = full circle
-  const clipPath = useMemo(() => {
-    const p = Skia.Path.Make();
-    p.addCircle(cx, cy, r - 0.5);
-    return p;
-  }, [cx, cy, r]);
-
-  // Lit half rect
-  const litPath = useMemo(() => {
-    const p = Skia.Path.Make();
-    if (isWaxing) {
-      p.addRect(Skia.XYWHRect(cx, cy - r, r, r * 2));
-    } else {
-      p.addRect(Skia.XYWHRect(cx - r, cy - r, r, r * 2));
-    }
-    return p;
-  }, [cx, cy, r, isWaxing]);
-
-  // Terminator oval
-  const termPath = useMemo(() => {
-    const p = Skia.Path.Make();
-    if (b > 0.5) {
-      p.addOval(Skia.XYWHRect(cx - b, cy - r, b * 2, r * 2));
-    }
-    return p;
-  }, [cx, cy, r, b]);
-
-  // Outline path
-  const outlinePath = useMemo(() => {
-    const p = Skia.Path.Make();
-    p.addCircle(cx, cy, r - 1);
-    return p;
-  }, [cx, cy, r]);
-
-  return (
-    <Group>
-      {/* Dark base */}
-      <Circle cx={cx} cy={cy} r={r} color={Colors.blueprint} />
-
-      {/* Lit portion — clipped to circle */}
-      <Group clip={clipPath}>
-        <Path path={litPath} color={Colors.starlight} />
-        {b > 0.5 && (
-          <Path
-            path={termPath}
-            color={isGibbous ? Colors.starlight : Colors.blueprint}
-          />
-        )}
-      </Group>
-
-      {/* Outline ring */}
-      <Path path={outlinePath} color={accentColor} style="stroke" strokeWidth={2.5} />
-    </Group>
-  );
-}
-
-// ---- Props ----
 interface ExportCardCanvasProps {
   milestone: Milestone;
-  apod: ApodCacheEntry | null;
   moonPhaseFraction: number;
   moonPhaseIndex: number;
+  /** Honest label from describePhase(), never the raw 8-way bucket name. */
   moonPhaseName: string;
   moonPhaseIllumination: string;
-  lightSentence: string;
+  brightLimbAngleDeg: number | null;
+  moonReturns: MoonReturn[];
   format: CardFormat;
-  /** Preview scale — card is rendered at CARD_SIZES then scaled down for display */
+  /** Card renders at CARD_SIZES then scales down for on-screen preview. */
   previewWidth: number;
 }
 
 /**
- * ExportCardCanvas — the Section 12 Skia canvas implementation.
+ * THE EXPORT CARD — spec §12.
  *
- * Renders the full export card at 1080×1920 (story) or 1080×1080 (square).
- * makeImageSnapshotAsync() called via the ref converts it to PNG bytes.
+ * Swiss poster on bone paper: wordmark and heavy rule, the title set very
+ * large, the moon on a dark plate tipped into the page, then the recurrence
+ * table. Deliberately NOT a dark card — a paper card is the unexpected thing in
+ * a feed of dark space imagery, and it matches the app it came from.
  *
- * Layout (story, top → bottom):
- *   0%–55%    APOD image with LinearGradient scrim
- *   55%–65%   Title block (milestone title + date)
- *   65%–75%   Moon phase strip (glyph + name + illumination)
- *   75%–88%   Light-travel sentence
- *   88%–100%  Watermark
+ * The moon is drawn at its real phase and real tilt. That, and the return
+ * table, are the whole point of the card; everything else stays quiet.
  */
 const ExportCardCanvas = React.forwardRef<
   ReturnType<typeof useCanvasRef>["current"],
@@ -171,12 +97,12 @@ const ExportCardCanvas = React.forwardRef<
 >(function ExportCardCanvas(
   {
     milestone,
-    apod,
     moonPhaseFraction,
     moonPhaseIndex,
     moonPhaseName,
     moonPhaseIllumination,
-    lightSentence,
+    brightLimbAngleDeg,
+    moonReturns,
     format,
     previewWidth,
   },
@@ -184,206 +110,180 @@ const ExportCardCanvas = React.forwardRef<
 ) {
   const { w, h } = CARD_SIZES[format];
   const scale = previewWidth / w;
+  const isStory = format === "story";
 
-  // ---- Fonts (loaded by Skia, not expo-font) ----
-  const titleFont    = useFont(Fraunces_700Bold, 72);
-  const italicFont   = useFont(Fraunces_400Regular_Italic, 44);
-  const serifFont    = useFont(Fraunces_400Regular, 36);
-  const sansFont     = useFont(Manrope_400Regular, 34);
-  const sansSemiBold = useFont(Manrope_600SemiBold, 30);
-  const monoFont     = useFont(JetBrainsMono_400Regular, 28);
-  const monoSmall    = useFont(JetBrainsMono_400Regular, 22);
+  const titleFont = useFont(Archivo_900Black, isStory ? 104 : 82);
+  const headFont = useFont(Archivo_600SemiBold, 42);
+  const bodyFont = useFont(Archivo_400Regular, 32);
+  const monoFont = useFont(JetBrainsMono_500Medium, 34);
+  const monoSmall = useFont(JetBrainsMono_400Regular, 26);
 
-  // ---- APOD image ----
-  const apodImageUri = apod?.mediaType === "image"
-    ? (apod.hdurl ?? apod.url)
-    : null;
-  const apodImage = useImage(apodImageUri ?? undefined);
-
-  // ---- Layout constants ----
-  const PAD = 64;
-  const imageBottom = format === "story" ? h * 0.52 : h * 0.48;
-  const titleY      = imageBottom + 56;
-  const dateY       = titleY + 86;
-  const moonY       = dateY + 60;
-  const moonGlyphR  = 44;
-  const moonCX      = PAD + moonGlyphR;
-  const moonCY      = moonY + moonGlyphR;
-  const moonTextX   = PAD + moonGlyphR * 2 + 20;
-  const sentenceY   = moonCY + moonGlyphR + 52;
-  const watermarkY  = h - 52;
-
-  if (!titleFont || !monoFont || !sansFont) {
-    // Fonts not ready yet — render a blank dark canvas
+  if (!titleFont || !monoFont || !bodyFont || !headFont || !monoSmall) {
     return (
-      <Canvas
-        ref={ref as any}
-        style={{ width: w * scale, height: h * scale }}
-      >
-        <Fill color={Colors.blueprint} />
+      <Canvas ref={ref as any} style={{ width: w * scale, height: h * scale }}>
+        <Fill color={Colors.paper} />
       </Canvas>
     );
   }
 
-  // Formatted date
-  const [year, month, day] = milestone.date.split("-").map(Number);
-  const formattedDate = new Date(year, month - 1, day).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const PAD = 72;
+  const inner = w - PAD * 2;
+  const [year, month, day] = milestone.date.split("-");
+
+  // ---- Vertical rhythm ----
+  const wordmarkY = PAD + 30;
+  const ruleY = wordmarkY + 26;
+  const titleY = ruleY + (isStory ? 130 : 108);
+  const dateY = titleY + 52;
+
+  const plateY = dateY + 44;
+  const plateH = isStory ? 620 : 380;
+  const moonR = Math.min(inner, plateH) * 0.32;
+  const moonCX = w / 2;
+  const moonCY = plateY + plateH / 2;
+
+  const phaseY = plateY + plateH + 66;
+  const phaseRuleY = phaseY + 34;
+
+  const returnsLabelY = phaseRuleY + 56;
+  const returnsStartY = returnsLabelY + 52;
+  const returnRowH = 58;
+
+  const footRuleY = h - PAD - 54;
+  const footY = h - PAD - 12;
+
+  const shownReturns = moonReturns.slice(0, isStory ? 3 : 2);
+  const isWaxing = moonPhaseIndex <= 4;
 
   return (
-    <Canvas
-      ref={ref as any}
-      style={{ width: w * scale, height: h * scale }}
-    >
+    <Canvas ref={ref as any} style={{ width: w * scale, height: h * scale }}>
       <Group transform={[{ scale }]}>
-        {/* ---- Background ---- */}
-        <Fill color={Colors.blueprint} />
+        <Fill color={Colors.paper} />
 
-        {/* ---- APOD image region ---- */}
-        {apodImage && (
-          <Group>
-            <SkiaImage
-              image={apodImage}
-              x={0}
-              y={0}
-              width={w}
-              height={imageBottom}
-              fit="cover"
+        {/* ---- Masthead ---- */}
+        <SkiaText x={PAD} y={wordmarkY} text="TRACE" font={monoSmall} color={Colors.ink} />
+        <SkiaText
+          x={w - PAD - 120}
+          y={wordmarkY}
+          text={`${day}.${month}`}
+          font={monoSmall}
+          color={Colors.inkMuted}
+        />
+        <Rect x={PAD} y={ruleY} width={inner} height={6} color={Colors.ink} />
+
+        {/* ---- Title ---- */}
+        <SkiaText
+          x={PAD}
+          y={titleY}
+          text={milestone.title}
+          font={titleFont}
+          color={Colors.ink}
+        />
+        <SkiaText
+          x={PAD}
+          y={dateY}
+          text={`${day}.${month}.${year}`}
+          font={monoFont}
+          color={Colors.signal}
+        />
+
+        {/* ---- Moon plate ---- */}
+        <Rect x={PAD} y={plateY} width={inner} height={plateH} color={Colors.plate} />
+
+        <Group
+          transform={[
+            { translateX: moonCX },
+            { translateY: moonCY },
+            { rotate: ((brightLimbAngleDeg ?? 0) * Math.PI) / 180 },
+            { translateX: -moonCX },
+            { translateY: -moonCY },
+          ]}
+        >
+          {/* Unlit disc, a shade above the plate so the whole moon reads. */}
+          <Circle cx={moonCX} cy={moonCY} r={moonR} color="#24241C" />
+          <Group
+            transform={
+              isWaxing
+                ? []
+                : [
+                    { translateX: moonCX },
+                    { scaleX: -1 },
+                    { translateX: -moonCX },
+                  ]
+            }
+          >
+            <Path
+              path={litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction)}
+              color={Colors.moonlight}
             />
-            {/* Gradient scrim — only the bottom third of the image */}
-            <Rect x={0} y={imageBottom * 0.5} width={w} height={imageBottom * 0.5}>
-              <LinearGradient
-                start={vec(0, imageBottom * 0.5)}
-                end={vec(0, imageBottom)}
-                colors={["transparent", Colors.blueprint]}
-              />
-            </Rect>
+          </Group>
+        </Group>
+
+        {/* ---- Phase readout ---- */}
+        <SkiaText x={PAD} y={phaseY} text={moonPhaseName} font={headFont} color={Colors.ink} />
+        <SkiaText
+          x={w - PAD - monoFont.measureText(moonPhaseIllumination).width}
+          y={phaseY}
+          text={moonPhaseIllumination}
+          font={monoFont}
+          color={Colors.signal}
+        />
+        <Rect x={PAD} y={phaseRuleY} width={inner} height={1} color={Colors.rule} />
+
+        {/* ---- Recurrence table ---- */}
+        {shownReturns.length > 0 && (
+          <Group>
+            <SkiaText
+              x={PAD}
+              y={returnsLabelY}
+              text="WHEN THIS SKY COMES BACK"
+              font={monoSmall}
+              color={Colors.inkMuted}
+            />
+            {shownReturns.map((r, i) => {
+              const y = returnsStartY + i * returnRowH;
+              return (
+                <Group key={r.year}>
+                  <SkiaText
+                    x={PAD}
+                    y={y}
+                    text={String(r.year)}
+                    font={monoFont}
+                    color={Colors.signal}
+                  />
+                  <SkiaText
+                    x={PAD + 150}
+                    y={y}
+                    text={r.cycleLabel}
+                    font={bodyFont}
+                    color={Colors.ink}
+                  />
+                  <Rect
+                    x={PAD}
+                    y={y + 18}
+                    width={inner}
+                    height={1}
+                    color={Colors.rule}
+                  />
+                </Group>
+              );
+            })}
           </Group>
         )}
 
-        {/* No APOD fallback — subtle top strip */}
-        {!apodImage && (
-          <Rect x={0} y={0} width={w} height={imageBottom}>
-            <LinearGradient
-              start={vec(0, 0)}
-              end={vec(0, imageBottom)}
-              colors={[Colors.blueprintLight, Colors.blueprint]}
-            />
-          </Rect>
-        )}
-
-        {/* ---- App label (top-left, always above image) ---- */}
-        {monoSmall && (
-          <SkiaText
-            x={PAD}
-            y={72}
-            text="TRACE"
-            font={monoSmall}
-            color={Colors.starlight + "88"}
-          />
-        )}
-
-        {/* ---- Title block ---- */}
-        {titleFont && (
-          <SkiaText
-            x={PAD}
-            y={titleY}
-            text={milestone.title}
-            font={titleFont}
-            color={Colors.starlight}
-          />
-        )}
-        {monoFont && (
-          <SkiaText
-            x={PAD}
-            y={dateY}
-            text={formattedDate}
-            font={monoFont}
-            color={Colors.cyanotype}
-          />
-        )}
-
-        {/* ---- Divider ---- */}
-        <Rect
+        {/* ---- Foot ---- */}
+        <Rect x={PAD} y={footRuleY} width={inner} height={1} color={Colors.ink} />
+        <SkiaText
           x={PAD}
-          y={dateY + 32}
-          width={w - PAD * 2}
-          height={1}
-          color={Colors.cyanotype + "44"}
+          y={footY}
+          text="TRACE"
+          font={monoSmall}
+          color={Colors.inkMuted}
         />
-
-        {/* ---- Moon phase strip ---- */}
-        <SkiaMoonGlyph
-          cx={moonCX}
-          cy={moonCY}
-          r={moonGlyphR}
-          phaseFraction={moonPhaseFraction}
-          phaseIndex={moonPhaseIndex}
-        />
-        {sansSemiBold && (
-          <SkiaText
-            x={moonTextX}
-            y={moonCY - 8}
-            text={moonPhaseName}
-            font={sansSemiBold}
-            color={Colors.starlight}
-          />
-        )}
-        {monoSmall && (
-          <SkiaText
-            x={moonTextX}
-            y={moonCY + 26}
-            text={`${moonPhaseIllumination} illuminated`}
-            font={monoSmall}
-            color={Colors.cyanotype}
-          />
-        )}
-
-        {/* ---- Divider ---- */}
-        <Rect
-          x={PAD}
-          y={moonCY + moonGlyphR + 20}
-          width={w - PAD * 2}
-          height={1}
-          color={Colors.cyanotype + "33"}
-        />
-
-        {/* ---- Light-travel sentence ---- */}
-        {italicFont && (
-          <SkiaText
-            x={PAD}
-            y={sentenceY}
-            text={lightSentence}
-            font={italicFont}
-            color={Colors.starlight + "CC"}
-          />
-        )}
-
-        {/* ---- Watermark ---- */}
-        {monoSmall && (
-          <SkiaText
-            x={PAD}
-            y={watermarkY}
-            text="apod.nasa.gov · trace app"
-            font={monoSmall}
-            color={Colors.cyanotype + "66"}
-          />
-        )}
-        {apod?.copyright && monoSmall && (
-          <SkiaText
-            x={PAD}
-            y={watermarkY + 32}
-            text={`© ${apod.copyright}`}
-            font={monoSmall}
-            color={Colors.cyanotype + "55"}
-          />
-        )}
       </Group>
     </Canvas>
   );
 });
 
 export { ExportCardCanvas };
+export default ExportCardCanvas;
