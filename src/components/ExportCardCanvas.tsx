@@ -8,8 +8,9 @@ import {
   Group,
   Text as SkiaText,
   Path,
-  Skia,
   Circle,
+  Image as SkiaImage,
+  useImage,
 } from "@shopify/react-native-skia";
 import {
   Archivo_900Black,
@@ -22,7 +23,8 @@ import {
 } from "@expo-google-fonts/jetbrains-mono";
 import type { Milestone, MoonReturn } from "@/types";
 import { Colors } from "@/constants/theme";
-import { getMoonLimbRotation } from "@/lib/astronomy/brightLimb";
+import { getMoonTextureRotation } from "@/lib/astronomy/brightLimb";
+import { litMoonPath } from "@/components/moon/moonPath";
 
 export const CARD_SIZES = {
   story: { w: 1080, h: 1920 },
@@ -31,41 +33,8 @@ export const CARD_SIZES = {
 
 export type CardFormat = keyof typeof CARD_SIZES;
 
-/**
- * Builds the lit region of the moon as a closed path.
- *
- * The boundary is two arcs: the illuminated limb (a semicircle of radius r) and
- * the terminator (a semi-ellipse with horizontal semi-axis b = r|2f-1| and
- * vertical semi-axis r). At the quarters b = 0 and the terminator is a straight
- * line; at new/full b = r and it coincides with the limb.
- *
- * Constructed for a WAXING moon (lit on the right). Waning is the same shape
- * mirrored about the vertical centre line, which the caller applies as a
- * transform rather than duplicating the angle arithmetic.
- */
-function litMoonPath(cx: number, cy: number, r: number, phaseFraction: number) {
-  const b = r * Math.abs(2 * phaseFraction - 1);
-  const isGibbous = phaseFraction > 0.5;
-  const path = Skia.Path.Make();
+const MOON_ASSET = require("../../assets/moon_disc.png");
 
-  // Limb: top -> right -> bottom.
-  path.arcToOval(
-    { x: cx - r, y: cy - r, width: r * 2, height: r * 2 },
-    -90,
-    180,
-    true
-  );
-  // Terminator: bottom -> top. Through the LEFT extreme when gibbous (lit
-  // region is more than half), through the RIGHT extreme when crescent.
-  path.arcToOval(
-    { x: cx - b, y: cy - r, width: b * 2, height: r * 2 },
-    90,
-    isGibbous ? 180 : -180,
-    false
-  );
-  path.close();
-  return path;
-}
 
 interface ExportCardCanvasProps {
   milestone: Milestone;
@@ -153,9 +122,11 @@ const ExportCardCanvas = React.forwardRef<
   const footRuleY = h - PAD - 54;
   const footY = h - PAD - 12;
 
+  const moonImage = useImage(MOON_ASSET);
   const shownReturns = moonReturns.slice(0, isStory ? 3 : 2);
   const isWaxing = moonPhaseIndex <= 4;
-  const moonRotDeg = getMoonLimbRotation(brightLimbAngleDeg, isWaxing);
+  const path = litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction, isWaxing);
+  const moonRotDeg = getMoonTextureRotation(brightLimbAngleDeg, isWaxing);
   const moonRotRad = (moonRotDeg * Math.PI) / 180;
 
   return (
@@ -202,12 +173,37 @@ const ExportCardCanvas = React.forwardRef<
             { translateY: -moonCY },
           ]}
         >
-          {/* Unlit disc, a shade above the plate so the whole moon reads. */}
+          {/* Unlit base disc (earthshine ground) */}
           <Circle cx={moonCX} cy={moonCY} r={moonR} color={Colors.earthshine} />
-          <Path
-            path={litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction)}
-            color={Colors.moonlight}
-          />
+
+          {moonImage ? (
+            <>
+              {/* Faint earthshine texture on unlit disc */}
+              <Group clip={path} invertClip>
+                <SkiaImage
+                  image={moonImage}
+                  x={moonCX - moonR}
+                  y={moonCY - moonR}
+                  width={moonR * 2}
+                  height={moonR * 2}
+                  opacity={0.18}
+                />
+              </Group>
+              {/* Lit lunar surface with real photographic texture */}
+              <Group clip={path}>
+                <SkiaImage
+                  image={moonImage}
+                  x={moonCX - moonR}
+                  y={moonCY - moonR}
+                  width={moonR * 2}
+                  height={moonR * 2}
+                  opacity={1.0}
+                />
+              </Group>
+            </>
+          ) : (
+            <Path path={path} color={Colors.moonlight} />
+          )}
         </Group>
 
         {/* ---- Phase readout ---- */}

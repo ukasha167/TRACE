@@ -1,7 +1,16 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, StyleSheet } from "react-native";
+import {
+  Canvas,
+  Circle,
+  Group,
+  Image as SkiaImage,
+  Path,
+  useImage,
+} from "@shopify/react-native-skia";
 import { Colors, Radius } from "@/constants/theme";
-import { getMoonLimbRotation } from "@/lib/astronomy/brightLimb";
+import { getMoonTextureRotation } from "@/lib/astronomy/brightLimb";
+import { litMoonPath } from "@/components/moon/moonPath";
 
 interface MoonPhaseGlyphProps {
   phaseFraction: number; // 0.0–1.0 illuminated fraction
@@ -19,13 +28,24 @@ interface MoonPhaseGlyphProps {
   platePadding?: number;
 }
 
+// Statically required asset so it bundles reliably with Metro
+const MOON_ASSET = require("../../assets/moon_disc.png");
+
 /**
- * Moon phase glyph, drawn with plain Views.
+ * MOON PHASE GLYPH (§17.1)
  *
- * Base moon is constructed with its bright limb on the RIGHT (3 o'clock).
- * Rotation comes entirely from getMoonLimbRotation(), which reconciles the
- * astronomical zenith-angle datum with the screen coordinate frame and eliminates
- * the double-counting waxing/waning side flip (see brightLimb.ts).
+ * Renders the real lunar photograph (NASA LRO 397x397 orthographic near-side projection),
+ * lit by the exact 2-arc terminator geometry (circular limb + semi-elliptical terminator).
+ *
+ * Orientation and tilt:
+ * - Texture and path rotate together by getMoonTextureRotation().
+ *   This is geometrically correct to within the sub-solar latitude (under 1.6 degrees)
+ *   because the lunar equator inclination to the ecliptic is only 1.54°, meaning the
+ *   terminator runs almost exactly pole to pole in the lunar frame.
+ * - Lunar libration (±8 degrees) is negligible at screen scale and ignored.
+ * - The texture is NEVER mirrored (which would move Mare Crisium to the wrong limb).
+ *   Waxing/waning lit side is constructed directly in litMoonPath.
+ * - Falling back cleanly to vector geometry while the texture loads ensures zero flicker.
  */
 export function MoonPhaseGlyph({
   phaseFraction,
@@ -35,68 +55,72 @@ export function MoonPhaseGlyph({
   variant = "plate",
   platePadding = 10,
 }: MoonPhaseGlyphProps) {
+  const moonImage = useImage(MOON_ASSET);
+
   const r = size / 2;
   const isWaxing = phaseIndex <= 4;
-  const b = r * Math.abs(2 * phaseFraction - 1);
-  const isGibbous = phaseFraction > 0.5;
-  const showOval = b > 0.5;
 
-  const moon = (
-    <View style={[styles.base, { width: size, height: size, borderRadius: r }]}>
-      <View
-        style={[
-          styles.litHalf,
-          { width: r, height: size, right: 0 },
+  const path = useMemo(
+    () => litMoonPath(r, r, r, phaseFraction, isWaxing),
+    [r, phaseFraction, isWaxing]
+  );
+
+  const rotDeg = getMoonTextureRotation(brightLimbAngleDeg, isWaxing);
+  const rotRad = (rotDeg * Math.PI) / 180;
+
+  const canvas = (
+    <Canvas style={{ width: size, height: size }}>
+      <Group
+        transform={[
+          { translateX: r },
+          { translateY: r },
+          { rotate: rotRad },
+          { translateX: -r },
+          { translateY: -r },
         ]}
       >
-        <View
-          style={[
-            styles.litCircle,
-            {
-              width: size,
-              height: size,
-              borderRadius: r,
-              right: 0,
-            },
-          ]}
-        />
-      </View>
+        {/* Unlit base disc (earthshine ground) */}
+        <Circle cx={r} cy={r} r={r} color={Colors.earthshine} />
 
-      {showOval && (
-        <View
-          style={[
-            styles.terminator,
-            {
-              width: b * 2,
-              height: size,
-              borderRadius: b,
-              backgroundColor: isGibbous ? Colors.moonlight : Colors.plate,
-              left: r - b,
-            },
-          ]}
-        />
-      )}
-    </View>
+        {moonImage ? (
+          <>
+            {/* Faint earthshine texture on unlit disc */}
+            <Group clip={path} invertClip>
+              <SkiaImage
+                image={moonImage}
+                x={0}
+                y={0}
+                width={size}
+                height={size}
+                opacity={0.18}
+              />
+            </Group>
+            {/* Lit lunar surface with real photographic texture */}
+            <Group clip={path}>
+              <SkiaImage
+                image={moonImage}
+                x={0}
+                y={0}
+                width={size}
+                height={size}
+                opacity={1.0}
+              />
+            </Group>
+          </>
+        ) : (
+          /* Clean vector fallback while texture loads */
+          <Path path={path} color={Colors.moonlight} />
+        )}
+      </Group>
+    </Canvas>
   );
 
-  const rotation = getMoonLimbRotation(brightLimbAngleDeg, isWaxing);
-
-  const tilted = (
-    <View
-      style={{
-        width: size,
-        height: size,
-        transform: [{ rotate: `${rotation}deg` }],
-      }}
-    >
-      {moon}
-    </View>
-  );
-
-  if (variant === "bare") return tilted;
+  if (variant === "bare") return canvas;
 
   return (
-    <View style={[styles.plate, { padding: platePadding }]}>{tilted}</View>
+    <View style={[styles.plate, { padding: platePadding }]}>
+      {canvas}
+    </View>
   );
 }
 
@@ -106,12 +130,4 @@ const styles = StyleSheet.create({
     borderRadius: Radius.plate,
     alignSelf: "flex-start",
   },
-  base: {
-    backgroundColor: Colors.plate,
-    overflow: "hidden",
-    position: "relative",
-  },
-  litHalf: { position: "absolute", top: 0, overflow: "hidden" },
-  litCircle: { position: "absolute", top: 0, backgroundColor: Colors.moonlight },
-  terminator: { position: "absolute", top: 0 },
 });

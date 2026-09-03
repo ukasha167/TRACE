@@ -47,6 +47,7 @@
     "@types/node": "^26.4.0",
     "@types/react": "~19.2.2",
     "@types/suncalc": "^1.9.2",
+    "jpeg-js": "^0.4.4",
     "tsx": "^4.23.13",
     "typescript": "~6.0.3"
   },

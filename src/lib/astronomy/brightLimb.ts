@@ -90,3 +90,39 @@ export function getMoonLimbRotation(
   return normalizeAngleDeg(-brightLimbAngleDeg - 90);
 }
 
+/**
+ * Computes the clockwise rotation (degrees) to apply to the lunar body
+ * (texture and terminator path together).
+ *
+ * In the unrotated lunar body frame:
+ * - North is at the top (0°)
+ * - Waxing crescent is lit on the RIGHT (+90°, Mare Crisium side)
+ * - Waning crescent is lit on the LEFT (-90°, Oceanus Procellarum side)
+ *
+ * Rotating texture and terminator together by this angle is geometrically
+ * correct to within the sub-solar latitude (under 1.6 degrees), because the
+ * lunar equator's inclination to the ecliptic is only 1.54°, meaning the
+ * terminator always runs almost exactly from the lunar North Pole to the South
+ * Pole. Lunar libration (±8 degrees) is likewise negligible at phone scale
+ * and ignored.
+ *
+ * In the observer's sky, the bright limb points at angle psi = -brightLimbAngleDeg
+ * (clockwise from Zenith).
+ *
+ * Therefore:
+ * - Waxing:  rotation = psi - 90° = -brightLimbAngleDeg - 90°
+ * - Waning:  rotation = psi - (-90°) = -brightLimbAngleDeg + 90°
+ * - Null tilt (no location): rotation = 0° (standard upright almanac orientation, North up)
+ */
+export function getMoonTextureRotation(
+  brightLimbAngleDeg: number | null,
+  isWaxing: boolean = true
+): number {
+  if (brightLimbAngleDeg == null) {
+    return 0;
+  }
+  const psi = -brightLimbAngleDeg;
+  return normalizeAngleDeg(isWaxing ? psi - 90 : psi + 90);
+}
+
+
