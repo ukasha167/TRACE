@@ -1,7 +1,14 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Image } from "expo-image";
-import { Colors, Spacing, Type, FontFamily, FontSize } from "@/constants/theme";
+import {
+  Colors,
+  Spacing,
+  Type,
+  FontFamily,
+  FontSize,
+  Radius,
+} from "@/constants/theme";
 import { MoonPhaseGlyph } from "./MoonPhaseGlyph";
 import { formatIllumination, describePhase } from "@/lib/astronomy/moonPhase";
 import type { LedgerYear } from "@/lib/astronomy/lifeLedger";
@@ -19,8 +26,8 @@ interface LedgerRowProps {
  *
  * The moon is drawn at its real phase and, where a location is known, its real
  * tilt — so the column reads as a record of actual skies, not a strip of icons.
- * Return years carry a signal-red rule down their left edge, which is the only
- * place colour appears in the list.
+ * Return years carry a brass rule down their left edge, which is the only place
+ * colour appears in the list.
  *
  * Thumbnails are allowed to be absent: rows come from local computation and
  * paint instantly, while APOD images land later and must never hold a row back.
@@ -46,6 +53,7 @@ export function LedgerRow({ row, apod, isLast, onApodPress }: LedgerRowProps) {
         size={30}
         brightLimbAngleDeg={row.brightLimbAngleDeg}
         platePadding={7}
+        round
       />
 
       <View style={styles.info}>
@@ -94,7 +102,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   rowRule: { borderBottomWidth: 1, borderBottomColor: Colors.rule },
-  marker: { width: 3, alignSelf: "stretch", backgroundColor: "transparent" },
+  marker: {
+    width: 3,
+    alignSelf: "stretch",
+    borderRadius: Radius.pill,
+    backgroundColor: "transparent",
+  },
   markerReturn: { backgroundColor: Colors.signal },
 
   ageBlock: { width: 40 },
@@ -113,9 +126,9 @@ const styles = StyleSheet.create({
 
   info: { flex: 1 },
   phase: {
-    fontFamily: FontFamily.medium,
-    fontSize: FontSize.small,
-    lineHeight: 19,
+    fontFamily: FontFamily.serifMedium,
+    fontSize: FontSize.body,
+    lineHeight: 21,
     color: Colors.ink,
   },
   illum: {
@@ -126,13 +139,16 @@ const styles = StyleSheet.create({
   },
   returnTag: { ...Type.label, color: Colors.signal, marginTop: Spacing.xs },
 
-  thumb: { width: 44, height: 44, backgroundColor: Colors.plate },
+  thumb: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.plate,
+  },
   thumbEmpty: {
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: Colors.paperDim,
-    borderWidth: 1,
-    borderColor: Colors.rule,
   },
   thumbMark: {
     fontFamily: FontFamily.mono,
