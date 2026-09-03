@@ -667,19 +667,17 @@ Needs a public-domain moon texture (NASA/LRO imagery is public domain).
 
 Built `ImageViewerModal` with pinch-to-zoom (1x to 4x), pan, double-tap to zoom, pull-down to dismiss, and tap-to-toggle minimal chrome. Accessible from both `ApodCard` and every `LedgerRow` thumbnail. Uses `hdurl` on-demand with unmount guarantee so 40 ledger rows never hold more than one in memory.
 
-### 17.3 Sky render — remaining work
+### 17.3 Sky render — polish. DONE.
 
-- **Constellation figure artwork.** Only the stick-figure lines exist. The mythological figures overlaid faintly would be a large step up. Needs licensed/public-domain artwork and a projection onto the sphere.
-- **Label culling by angular distance from the view centre.** Everything in frame is currently labelled, so the edges crowd. Labels should fade or drop with distance from the centre of view.
-- **Galaxies and other deep-sky objects need real illustrations**, not the current uniform ellipse marker. A galaxy, a nebula and a globular cluster should not look identical.
-- **Too many faint background stars.** The magnitude limit opens up as you zoom, but at wide field the density crams the frame and makes labels hard to read. Needs a density budget, not just a magnitude cut.
-- **Labels are locked to the canvas axes.** `cv.drawText` draws axis-aligned, so when the device rolls the sky rotates but the text does not stay level to the viewer. Labels need to counter-rotate by the roll angle (available as `rollFromAxes`), or the text needs drawing in a rotated canvas layer.
+- **Label culling by angular distance from the view centre.** Star and DSO labels are culled outside the central 75% comfort cone of the field of view (`minLabelCos = cos((f/2) * 0.75)`), preventing crowding at screen margins. Labels near the right screen edge flip to the left rather than vanishing.
+- **Messier type differentiation.** DSOs render with distinct vector glyphs matching astronomical conventions: inclined dashed oval for galaxies, dotted ring for open clusters/asterisms, solid ring with dense nucleus core for globular clusters, ring with 4 external crosshair ticks for planetary nebulae/supernova remnants, and dashed box for diffuse nebulae.
+- **Roll counter-rotation for labels.** Labels read `rollFromAxes(axes)` and rotate by `-rollDeg` around the object position, ensuring text remains level with the horizon as the device rolls.
 
-### 17.4 Phases still unbuilt
+### 17.4 Phase H — Export + Today surface. DONE.
 
-**Phase H** (§15) — the export card at both sizes, and a Home surface showing tonight's sky so the app has a reason to be opened on an ordinary day. The export card renderer exists (`ExportCardCanvas`) but has not been visually verified at either output size.
+- **Tonight surface on Home.** Displays tonight's moon with real texture, illumination, and topocentric bright-limb tilt over current location. Recurrence callout triggers strictly on the milestone's calendar date anniversary in actual return years (+11, +19, +30, +38) from `moonReturn.ts`. Tap opens `/sky/tonight` synthesizing a pseudo-milestone on the fly without modifying persistent state.
+- **Export card verified at both sizes.** 1080x1920 (Story) and 1080x1080 (Square) render with full photographic lunar texture, responsive vertical rhythm (preventing recurrence row collision in square cards), and native C++ `image.encodeToBase64(ImageFormat.PNG, 100)` snapshotting.
 
-Also unbuilt: any commit history for this work, and an EAS build for distributing the APK.
 
 ---
 
