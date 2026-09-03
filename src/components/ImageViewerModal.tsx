@@ -248,8 +248,8 @@ export function ImageViewerModal({
             ]}
             pointerEvents="none"
           >
-            <ActivityIndicator size="small" color={Colors.signal} />
-            <Text style={styles.loaderText}>LOADING HI-RES</Text>
+            <ActivityIndicator size="small" color={Colors.signalOnPlate} />
+            <Text style={styles.loaderText}>Loading full size</Text>
           </View>
         )}
 
@@ -274,7 +274,7 @@ export function ImageViewerModal({
                   accessibilityRole="button"
                   accessibilityLabel="Close image viewer"
                 >
-                  <Text style={styles.closeText}>CLOSE</Text>
+                  <Text style={styles.closeText}>Close</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -334,23 +334,22 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   metaTitle: {
-    fontFamily: FontFamily.semibold,
-    fontSize: FontSize.body,
+    fontFamily: FontFamily.serifMedium,
+    fontSize: FontSize.lead,
     color: Colors.plateInk,
-    lineHeight: 20,
+    lineHeight: 24,
   },
   closeButton: {
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: Colors.plateMuted,
-    borderRadius: 2,
+    borderColor: Colors.plateRule,
   },
   closeText: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.label,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
     color: Colors.plateInk,
-    letterSpacing: Tracking.label,
   },
   footerOverlay: {
     position: "absolute",
@@ -375,17 +374,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.sm,
     backgroundColor: Colors.plate,
-    paddingVertical: Spacing.xs,
+    paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    borderRadius: Radius.plate,
+    borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: Colors.rule,
+    borderColor: Colors.plateRule,
   },
   loaderText: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.label,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
     color: Colors.plateInk,
-    letterSpacing: Tracking.label,
   },
 });
 
