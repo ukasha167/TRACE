@@ -7,26 +7,25 @@ import { formatIllumination } from "@/lib/astronomy/moonPhase";
 import type { MoonReturn } from "@/types";
 
 interface Props {
-  n: number;
   returns: MoonReturn[];
 }
 
 /**
- * WHEN THIS SKY COMES BACK — the app's core feature (spec §6.3).
+ * WHEN THIS SKY COMES BACK. The app's core feature (spec §6.3).
  *
  * The copy explains the mechanism on purpose. "The moon is full on your
  * birthday again" is a coincidence; "19 tropical years and 235 lunar months
  * differ by two hours, so it returns" is a schedule the reader is on. The
  * second is both truer and worth more.
  *
- * Rows are a timetable, not cards: mono figures, hairline separators, the year
- * set large on the left.
+ * Rows are a timetable: the year set large in mono on the left, the reason in
+ * words beside it, the figures right-aligned.
  */
 /**
  * Phrases a return year against TODAY.
  *
- * MoonReturn.direction is past/future relative to the MILESTONE, not to now —
- * a 2023 return on a 2004 birthday is "future" by that definition while being
+ * MoonReturn.direction is past/future relative to the MILESTONE, not to now.
+ * A 2023 return on a 2004 birthday is "future" by that definition while being
  * three years in the past for the reader. Using direction here produced
  * "in -3 years". Always derive this from the current year.
  */
@@ -38,7 +37,7 @@ function relativeToNow(year: number, thisYear: number): string {
   return delta < 0 ? `${n} ${unit} ago` : `in ${n} ${unit}`;
 }
 
-export function MoonReturnSection({ n, returns }: Props) {
+export function MoonReturnSection({ returns }: Props) {
   const thisYear = new Date().getFullYear();
   const { previous, next } = getNearestReturns(returns, thisYear);
   const featured = [previous, next].filter(Boolean) as MoonReturn[];
@@ -46,7 +45,7 @@ export function MoonReturnSection({ n, returns }: Props) {
 
   return (
     <View style={styles.section}>
-      <SectionHeader n={n} label="When this sky comes back" />
+      <SectionHeader label="When this sky comes back" />
 
       <Text style={styles.explainer}>
         19 tropical years and 235 lunar months differ by about two hours, so the
@@ -76,7 +75,7 @@ export function MoonReturnSection({ n, returns }: Props) {
 
       {rest.length > 0 && (
         <View style={styles.restBlock}>
-          <Text style={styles.restLabel}>ALSO RETURNS</Text>
+          <Text style={styles.restLabel}>Also returns</Text>
           <Text style={styles.restYears}>
             {rest.map((r) => r.year).join("   ")}
           </Text>
@@ -88,8 +87,9 @@ export function MoonReturnSection({ n, returns }: Props) {
 
 const styles = StyleSheet.create({
   section: { marginBottom: Spacing.xl },
-  explainer: { ...Type.bodyMuted, marginBottom: Spacing.md },
-  table: { borderTopWidth: 1, borderTopColor: Colors.ink },
+  explainer: { ...Type.bodyMuted, marginBottom: Spacing.lg },
+
+  table: { borderTopWidth: 1, borderTopColor: Colors.rule },
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -101,19 +101,19 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.monoMedium,
     fontSize: FontSize.heading,
     color: Colors.signal,
-    width: 74,
+    width: 70,
   },
   info: { flex: 1 },
   cycle: {
-    fontFamily: FontFamily.medium,
-    fontSize: FontSize.body,
+    fontFamily: FontFamily.serifMedium,
+    fontSize: FontSize.lead,
     color: Colors.ink,
   },
   when: { ...Type.small, marginTop: 2 },
   figures: { alignItems: "flex-end" },
   illum: {
     fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.body,
+    fontSize: FontSize.small,
     color: Colors.ink,
   },
   offset: {
@@ -122,6 +122,7 @@ const styles = StyleSheet.create({
     color: Colors.inkMuted,
     marginTop: 2,
   },
+
   restBlock: {
     marginTop: Spacing.md,
     paddingTop: Spacing.md,
