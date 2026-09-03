@@ -1,11 +1,17 @@
 import {
-  Archivo_300Light,
-  Archivo_400Regular,
-  Archivo_500Medium,
-  Archivo_600SemiBold,
-  Archivo_700Bold,
-  Archivo_900Black,
-} from "@expo-google-fonts/archivo";
+  Figtree_300Light,
+  Figtree_400Regular,
+  Figtree_500Medium,
+  Figtree_600SemiBold,
+  Figtree_700Bold,
+  Figtree_800ExtraBold,
+} from "@expo-google-fonts/figtree";
+import {
+  Newsreader_300Light,
+  Newsreader_400Regular,
+  Newsreader_500Medium,
+  Newsreader_600SemiBold,
+} from "@expo-google-fonts/newsreader";
 import {
   JetBrainsMono_400Regular,
   JetBrainsMono_500Medium,
@@ -16,30 +22,36 @@ import { useFonts } from "expo-font";
 import { useEffect } from "react";
 import { StatusBar } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { Colors, FontFamily, FontSize, Tracking } from "@/constants/theme";
+import { Colors, FontFamily, FontSize } from "@/constants/theme";
 
 SplashScreen.preventAutoHideAsync();
 
 /**
- * Headers are near-silent: paper ground, a small uppercase mono label, a
- * hairline rule underneath. The page's own display type carries the title, so
- * the chrome shouldn't compete with it.
+ * Headers stay near-silent: paper ground, the screen's name set small in the
+ * serif, no rule beneath. The page's own type carries the title, so the chrome
+ * should not compete with it.
+ *
+ * Titles are sentence case. The old build set them as MONO CAPS, which is
+ * exactly the voice this direction moves away from.
  */
 const HEADER_TITLE = {
-  fontFamily: FontFamily.monoMedium,
-  fontSize: FontSize.label,
-  letterSpacing: Tracking.label,
+  fontFamily: FontFamily.serifMedium,
+  fontSize: FontSize.lead,
   color: Colors.ink,
 } as const;
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    [FontFamily.thin]: Archivo_300Light,
-    [FontFamily.regular]: Archivo_400Regular,
-    [FontFamily.medium]: Archivo_500Medium,
-    [FontFamily.semibold]: Archivo_600SemiBold,
-    [FontFamily.bold]: Archivo_700Bold,
-    [FontFamily.black]: Archivo_900Black,
+    [FontFamily.serifLight]: Newsreader_300Light,
+    [FontFamily.serif]: Newsreader_400Regular,
+    [FontFamily.serifMedium]: Newsreader_500Medium,
+    [FontFamily.serifSemibold]: Newsreader_600SemiBold,
+    [FontFamily.thin]: Figtree_300Light,
+    [FontFamily.regular]: Figtree_400Regular,
+    [FontFamily.medium]: Figtree_500Medium,
+    [FontFamily.semibold]: Figtree_600SemiBold,
+    [FontFamily.bold]: Figtree_700Bold,
+    [FontFamily.black]: Figtree_800ExtraBold,
     [FontFamily.mono]: JetBrainsMono_400Regular,
     [FontFamily.monoMedium]: JetBrainsMono_500Medium,
   });
@@ -70,15 +82,15 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen
           name="settings"
-          options={{ title: "SETTINGS", presentation: "modal" }}
+          options={{ title: "Settings", presentation: "modal" }}
         />
         <Stack.Screen
           name="milestone/new"
-          options={{ title: "NEW RECORD", presentation: "modal" }}
+          options={{ title: "New record", presentation: "modal" }}
         />
         <Stack.Screen
           name="milestone/edit/[id]"
-          options={{ title: "EDIT RECORD", presentation: "modal" }}
+          options={{ title: "Edit record", presentation: "modal" }}
         />
         <Stack.Screen name="milestone/[id]" options={{ title: "" }} />
         <Stack.Screen name="ledger/[id]" options={{ title: "" }} />
@@ -88,7 +100,7 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="export/[id]"
-          options={{ title: "EXPORT", presentation: "modal" }}
+          options={{ title: "Export", presentation: "modal" }}
         />
       </Stack>
     </GestureHandlerRootView>
