@@ -19,7 +19,7 @@ export default function NewMilestoneScreen() {
 
   return (
     <MilestoneForm
-      submitLabel="SAVE RECORD"
+      submitLabel="Save record"
       onSubmit={handleSubmit}
       onCancel={() => router.back()}
     />
