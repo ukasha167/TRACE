@@ -40,8 +40,53 @@ export function getBrightLimbAngle(
   // Already in degrees — see UNITS note above. Do not add a Math.PI conversion.
   const zenithAngleDeg = illumination.angle - moonPosition.parallacticAngle;
 
-  // Normalize to (-180, 180] using JS-safe positive modulo
-  // (JS % can return negative values for negative operands)
-  const normalized = ((zenithAngleDeg % 360) + 360) % 360;
+  return normalizeAngleDeg(zenithAngleDeg);
+}
+
+/**
+ * Normalizes an angle in degrees into (-180, 180].
+ */
+export function normalizeAngleDeg(deg: number): number {
+  const normalized = ((deg % 360) + 360) % 360;
   return normalized > 180 ? normalized - 360 : normalized;
 }
+
+/**
+ * Computes the clockwise rotation (degrees) to apply to a base moon glyph
+ * drawn with its bright limb on the RIGHT (3 o'clock / East / +90°).
+ *
+ * Coordinate / rotation derivation:
+ * 1. Rendering transforms (`transform: [{ rotate: ... }]`, Skia canvas `rotate`)
+ *    rotate CLOCKWISE around the center, where positive angle turns from top towards right.
+ * 2. In astronomy, `getBrightLimbAngle` measures position angle from Zenith (UP = 0°)
+ *    with positive being counter-clockwise (Eastward).
+ *    Therefore, the clockwise on-sky angle from Zenith is:
+ *      psi = -brightLimbAngleDeg
+ *    (Up = 0°, Right = +90°, Down = 180°, Left = -90°).
+ * 3. The base glyph has its bright limb oriented to the RIGHT (+90° from Zenith).
+ *    To rotate it so that the bright limb points at angle psi:
+ *      rotationDeg = psi - 90° = -brightLimbAngleDeg - 90°
+ *
+ * Physical cases:
+ * - 51°N First Quarter on meridian: brightLimbAngleDeg ≈ -101° -> rotation ≈ +11°,
+ *   keeping the lit side on the RIGHT with a near-vertical terminator.
+ * - Equator young crescent after sunset: brightLimbAngleDeg ≈ +152° -> rotation ≈ +118°,
+ *   turning the bright limb DOWN to form a "smile" crescent lit from below.
+ * - 51°N Waning Moon in morning: brightLimbAngleDeg ≈ +96° -> rotation ≈ 174°,
+ *   turning the bright limb to the LEFT with a near-vertical terminator.
+ * - Null tilt (no location): falls back to 0° (waxing, right-lit) or 180° (waning, left-lit).
+ *
+ * Notice: When `brightLimbAngleDeg` is provided, `isWaxing` is NEVER used to flip
+ * the shape, because `brightLimbAngleDeg` already carries whether the Sun is to the
+ * right or left of the Moon.
+ */
+export function getMoonLimbRotation(
+  brightLimbAngleDeg: number | null,
+  isWaxing: boolean = true
+): number {
+  if (brightLimbAngleDeg == null) {
+    return isWaxing ? 0 : 180;
+  }
+  return normalizeAngleDeg(-brightLimbAngleDeg - 90);
+}
+

@@ -38,6 +38,8 @@ export const Colors = {
   plateMuted: "#8A887E",
   /** The moon itself, drawn on a plate. */
   moonlight: "#F7F3E4",
+  /** Unlit portion of the moon disc (earthshine), a shade above the plate ground. */
+  earthshine: "#24241C",
 
   /**
    * The single accent. Signal red — the classic Swiss accent, and native to the

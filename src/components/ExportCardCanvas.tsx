@@ -22,6 +22,7 @@ import {
 } from "@expo-google-fonts/jetbrains-mono";
 import type { Milestone, MoonReturn } from "@/types";
 import { Colors } from "@/constants/theme";
+import { getMoonLimbRotation } from "@/lib/astronomy/brightLimb";
 
 export const CARD_SIZES = {
   story: { w: 1080, h: 1920 },
@@ -154,6 +155,8 @@ const ExportCardCanvas = React.forwardRef<
 
   const shownReturns = moonReturns.slice(0, isStory ? 3 : 2);
   const isWaxing = moonPhaseIndex <= 4;
+  const moonRotDeg = getMoonLimbRotation(brightLimbAngleDeg, isWaxing);
+  const moonRotRad = (moonRotDeg * Math.PI) / 180;
 
   return (
     <Canvas ref={ref as any} style={{ width: w * scale, height: h * scale }}>
@@ -194,29 +197,17 @@ const ExportCardCanvas = React.forwardRef<
           transform={[
             { translateX: moonCX },
             { translateY: moonCY },
-            { rotate: ((brightLimbAngleDeg ?? 0) * Math.PI) / 180 },
+            { rotate: moonRotRad },
             { translateX: -moonCX },
             { translateY: -moonCY },
           ]}
         >
           {/* Unlit disc, a shade above the plate so the whole moon reads. */}
-          <Circle cx={moonCX} cy={moonCY} r={moonR} color="#24241C" />
-          <Group
-            transform={
-              isWaxing
-                ? []
-                : [
-                    { translateX: moonCX },
-                    { scaleX: -1 },
-                    { translateX: -moonCX },
-                  ]
-            }
-          >
-            <Path
-              path={litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction)}
-              color={Colors.moonlight}
-            />
-          </Group>
+          <Circle cx={moonCX} cy={moonCY} r={moonR} color={Colors.earthshine} />
+          <Path
+            path={litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction)}
+            color={Colors.moonlight}
+          />
         </Group>
 
         {/* ---- Phase readout ---- */}
