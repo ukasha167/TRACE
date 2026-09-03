@@ -9,6 +9,7 @@ import {
 import { Image } from "expo-image";
 import { Colors, Spacing, Type, FontFamily, FontSize } from "@/constants/theme";
 import { SectionHeader } from "./SectionHeader";
+import { ImageViewerModal } from "@/components/ImageViewerModal";
 import type { ApodCacheEntry } from "@/types";
 import type { ApodFetchError } from "@/lib/apod/apodClient";
 
@@ -59,6 +60,7 @@ const ERROR_COPY: Record<
 export function ApodCard({ n, status, data, error, onRetry }: Props) {
   // Non-photographic days are collapsed by default — see renderBody().
   const [revealed, setRevealed] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
 
   return (
     <View style={styles.section}>
@@ -148,13 +150,20 @@ export function ApodCard({ n, status, data, error, onRetry }: Props) {
 
     return (
       <View>
-        <Image
-          source={{ uri: data.url }}
-          style={styles.image}
-          contentFit="cover"
-          transition={300}
-          accessibilityLabel={data.title}
-        />
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => setViewerVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open full screen image: ${data.title}`}
+        >
+          <Image
+            source={{ uri: data.url }}
+            style={styles.image}
+            contentFit="cover"
+            transition={300}
+            accessibilityLabel={data.title}
+          />
+        </TouchableOpacity>
         <View style={styles.credit}>
           <Text style={styles.title}>{data.title}</Text>
           {data.copyright && (
@@ -162,6 +171,16 @@ export function ApodCard({ n, status, data, error, onRetry }: Props) {
           )}
         </View>
         <Text style={styles.explanation}>{data.explanation}</Text>
+
+        <ImageViewerModal
+          visible={viewerVisible}
+          onClose={() => setViewerVisible(false)}
+          imageUrl={data.url}
+          hdUrl={data.hdurl}
+          title={data.title}
+          date={data.date}
+          copyright={data.copyright}
+        />
       </View>
     );
   }

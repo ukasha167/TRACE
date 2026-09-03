@@ -354,7 +354,7 @@ GET https://api.nasa.gov/planetary/apod?date=YYYY-MM-DD&api_key=KEY
 
 ### 8.2 Mapping
 
-Map `snake_case` response fields into `ApodCacheEntry` at the fetch boundary; nothing downstream sees a raw response. `hdurl` can be multi-thousand-pixel — use `url` everywhere in-app, and touch `hdurl` only at the moment of rendering the export card, and only if present.
+Map `snake_case` response fields into `ApodCacheEntry` at the fetch boundary; nothing downstream sees a raw response. `hdurl` can be multi-thousand-pixel — use `url` for standard in-app surfaces, thumbnails, and ledger rows. `hdurl` is permitted only for rendering the export card and on-demand inside the single active full-screen pinch-zoom viewer (`ImageViewerModal`), where 4x zoom provides an honest use for full resolution. The modal unmounts upon dismissal, guaranteeing a 40-row ledger never holds more than one high-resolution image in memory at any time.
 
 ### 8.3 Kind classification — and the hero policy
 
@@ -663,9 +663,9 @@ Replaced the 3-View ellipse approximation in `MoonPhaseGlyph.tsx` and the flat c
 
 Needs a public-domain moon texture (NASA/LRO imagery is public domain).
 
-### 17.2 APOD images should open full screen
+### 17.2 APOD images should open full screen. DONE.
 
-The Astronomy Picture of the Day is a photograph and currently renders only as a bounded card. Tapping it should open a full-screen viewer with pinch-zoom — from the detail screen's `ApodCard` and from every row of the life ledger. This is what the images are for.
+Built `ImageViewerModal` with pinch-to-zoom (1x to 4x), pan, double-tap to zoom, pull-down to dismiss, and tap-to-toggle minimal chrome. Accessible from both `ApodCard` and every `LedgerRow` thumbnail. Uses `hdurl` on-demand with unmount guarantee so 40 ledger rows never hold more than one in memory.
 
 ### 17.3 Sky render — remaining work
 

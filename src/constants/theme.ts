@@ -40,6 +40,8 @@ export const Colors = {
   moonlight: "#F7F3E4",
   /** Unlit portion of the moon disc (earthshine), a shade above the plate ground. */
   earthshine: "#24241C",
+  /** Pitch black ground — for the night sky render and full-screen photography viewer. */
+  space: "#000000",
 
   /**
    * The single accent. Signal red — the classic Swiss accent, and native to the
