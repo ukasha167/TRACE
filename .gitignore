@@ -45,3 +45,5 @@ example
 # Local secrets — NASA API key
 .env
 .env.local
+.claude/
+CLAUDE.md
