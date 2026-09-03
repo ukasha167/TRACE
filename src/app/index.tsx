@@ -1,28 +1,49 @@
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
-import { router, type Href } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
-  Colors,
-  Spacing,
-  Type,
-  FontFamily,
-  FontSize,
-  Tracking,
-} from "@/constants/theme";
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  StatusBar,
+  Platform,
+  type LayoutChangeEvent,
+} from "react-native";
+import { router, useFocusEffect, type Href } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, {
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useAnimatedReaction,
+  useSharedValue,
+  interpolate,
+  runOnJS,
+  Extrapolation,
+} from "react-native-reanimated";
+import { Colors, Spacing, Type, FontFamily, FontSize, Radius } from "@/constants/theme";
 import { useMilestonesStore } from "@/store/useMilestonesStore";
 import { MilestoneListRow } from "@/components/MilestoneListRow";
-import { TonightCard } from "@/components/TonightCard";
+import { TonightHero } from "@/components/TonightHero";
+import { Arrive } from "@/components/Arrive";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const route = (path: string) => path as Href;
 
 /**
- * HOME — the record ledger.
+ * HOME. The dark hero, then the record ledger on paper.
  *
- * Swiss masthead: the wordmark set large, a heavy rule beneath it, then a mono
- * index line. Rows are separated by hairlines rather than boxed into cards —
- * the rule IS the structure, which is the whole point of the style.
+ * The page opens on tonight's sky because the app is about now as much as then;
+ * the records underneath are what makes now mean something. The hero bleeds to
+ * both screen edges and runs under the status bar, so the paper below reads as
+ * a page tucked beneath a plate rather than as a second card.
+ *
+ * THE SCRIM. Because the hero scrolls, its kicker line would otherwise slide up
+ * behind the clock and collide with it. A fixed strip the height of the top
+ * inset sits above everything: plate-coloured while any part of the hero is
+ * behind it, fading to paper once the list has taken over. The status bar
+ * glyphs flip with it, so the clock stays legible against whatever it sits on.
+ * This is the one piece of scroll-linked motion in the app.
+ *
+ * Rows arrive staggered down the page. Nothing else on this screen moves.
  */
 export default function HomeScreen() {
   const milestones = useMilestonesStore((s) => s.milestones);
@@ -30,144 +51,204 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const isEmpty = milestones.length === 0;
 
+  const scrollY = useSharedValue(0);
+  const [heroHeight, setHeroHeight] = useState(0);
+
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
+
+  const onHeroLayout = useCallback((e: LayoutChangeEvent) => {
+    setHeroHeight(e.nativeEvent.layout.height);
+  }, []);
+
+  // The hero's bottom edge reaches the scrim once everything but the inset
+  // itself has scrolled past.
+  const crossover = Math.max(1, heroHeight - insets.top);
+
+  const scrimStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollY.value,
+      [crossover - 24, crossover],
+      [1, 0],
+      Extrapolation.CLAMP
+    ),
+  }));
+
+  const setBarLight = useCallback((light: boolean) => {
+    StatusBar.setBarStyle(light ? "light-content" : "dark-content", true);
+    if (Platform.OS === "android") {
+      StatusBar.setBackgroundColor(light ? Colors.plate : Colors.paper, true);
+    }
+  }, []);
+
+  useAnimatedReaction(
+    () => scrollY.value < crossover - 12,
+    (overPlate, previous) => {
+      if (previous !== null && overPlate !== previous) {
+        runOnJS(setBarLight)(overPlate);
+      }
+    },
+    [crossover]
+  );
+
+  // Home is the only screen whose top is a dark plate. Setting the bar style on
+  // focus rather than at mount matters: Home stays mounted underneath every
+  // pushed screen, so a plain <StatusBar> here would leave white glyphs sitting
+  // on the paper screens above it.
+  useFocusEffect(
+    useCallback(() => {
+      setBarLight(scrollY.value < crossover - 12);
+      return () => {
+        StatusBar.setBarStyle("dark-content", true);
+        if (Platform.OS === "android") {
+          StatusBar.setBackgroundColor(Colors.paper, true);
+        }
+      };
+    }, [setBarLight, crossover, scrollY])
+  );
+
   return (
     <View style={styles.root}>
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + Spacing.lg },
-        ]}
+      <Animated.ScrollView
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
       >
-        <View style={styles.masthead}>
-          <Text style={styles.wordmark}>TRACE</Text>
-          <View style={styles.heavyRule} />
-          <View style={styles.mastheadMeta}>
-            <Text style={styles.metaLabel}>A RECORD OF SKIES</Text>
-            <Text style={styles.metaCount}>
-              {String(milestones.length).padStart(2, "0")}
-            </Text>
-          </View>
+        <View onLayout={onHeroLayout}>
+          <TonightHero
+            milestones={milestones}
+            location={location}
+            topInset={insets.top}
+          />
         </View>
 
-        <TonightCard milestones={milestones} location={location} />
+        <View style={styles.page}>
+          {isEmpty ? (
+            <Arrive delay={200}>
+              <Text style={styles.emptyHeadline}>Nothing recorded yet.</Text>
+              <Text style={styles.emptyBody}>
+                Add a date that matters and TRACE works out the moon that hung
+                over it, how uncommon that sky was, and the years it comes back.
+              </Text>
+            </Arrive>
+          ) : (
+            <>
+              <Arrive delay={160}>
+                <View style={styles.listHead}>
+                  <Text style={styles.listLabel}>Your skies</Text>
+                  <Text style={styles.listCount}>{milestones.length}</Text>
+                </View>
+              </Arrive>
 
-        {isEmpty ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyHeadline}>Nothing recorded yet.</Text>
-            <Text style={styles.emptyBody}>
-              Add a date that matters and TRACE works out the moon that hung over
-              it, how uncommon that sky was, and the years it comes back.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.list}>
-            {milestones.map((milestone, index) => (
-              <MilestoneListRow
-                key={milestone.id}
-                milestone={milestone}
-                index={index}
-                isLast={index === milestones.length - 1}
-              />
-            ))}
-          </View>
-        )}
+              {milestones.map((milestone, index) => (
+                <Arrive key={milestone.id} index={index} delay={220}>
+                  <MilestoneListRow
+                    milestone={milestone}
+                    isLast={index === milestones.length - 1}
+                  />
+                </Arrive>
+              ))}
+            </>
+          )}
 
-        <View style={styles.utility}>
-          <TouchableOpacity
+          <Pressable
+            style={styles.settingsLink}
             accessibilityRole="button"
             onPress={() => router.push(route("/settings"))}
           >
-            <Text style={styles.utilityLink}>SETTINGS</Text>
-          </TouchableOpacity>
+            <Text style={styles.settingsText}>Settings</Text>
+          </Pressable>
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
-      <TouchableOpacity
-        style={[styles.newBar, { paddingBottom: insets.bottom || Spacing.md }]}
-        accessibilityRole="button"
-        accessibilityLabel="Add a new record"
-        onPress={() => router.push(route("/milestone/new"))}
+      {/* Status-bar scrim: paper underneath, plate on top while the hero sits
+          behind it. Never intercepts touches. */}
+      <View
+        style={[styles.scrim, { height: insets.top }]}
+        pointerEvents="none"
+        accessibilityElementsHidden
       >
-        <Text style={styles.newBarText}>NEW RECORD</Text>
-        <Text style={styles.newBarPlus}>+</Text>
-      </TouchableOpacity>
+        <Animated.View
+          style={[StyleSheet.absoluteFill, styles.scrimPlate, scrimStyle]}
+        />
+      </View>
+
+      <View style={[styles.addWrap, { paddingBottom: insets.bottom || Spacing.md }]}>
+        <Pressable
+          style={({ pressed }) => [styles.addButton, pressed && styles.addPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Add a new record"
+          onPress={() => router.push(route("/milestone/new"))}
+        >
+          <Text style={styles.addText}>Add a date</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.paper },
-  content: {
-    paddingHorizontal: Spacing.page,
-    paddingBottom: Spacing.xxl,
-  },
+  // The hero is flush to the top and sides; only the paper below gets margins.
+  content: { paddingBottom: Spacing.xxl + Spacing.xl },
+  page: { paddingHorizontal: Spacing.page },
 
-  masthead: { marginBottom: Spacing.xl },
-  wordmark: {
-    fontFamily: FontFamily.black,
-    fontSize: FontSize.mega,
-    letterSpacing: -3,
-    lineHeight: 72,
-    color: Colors.ink,
+  scrim: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.paper,
   },
-  heavyRule: { height: 3, backgroundColor: Colors.ink, marginTop: Spacing.sm },
-  mastheadMeta: {
+  scrimPlate: { backgroundColor: Colors.plate },
+
+  listHead: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "baseline",
-    marginTop: Spacing.sm,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.sm,
   },
-  metaLabel: { ...Type.label },
-  metaCount: {
-    fontFamily: FontFamily.monoMedium,
+  listLabel: { ...Type.label },
+  listCount: {
+    fontFamily: FontFamily.mono,
     fontSize: FontSize.label,
-    letterSpacing: Tracking.label,
-    color: Colors.signal,
-  },
-
-  list: { borderTopWidth: 1, borderTopColor: Colors.rule },
-
-  empty: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.rule,
-    paddingTop: Spacing.lg,
-  },
-  emptyHeadline: { ...Type.title },
-  emptyBody: { ...Type.bodyMuted, marginTop: Spacing.md, maxWidth: 380 },
-
-  utility: {
-    flexDirection: "row",
-    gap: Spacing.lg,
-    marginTop: Spacing.xl,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: Colors.rule,
-  },
-  utilityLink: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.label,
-    letterSpacing: Tracking.label,
     color: Colors.inkMuted,
   },
 
-  newBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: Colors.ink,
-    paddingHorizontal: Spacing.page,
-    paddingTop: Spacing.md,
-  },
-  newBarText: {
-    fontFamily: FontFamily.monoMedium,
+  emptyHeadline: { ...Type.title, marginTop: Spacing.xl },
+  emptyBody: { ...Type.bodyMuted, marginTop: Spacing.md, maxWidth: 380 },
+
+  settingsLink: { alignSelf: "flex-start", paddingVertical: Spacing.lg },
+  settingsText: {
+    fontFamily: FontFamily.medium,
     fontSize: FontSize.small,
-    letterSpacing: Tracking.label,
-    color: Colors.paper,
+    color: Colors.inkMuted,
   },
-  newBarPlus: {
-    fontFamily: FontFamily.regular,
-    fontSize: 22,
-    color: Colors.signal,
+
+  // A pill floating over the page rather than an ink bar welded to the bottom.
+  // The bar read as a toolbar; the record list is not a tool.
+  addWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: Spacing.page,
+    paddingTop: Spacing.sm,
+    backgroundColor: Colors.paper,
+  },
+  addButton: {
+    backgroundColor: Colors.ink,
+    borderRadius: Radius.pill,
+    paddingVertical: Spacing.md,
+    alignItems: "center",
+  },
+  addPressed: { opacity: 0.8 },
+  addText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: FontSize.body,
+    color: Colors.paper,
   },
 });
