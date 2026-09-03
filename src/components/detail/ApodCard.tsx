@@ -7,7 +7,14 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
-import { Colors, Spacing, Type, FontFamily, FontSize } from "@/constants/theme";
+import {
+  Colors,
+  Spacing,
+  Type,
+  FontFamily,
+  FontSize,
+  Radius,
+} from "@/constants/theme";
 import { SectionHeader } from "./SectionHeader";
 import { ImageViewerModal } from "@/components/ImageViewerModal";
 import type { ApodCacheEntry } from "@/types";
@@ -28,7 +35,6 @@ import type { ApodFetchError } from "@/lib/apod/apodClient";
  */
 
 interface Props {
-  n: number;
   status: "idle" | "loading" | "success" | "video" | "error";
   data: ApodCacheEntry | null;
   error: ApodFetchError | null;
@@ -57,17 +63,17 @@ const ERROR_COPY: Record<
   },
 };
 
-export function ApodCard({ n, status, data, error, onRetry }: Props) {
+export function ApodCard({ status, data, error, onRetry }: Props) {
   // Non-photographic days are collapsed by default — see renderBody().
   const [revealed, setRevealed] = useState(false);
   const [viewerVisible, setViewerVisible] = useState(false);
 
   return (
     <View style={styles.section}>
-      <SectionHeader n={n} label="What the world was looking at" />
+      <SectionHeader label="What the world was looking at" />
       <Text style={styles.explainer}>
-        NASA's Astronomy Picture of the Day — the image NASA featured on this
-        date, not one taken on it.
+        NASA's Astronomy Picture of the Day. This is the image NASA featured
+        on this date, not one taken on it.
       </Text>
       {renderBody()}
     </View>
@@ -96,7 +102,7 @@ export function ApodCard({ n, status, data, error, onRetry }: Props) {
               accessibilityRole="button"
               accessibilityLabel="Retry loading the NASA image"
             >
-              <Text style={styles.retryText}>RETRY</Text>
+              <Text style={styles.retryText}>Retry</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -111,7 +117,7 @@ export function ApodCard({ n, status, data, error, onRetry }: Props) {
 
     if (nonPhoto) {
       const isDiagram = data.kind === "illustrative";
-      const tag = isDiagram ? "DIAGRAM — NOT A PHOTOGRAPH" : "VIDEO";
+      const tag = isDiagram ? "A diagram, not a photograph" : "A video";
 
       // Collapsed by default. On these days NASA did not publish a picture of
       // the sky, so there is nothing to look at — the entry is a note, and a
@@ -140,7 +146,7 @@ export function ApodCard({ n, status, data, error, onRetry }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="Show NASA's note for this date"
               >
-                <Text style={styles.revealText}>SHOW NASA&apos;S NOTE</Text>
+                <Text style={styles.revealText}>Show NASA&apos;s note</Text>
               </TouchableOpacity>
             </>
           )}
@@ -193,6 +199,7 @@ const styles = StyleSheet.create({
     width: "100%",
     aspectRatio: 4 / 3,
     backgroundColor: Colors.plate,
+    borderRadius: Radius.plate,
   },
   credit: {
     paddingTop: Spacing.sm,
@@ -201,10 +208,9 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   title: {
-    fontFamily: FontFamily.semibold,
+    fontFamily: FontFamily.serifMedium,
     fontSize: FontSize.lead,
-    letterSpacing: -0.2,
-    lineHeight: 24,
+    lineHeight: 26,
     color: Colors.ink,
   },
   copyright: {
@@ -215,42 +221,42 @@ const styles = StyleSheet.create({
   },
   explanation: { ...Type.bodyMuted, marginTop: Spacing.md },
   notice: {
-    borderWidth: 1,
-    borderColor: Colors.rule,
+    backgroundColor: Colors.paperDim,
+    borderRadius: Radius.plate,
     padding: Spacing.md,
     gap: Spacing.sm,
     alignItems: "flex-start",
   },
   kindTag: { ...Type.label, color: Colors.signal },
   noticeTitle: {
-    fontFamily: FontFamily.semibold,
-    fontSize: FontSize.body,
+    fontFamily: FontFamily.serifMedium,
+    fontSize: FontSize.lead,
     color: Colors.ink,
   },
   noticeBody: { ...Type.small },
   reveal: {
     marginTop: Spacing.xs,
     paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: Colors.ink,
+    borderColor: Colors.rule,
   },
   revealText: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.label,
-    letterSpacing: 1.4,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
     color: Colors.ink,
   },
   retry: {
     marginTop: Spacing.xs,
     paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.ink,
   },
   retryText: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.label,
-    letterSpacing: 1.4,
+    fontFamily: FontFamily.semibold,
+    fontSize: FontSize.small,
     color: Colors.paper,
   },
 });
