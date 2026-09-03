@@ -19,7 +19,15 @@ import { useSharedValue } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors, Spacing, FontFamily, FontSize, Tracking } from "@/constants/theme";
+import {
+  Colors,
+  Spacing,
+  FontFamily,
+  FontSize,
+  Tracking,
+  Radius,
+  SkyColors,
+} from "@/constants/theme";
 import { useMilestonesStore } from "@/store/useMilestonesStore";
 import {
   buildSkySphere,
@@ -195,23 +203,23 @@ export default function ImmersiveSkyScreen() {
       return p;
     };
     // Dimmed hard: this is scaffolding you should feel rather than read.
-    const gridPaint = mk("#7FB0D0", 0.07, 0.5);
-    const figurePaint = mk("#7FB0D0", 0.16, 0.6);
-    const horizonPaint = mk("#C9C4B8", 0.32, 1.0);
-    const planetPaint = mk(Colors.signal, 1);
+    const gridPaint = mk(SkyColors.grid, 0.07, 0.5);
+    const figurePaint = mk(SkyColors.figure, 0.16, 0.6);
+    const horizonPaint = mk(SkyColors.horizon, 0.32, 1.0);
+    const planetPaint = mk(Colors.signalOnPlate, 1);
     const planetGlow = Skia.Paint();
-    planetGlow.setColor(Skia.Color(Colors.signal));
+    planetGlow.setColor(Skia.Color(Colors.signalOnPlate));
     planetGlow.setAlphaf(0.4);
     planetGlow.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, 5, true));
-    const dsoPaint = mk("#9BE0C8", 0.75, 1);
-    const dsoFill = mk("#9BE0C8", 0.85);
-    const dsoDashedPaint = mk("#9BE0C8", 0.75, 1);
+    const dsoPaint = mk(SkyColors.deepSky, 0.75, 1);
+    const dsoFill = mk(SkyColors.deepSky, 0.85);
+    const dsoDashedPaint = mk(SkyColors.deepSky, 0.75, 1);
     dsoDashedPaint.setPathEffect(Skia.PathEffect.MakeDash([3.5, 2.5], 0));
-    const dsoDottedPaint = mk("#9BE0C8", 0.75, 1);
+    const dsoDottedPaint = mk(SkyColors.deepSky, 0.75, 1);
     dsoDottedPaint.setPathEffect(Skia.PathEffect.MakeDash([1.5, 2.5], 0));
-    const labelPaint = mk("#93A7B4", 0.85);
-    const labelAccent = mk(Colors.signal, 0.95);
-    const dsoLabel = mk("#9BE0C8", 0.8);
+    const labelPaint = mk(SkyColors.label, 0.85);
+    const labelAccent = mk(Colors.signalOnPlate, 0.95);
+    const dsoLabel = mk(SkyColors.deepSky, 0.8);
 
     const tick = () => {
       raf = requestAnimationFrame(tick);
@@ -424,7 +432,7 @@ export default function ImmersiveSkyScreen() {
           and the view opens.
         </Text>
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button">
-          <Text style={styles.close}>CLOSE</Text>
+          <Text style={styles.close}>Close</Text>
         </TouchableOpacity>
       </View>
     );
@@ -443,7 +451,7 @@ export default function ImmersiveSkyScreen() {
 
       <View style={[styles.caption, { top: insets.top + Spacing.md }]} pointerEvents="none">
         <Text style={styles.captionLabel}>
-          {isTonight ? "TONIGHT OVERHEAD" : "THE SKY AS IT WAS"}
+          {isTonight ? "Tonight overhead" : "The sky as it was"}
         </Text>
         <Text style={styles.captionPlace}>{milestone.location.label}</Text>
         <Text style={styles.captionDate}>
@@ -457,7 +465,7 @@ export default function ImmersiveSkyScreen() {
         accessibilityRole="button"
         accessibilityLabel="Close the sky view"
       >
-        <Text style={styles.close}>CLOSE</Text>
+        <Text style={styles.close}>Close</Text>
       </TouchableOpacity>
 
       {showHelp && (
@@ -473,7 +481,7 @@ export default function ImmersiveSkyScreen() {
           accessibilityLabel="Toggle sensor diagnostics"
         >
           <Text style={styles.facing}>
-            {below ? "BELOW THE HORIZON" : `FACING ${compassLabel}`}
+            {below ? "Below the horizon" : `Facing ${compassLabel}`}
             {"   "}
             {fov.toFixed(0)}°
           </Text>
@@ -488,14 +496,14 @@ export default function ImmersiveSkyScreen() {
         >
           <Text style={styles.modeText}>
             {orientation.mode === "sensor"
-              ? "POINTING · TAP FOR DRAG"
-              : "DRAG · TAP TO POINT"}
+              ? "Pointing · tap to drag"
+              : "Drag · tap to point"}
           </Text>
         </TouchableOpacity>
 
         {!orientation.canPoint && (
           <Text style={styles.note}>
-            No motion or compass readings are arriving — drag still works.
+            No motion or compass readings are arriving. Drag still works.
           </Text>
         )}
         {orientation.permissionDenied && (
@@ -526,14 +534,14 @@ export default function ImmersiveSkyScreen() {
                 onPress={orientation.toggleFlipGravity}
                 accessibilityRole="button"
               >
-                <Text style={styles.flipText}>FLIP UP/DOWN</Text>
+                <Text style={styles.flipText}>Flip up/down</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.flipButton, orientation.flipHeading && styles.flipOn]}
                 onPress={orientation.toggleFlipHeading}
                 accessibilityRole="button"
               >
-                <Text style={styles.flipText}>FLIP N/S</Text>
+                <Text style={styles.flipText}>Flip N/S</Text>
               </TouchableOpacity>
             </View>
             <Text style={styles.debugText}>
@@ -572,16 +580,17 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.space },
   caption: { position: "absolute", left: Spacing.page },
   captionLabel: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.micro,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.label,
     letterSpacing: Tracking.label,
-    color: Colors.signal,
+    textTransform: "uppercase",
+    color: Colors.signalOnPlate,
   },
   captionPlace: {
-    fontFamily: FontFamily.semibold,
-    fontSize: FontSize.lead,
+    fontFamily: FontFamily.serifMedium,
+    fontSize: FontSize.heading,
     color: Colors.plateInk,
-    marginTop: 2,
+    marginTop: 3,
   },
   captionDate: {
     fontFamily: FontFamily.mono,
@@ -591,16 +600,14 @@ const styles = StyleSheet.create({
   },
   closeButton: { position: "absolute", right: Spacing.page },
   close: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.label,
-    letterSpacing: Tracking.label,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
     color: Colors.plateInk,
   },
   help: { position: "absolute", left: 0, right: 0, top: "50%", alignItems: "center" },
   helpText: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.label,
-    letterSpacing: Tracking.label,
+    fontFamily: FontFamily.regular,
+    fontSize: FontSize.small,
     color: Colors.plateMuted,
   },
   controls: {
@@ -610,43 +617,46 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   facing: {
-    fontFamily: FontFamily.monoMedium,
+    fontFamily: FontFamily.mono,
     fontSize: FontSize.label,
-    letterSpacing: Tracking.label,
+    letterSpacing: 0.4,
     color: Colors.plateMuted,
   },
   modeButton: {
     alignSelf: "flex-start",
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
+    borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: Colors.plateMuted,
+    borderColor: Colors.plateRule,
   },
   modeText: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.label,
-    letterSpacing: Tracking.label,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
     color: Colors.plateInk,
   },
   debug: {
     marginTop: Spacing.xs,
     paddingTop: Spacing.xs,
     borderTopWidth: 1,
-    borderTopColor: "#3A3A30",
+    borderTopColor: Colors.plateRule,
     gap: 2,
   },
   flipRow: { flexDirection: "row", gap: Spacing.sm, marginBottom: Spacing.xs },
   flipButton: {
     paddingVertical: 6,
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: Colors.plateMuted,
+    borderColor: Colors.plateRule,
   },
-  flipOn: { backgroundColor: Colors.signal, borderColor: Colors.signal },
+  flipOn: {
+    backgroundColor: Colors.signalOnPlate,
+    borderColor: Colors.signalOnPlate,
+  },
   flipText: {
-    fontFamily: FontFamily.monoMedium,
+    fontFamily: FontFamily.medium,
     fontSize: FontSize.micro,
-    letterSpacing: 1,
     color: Colors.plateInk,
   },
   debugText: {
