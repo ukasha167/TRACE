@@ -4,6 +4,7 @@ import {
   useCanvasRef,
   useFont,
   Rect,
+  RoundedRect,
   Fill,
   Group,
   Text as SkiaText,
@@ -15,10 +16,10 @@ import {
   useImage,
 } from "@shopify/react-native-skia";
 import {
-  Archivo_900Black,
-  Archivo_600SemiBold,
-  Archivo_400Regular,
-} from "@expo-google-fonts/archivo";
+  Newsreader_500Medium,
+  Newsreader_600SemiBold,
+} from "@expo-google-fonts/newsreader";
+import { Figtree_400Regular } from "@expo-google-fonts/figtree";
 import {
   JetBrainsMono_400Regular,
   JetBrainsMono_500Medium,
@@ -47,18 +48,21 @@ interface ExportCardCanvasProps {
   moonPhaseIllumination: string;
   brightLimbAngleDeg: number | null;
   moonReturns: MoonReturn[];
+  /** Place label, when the record has one. Printed under the phase readout. */
+  placeLabel: string | null;
   format: CardFormat;
   /** Card renders at CARD_SIZES then scales down for on-screen preview. */
   previewWidth: number;
 }
 
 /**
- * THE EXPORT CARD — spec §12.
+ * THE EXPORT CARD. Spec §12.
  *
- * Swiss poster on bone paper: wordmark and heavy rule, the title set very
- * large, the moon on a dark plate tipped into the page, then the recurrence
- * table. Deliberately NOT a dark card — a paper card is the unexpected thing in
- * a feed of dark space imagery, and it matches the app it came from.
+ * A printed page on bone stock: a small wordmark, the name set large in the
+ * serif, the moon on a rounded dark plate tipped into the page, then the
+ * recurrence table. Deliberately NOT a dark card, because a paper card is the
+ * unexpected thing in a feed of dark space imagery, and it matches the app it
+ * came from.
  *
  * The moon is drawn at its real phase and real tilt. That, and the return
  * table, are the whole point of the card; everything else stays quiet.
@@ -75,6 +79,7 @@ const ExportCardCanvas = React.forwardRef<
     moonPhaseIllumination,
     brightLimbAngleDeg,
     moonReturns,
+    placeLabel,
     format,
     previewWidth,
   },
@@ -84,9 +89,11 @@ const ExportCardCanvas = React.forwardRef<
   const scale = previewWidth / w;
   const isStory = format === "story";
 
-  const titleFont = useFont(Archivo_900Black, isStory ? 104 : 82);
-  const headFont = useFont(Archivo_600SemiBold, 42);
-  const bodyFont = useFont(Archivo_400Regular, 32);
+  const titleFont = useFont(Newsreader_600SemiBold, isStory ? 104 : 84);
+  // The phase name is a name, so it takes the serif like every other name in
+  // the app. Cycle labels below stay in Figtree, since those are interface text.
+  const headFont = useFont(Newsreader_500Medium, 46);
+  const bodyFont = useFont(Figtree_400Regular, 32);
   const monoFont = useFont(JetBrainsMono_500Medium, 34);
   const monoSmall = useFont(JetBrainsMono_400Regular, 26);
   const moonImage = useImage(MOON_ASSET);
@@ -106,11 +113,11 @@ const ExportCardCanvas = React.forwardRef<
   // ---- Vertical rhythm ----
   const wordmarkY = PAD + 30;
   const ruleY = wordmarkY + 26;
-  const titleY = ruleY + (isStory ? 130 : 96);
+  const titleY = ruleY + (isStory ? 136 : 100);
   const dateY = titleY + (isStory ? 52 : 44);
 
   const plateY = dateY + (isStory ? 44 : 36);
-  const plateH = isStory ? 620 : 330;
+  const plateH = isStory ? 760 : 330;
   const moonR = Math.min(inner, plateH) * (isStory ? 0.32 : 0.36);
   const moonCX = w / 2;
   const moonCY = plateY + plateH / 2;
@@ -118,14 +125,15 @@ const ExportCardCanvas = React.forwardRef<
   const phaseY = plateY + plateH + (isStory ? 66 : 52);
   const phaseRuleY = phaseY + (isStory ? 34 : 26);
 
-  const returnsLabelY = phaseRuleY + (isStory ? 56 : 42);
+  const placeY = phaseRuleY + (isStory ? 50 : 40);
+  const returnsLabelY = placeY + (isStory ? 84 : 58);
   const returnsStartY = returnsLabelY + (isStory ? 52 : 44);
-  const returnRowH = isStory ? 58 : 48;
+  const returnRowH = isStory ? 72 : 48;
 
   const footRuleY = h - PAD - (isStory ? 54 : 44);
   const footY = h - PAD - 12;
 
-  const shownReturns = moonReturns.slice(0, isStory ? 3 : 2);
+  const shownReturns = moonReturns.slice(0, isStory ? 4 : 2);
   const isWaxing = moonPhaseIndex <= 4;
   const path = litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction, isWaxing);
   const discPath = moonDiscPath(moonCX, moonCY, moonR);
@@ -146,7 +154,8 @@ const ExportCardCanvas = React.forwardRef<
           font={monoSmall}
           color={Colors.inkMuted}
         />
-        <Rect x={PAD} y={ruleY} width={inner} height={6} color={Colors.ink} />
+        {/* A hairline, not the old 6px ink bar. The name below carries the page. */}
+        <Rect x={PAD} y={ruleY} width={inner} height={2} color={Colors.rule} />
 
         {/* ---- Title ---- */}
         <SkiaText
@@ -165,7 +174,14 @@ const ExportCardCanvas = React.forwardRef<
         />
 
         {/* ---- Moon plate ---- */}
-        <Rect x={PAD} y={plateY} width={inner} height={plateH} color={Colors.plate} />
+        <RoundedRect
+          x={PAD}
+          y={plateY}
+          width={inner}
+          height={plateH}
+          r={36}
+          color={Colors.plate}
+        />
 
         <Group
           transform={[
@@ -238,14 +254,25 @@ const ExportCardCanvas = React.forwardRef<
         />
         <Rect x={PAD} y={phaseRuleY} width={inner} height={1} color={Colors.rule} />
 
+        {/* Where it was seen from. Absent records simply skip the line. */}
+        {placeLabel && (
+          <SkiaText
+            x={PAD}
+            y={placeY}
+            text={`Seen from ${placeLabel}`}
+            font={bodyFont}
+            color={Colors.inkMuted}
+          />
+        )}
+
         {/* ---- Recurrence table ---- */}
         {shownReturns.length > 0 && (
           <Group>
             <SkiaText
               x={PAD}
               y={returnsLabelY}
-              text="WHEN THIS SKY COMES BACK"
-              font={monoSmall}
+              text="When this sky comes back"
+              font={bodyFont}
               color={Colors.inkMuted}
             />
             {shownReturns.map((r, i) => {
