@@ -1,11 +1,17 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { Colors, Spacing, Type, FontFamily, FontSize } from "@/constants/theme";
+import {
+  Colors,
+  Spacing,
+  Type,
+  FontFamily,
+  FontSize,
+  Radius,
+} from "@/constants/theme";
 import { SectionHeader } from "./SectionHeader";
 import type { RarityStat } from "@/types";
 
 interface Props {
-  n: number;
   rarity: RarityStat;
   unitLabel: string; // "birthdays" | "anniversaries"
 }
@@ -13,17 +19,21 @@ interface Props {
 /**
  * Measured, never asserted (spec §6.4).
  *
- * The section renders only when the moon genuinely clears a threshold —
- * manufacturing significance for an ordinary 43% moon is exactly the overclaim
+ * The section renders only when the moon genuinely clears a threshold.
+ * Manufacturing significance for an ordinary 43% moon is exactly the overclaim
  * this app is not allowed to make. The big number is the global frequency; the
  * personal count underneath is what actually lands.
+ *
+ * The headline figure stays in mono at display size even though everything else
+ * that large is now serif. It is a measurement, not a name, and mono is what
+ * tells the reader which of the two they are looking at.
  */
-export function RaritySection({ n, rarity, unitLabel }: Props) {
+export function RaritySection({ rarity, unitLabel }: Props) {
   return (
     <View style={styles.section}>
-      <SectionHeader n={n} label="How uncommon" />
+      <SectionHeader label="How uncommon" />
 
-      <Text style={styles.bigNumber}>1 IN {rarity.oneInN.toFixed(0)}</Text>
+      <Text style={styles.bigNumber}>1 in {rarity.oneInN.toFixed(0)}</Text>
       <Text style={styles.bigCaption}>
         days carry a moon at least {rarity.thresholdPct}% illuminated
       </Text>
@@ -40,7 +50,9 @@ export function RaritySection({ n, rarity, unitLabel }: Props) {
             {rarity.matchingDetails.map((item) => (
               <View key={item.year} style={styles.matchRow}>
                 <Text style={styles.matchYear}>{item.year}</Text>
-                <Text style={styles.matchIllum}>{item.illuminationPct.toFixed(1)}%</Text>
+                <Text style={styles.matchIllum}>
+                  {item.illuminationPct.toFixed(1)}%
+                </Text>
               </View>
             ))}
           </View>
@@ -55,15 +67,16 @@ export function RaritySection({ n, rarity, unitLabel }: Props) {
 const styles = StyleSheet.create({
   section: { marginBottom: Spacing.xl },
   bigNumber: {
-    fontFamily: FontFamily.black,
+    fontFamily: FontFamily.mono,
     fontSize: FontSize.display,
-    letterSpacing: -2,
-    lineHeight: 52,
+    letterSpacing: -1.2,
+    lineHeight: 46,
     color: Colors.ink,
   },
   bigCaption: { ...Type.bodyMuted, marginTop: Spacing.xs },
+
   personal: {
-    marginTop: Spacing.md,
+    marginTop: Spacing.lg,
     paddingTop: Spacing.md,
     borderTopWidth: 1,
     borderTopColor: Colors.rule,
@@ -75,6 +88,7 @@ const styles = StyleSheet.create({
     color: Colors.signal,
   },
   personalOf: { fontFamily: FontFamily.regular, color: Colors.ink },
+
   matchGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -84,15 +98,15 @@ const styles = StyleSheet.create({
   matchRow: {
     flexDirection: "row",
     alignItems: "baseline",
-    gap: Spacing.xs,
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.rule,
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.paperDim,
+    borderRadius: Radius.pill,
   },
   matchYear: {
     fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.body,
+    fontSize: FontSize.small,
     color: Colors.ink,
   },
   matchIllum: {
@@ -107,4 +121,3 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
 });
-
