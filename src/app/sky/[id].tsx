@@ -28,7 +28,7 @@ import {
   projectVector,
 } from "@/lib/astronomy/skySphere";
 import { toLocalNight } from "@/lib/astronomy/dateUtils";
-import { normalizeDeg } from "@/lib/astronomy/attitude";
+import { normalizeDeg, rollFromAxes } from "@/lib/astronomy/attitude";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useSkyOrientation } from "@/hooks/useSkyOrientation";
 import { todayDateString } from "@/lib/astronomy/dateUtils";
@@ -204,6 +204,11 @@ export default function ImmersiveSkyScreen() {
     planetGlow.setAlphaf(0.4);
     planetGlow.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, 5, true));
     const dsoPaint = mk("#9BE0C8", 0.75, 1);
+    const dsoFill = mk("#9BE0C8", 0.85);
+    const dsoDashedPaint = mk("#9BE0C8", 0.75, 1);
+    dsoDashedPaint.setPathEffect(Skia.PathEffect.MakeDash([3.5, 2.5], 0));
+    const dsoDottedPaint = mk("#9BE0C8", 0.75, 1);
+    dsoDottedPaint.setPathEffect(Skia.PathEffect.MakeDash([1.5, 2.5], 0));
     const labelPaint = mk("#93A7B4", 0.85);
     const labelAccent = mk(Colors.signal, 0.95);
     const dsoLabel = mk("#9BE0C8", 0.8);
@@ -211,7 +216,13 @@ export default function ImmersiveSkyScreen() {
     const tick = () => {
       raf = requestAnimationFrame(tick);
       const f = fovRef.current;
-      const cam = cameraBasisFromAxes(orientationRef.current.axesRef.current, f, width);
+      const axes = orientationRef.current.axesRef.current;
+      const cam = cameraBasisFromAxes(axes, f, width);
+      const rollDeg = rollFromAxes(axes);
+
+      // Angular distance threshold for labels (central comfort cone)
+      const labelMaxAngleDeg = (f / 2) * 0.75;
+      const minLabelCos = Math.cos((labelMaxAngleDeg * Math.PI) / 180);
 
       const rec = Skia.PictureRecorder();
       const cv = rec.beginRecording();
@@ -287,12 +298,62 @@ export default function ImmersiveSkyScreen() {
         if (o.mag > dsoLimit) continue;
         const pt = projectVector(o.vec, cam, width, height);
         if (!pt) continue;
-        // Drawn as a small ring, so a galaxy never reads as just another star.
+
+        // Differentiated Messier glyphs (§17.3)
         const rr = Math.max(3, 260 / f);
-        const ov = Skia.Path.Make();
-        ov.addOval(Skia.XYWHRect(pt.x - rr, pt.y - rr * 0.62, rr * 2, rr * 1.24));
-        cv.drawPath(ov, dsoPaint);
-        dsoSeen.push({ x: pt.x, y: pt.y, name: o.name });
+        switch (o.kind) {
+          case "galaxy": {
+            // Dashed oval inclined at 30° representing tilted galactic disc
+            const ov = Skia.Path.Make();
+            ov.addOval(Skia.XYWHRect(pt.x - rr * 1.25, pt.y - rr * 0.65, rr * 2.5, rr * 1.3));
+            cv.save();
+            cv.rotate(30, pt.x, pt.y);
+            cv.drawPath(ov, dsoDashedPaint);
+            cv.restore();
+            break;
+          }
+          case "open cluster":
+          case "asterism": {
+            // Dotted ring for cluster of discrete stars
+            const ring = Skia.Path.Make();
+            ring.addCircle(pt.x, pt.y, rr);
+            cv.drawPath(ring, dsoDottedPaint);
+            break;
+          }
+          case "globular cluster": {
+            // Solid ring with dense core nucleus dot
+            cv.drawCircle(pt.x, pt.y, rr, dsoPaint);
+            cv.drawCircle(pt.x, pt.y, Math.max(1.2, rr * 0.28), dsoFill);
+            break;
+          }
+          case "planetary nebula":
+          case "supernova remnant": {
+            // Ring with external crosshair ticks (astronomical planetary nebula glyph)
+            cv.drawCircle(pt.x, pt.y, rr, dsoPaint);
+            const ch = Skia.Path.Make();
+            const tick = Math.max(2.5, rr * 0.45);
+            ch.moveTo(pt.x - rr - tick, pt.y); ch.lineTo(pt.x - rr, pt.y);
+            ch.moveTo(pt.x + rr, pt.y); ch.lineTo(pt.x + rr + tick, pt.y);
+            ch.moveTo(pt.x, pt.y - rr - tick); ch.lineTo(pt.x, pt.y - rr);
+            ch.moveTo(pt.x, pt.y + rr); ch.lineTo(pt.x, pt.y + rr + tick);
+            cv.drawPath(ch, dsoPaint);
+            break;
+          }
+          case "nebula":
+          default: {
+            // Diffuse nebula: dashed box framing the gas cloud
+            const box = Skia.Path.Make();
+            box.addRect(Skia.XYWHRect(pt.x - rr, pt.y - rr, rr * 2, rr * 2));
+            cv.drawPath(box, dsoDashedPaint);
+            break;
+          }
+        }
+
+        // Cull label by angular distance from view center
+        const cosDist = o.vec[0] * axes.forward.x + o.vec[1] * axes.forward.y + o.vec[2] * axes.forward.z;
+        if (cosDist >= minLabelCos) {
+          dsoSeen.push({ x: pt.x, y: pt.y, name: o.name });
+        }
       }
 
       // ---- Solar system ----
@@ -316,13 +377,22 @@ export default function ImmersiveSkyScreen() {
       // ---- Labels, in the SAME pass as the things they name ----
       //
       // Near the right edge the label flips to the left of its object rather
-      // than being suppressed. A fixed right-hand margin silently hid the Moon's
-      // name whenever it drifted into the last 90 points of the screen.
+      // than being suppressed. Roll counter-rotation keeps text level with the horizon.
       const label = (x: number, y: number, text: string, paint: any) => {
         if (y < 40 || y > height - 40 || x < -20 || x > width + 20) return;
         const w = labelFont.measureText(text).width;
         const left = x + 11 + w > width - 6;
-        cv.drawText(text, left ? x - 11 - w : x + 11, y + 4, paint, labelFont);
+        const lx = left ? x - 11 - w : x + 11;
+        const ly = y + 4;
+
+        if (Math.abs(rollDeg) > 0.1) {
+          cv.save();
+          cv.rotate(-rollDeg, x, y);
+          cv.drawText(text, lx, ly, paint, labelFont);
+          cv.restore();
+        } else {
+          cv.drawText(text, lx, ly, paint, labelFont);
+        }
       };
 
       for (const l of bodySeen) {
@@ -330,6 +400,9 @@ export default function ImmersiveSkyScreen() {
       }
       const starLimit = f > 70 ? 10 : f > 40 ? 26 : 60;
       for (const st of sphere.labels.slice(0, starLimit)) {
+        // Cull labels by angular distance from view centre
+        const cosDist = st.vec[0] * axes.forward.x + st.vec[1] * axes.forward.y + st.vec[2] * axes.forward.z;
+        if (cosDist < minLabelCos) continue;
         const pt = projectVector(st.vec, cam, width, height);
         if (pt) label(pt.x, pt.y, st.name, labelPaint);
       }
