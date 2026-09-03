@@ -11,6 +11,8 @@ import {
 } from "@/constants/theme";
 import { useMilestonesStore } from "@/store/useMilestonesStore";
 import { MilestoneListRow } from "@/components/MilestoneListRow";
+import { TonightCard } from "@/components/TonightCard";
+import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const route = (path: string) => path as Href;
@@ -24,6 +26,7 @@ const route = (path: string) => path as Href;
  */
 export default function HomeScreen() {
   const milestones = useMilestonesStore((s) => s.milestones);
+  const { location } = useCurrentLocation();
   const insets = useSafeAreaInsets();
   const isEmpty = milestones.length === 0;
 
@@ -46,6 +49,8 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
+
+        <TonightCard milestones={milestones} location={location} />
 
         {isEmpty ? (
           <View style={styles.empty}>

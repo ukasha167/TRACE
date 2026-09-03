@@ -29,9 +29,11 @@ import {
 } from "@/lib/astronomy/skySphere";
 import { toLocalNight } from "@/lib/astronomy/dateUtils";
 import { normalizeDeg } from "@/lib/astronomy/attitude";
+import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useSkyOrientation } from "@/hooks/useSkyOrientation";
+import { todayDateString } from "@/lib/astronomy/dateUtils";
 import catalogJson from "@/data/bsc.json";
-import type { Star } from "@/types";
+import type { Star, Milestone } from "@/types";
 
 const CATALOG = catalogJson as Star[];
 const MAG_LIMIT = 6.5;
@@ -46,22 +48,33 @@ const FOV_MAX = 100;
  * sky **as it was, from there, then** — the same gesture aimed into a night
  * that is years gone and cannot be pointed at any more.
  *
- * RENDERING. Stars are drawn as a handful of batched Skia Paths grouped by
- * brightness, not one element each. An earlier revision emitted ~1,400 <Circle>
- * components and rebuilt every one of them on every frame, which is where the
- * lag came from. Positions are precomputed once per date/place (see
- * skySphere.ts) so a frame is three dot products per star into a reused buffer.
- *
- * The whole celestial sphere is kept — nothing is culled by altitude — so the
- * view passes through the horizon and keeps going. Standing somewhere means
- * being able to look down.
- *
- * Per §7.3 there is deliberately no reticle: a ±10-15° compass error makes any
- * precision affordance a lie the interface tells continuously.
+ * Reusing the same pipeline for /sky/tonight synthesizes a pseudo-milestone for
+ * tonight over current location without adding it to the persistent store.
  */
 export default function ImmersiveSkyScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const milestone = useMilestonesStore((s) => s.getMilestone(id));
+  const isTonight = id === "tonight";
+  const milestoneFromStore = useMilestonesStore((s) => s.getMilestone(id));
+  const { location: currentLocation } = useCurrentLocation();
+
+  const milestone = useMemo<Milestone | null>(() => {
+    if (!isTonight) return milestoneFromStore ?? null;
+    const todayStr = todayDateString();
+    return {
+      id: "tonight",
+      title: "Tonight's Sky",
+      type: "custom",
+      date: todayStr,
+      location: currentLocation ?? {
+        latitude: 51.5074,
+        longitude: -0.1278,
+        label: "Current Location",
+        timezoneOffsetMin: -new Date().getTimezoneOffset(),
+      },
+      createdAt: new Date().toISOString(),
+    };
+  }, [isTonight, milestoneFromStore, currentLocation]);
+
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
 
@@ -76,6 +89,7 @@ export default function ImmersiveSkyScreen() {
     const when = toLocalNight(milestone.date, milestone.location.timezoneOffsetMin);
     return buildSkySphere(CATALOG, milestone.location, when, MAG_LIMIT);
   }, [milestone]);
+
 
   // Reused across frames; never reallocated.
   const buf = useRef(new Float32Array(CATALOG.length * 3));
@@ -349,16 +363,18 @@ export default function ImmersiveSkyScreen() {
   return (
     <View style={styles.root}>
       <GestureDetector gesture={gesture}>
-        <Canvas style={{ width, height, backgroundColor: "#000000" }}>
+        <Canvas style={{ width, height, backgroundColor: Colors.space }}>
           <Picture picture={picture} />
         </Canvas>
       </GestureDetector>
 
       <View style={[styles.caption, { top: insets.top + Spacing.md }]} pointerEvents="none">
-        <Text style={styles.captionLabel}>THE SKY AS IT WAS</Text>
+        <Text style={styles.captionLabel}>
+          {isTonight ? "TONIGHT OVERHEAD" : "THE SKY AS IT WAS"}
+        </Text>
         <Text style={styles.captionPlace}>{milestone.location.label}</Text>
         <Text style={styles.captionDate}>
-          Night of {formatMilestoneDate(milestone.date)}
+          {isTonight ? "Live celestial sphere" : `Night of ${formatMilestoneDate(milestone.date)}`}
         </Text>
       </View>
 
@@ -480,7 +496,7 @@ function cardinal(az: number): string {
 const styles = StyleSheet.create({
   // Pitch black, not the warm plate ink: this surface exists so faint things
   // pop off it, and any lift in the ground steals that contrast.
-  root: { flex: 1, backgroundColor: "#000000" },
+  root: { flex: 1, backgroundColor: Colors.space },
   caption: { position: "absolute", left: Spacing.page },
   captionLabel: {
     fontFamily: FontFamily.mono,
