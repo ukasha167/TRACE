@@ -1,6 +1,7 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import { Colors, Radius } from "@/constants/theme";
+import { getMoonLimbRotation } from "@/lib/astronomy/brightLimb";
 
 interface MoonPhaseGlyphProps {
   phaseFraction: number; // 0.0–1.0 illuminated fraction
@@ -21,19 +22,10 @@ interface MoonPhaseGlyphProps {
 /**
  * Moon phase glyph, drawn with plain Views.
  *
- * Three stacked layers clipped by the outer circle's overflow:
- *   1. dark base circle
- *   2. lit half-circle on the correct side
- *   3. terminator ellipse — dark when crescent, lit when gibbous
- *
- * Geometry:
- *   - phaseIndex 1–3 waxing, lit side RIGHT; 5–7 waning, lit side LEFT.
- *     (0 and 4 are new/full, where the lit side is moot.)
- *   - terminator semi-minor axis b = r × |2f − 1|, so b = r at new/full and
- *     b = 0 at the quarters, continuous throughout.
- *
- * Phase 7 adds a Skia Path version for the export card, where sub-pixel
- * accuracy matters. This one serves every in-app surface.
+ * Base moon is constructed with its bright limb on the RIGHT (3 o'clock).
+ * Rotation comes entirely from getMoonLimbRotation(), which reconciles the
+ * astronomical zenith-angle datum with the screen coordinate frame and eliminates
+ * the double-counting waxing/waning side flip (see brightLimb.ts).
  */
 export function MoonPhaseGlyph({
   phaseFraction,
@@ -54,7 +46,7 @@ export function MoonPhaseGlyph({
       <View
         style={[
           styles.litHalf,
-          { width: r, height: size, ...(isWaxing ? { right: 0 } : { left: 0 }) },
+          { width: r, height: size, right: 0 },
         ]}
       >
         <View
@@ -64,7 +56,7 @@ export function MoonPhaseGlyph({
               width: size,
               height: size,
               borderRadius: r,
-              ...(isWaxing ? { right: 0 } : { left: 0 }),
+              right: 0,
             },
           ]}
         />
@@ -87,20 +79,19 @@ export function MoonPhaseGlyph({
     </View>
   );
 
-  const tilted =
-    brightLimbAngleDeg != null ? (
-      <View
-        style={{
-          width: size,
-          height: size,
-          transform: [{ rotate: `${brightLimbAngleDeg}deg` }],
-        }}
-      >
-        {moon}
-      </View>
-    ) : (
-      moon
-    );
+  const rotation = getMoonLimbRotation(brightLimbAngleDeg, isWaxing);
+
+  const tilted = (
+    <View
+      style={{
+        width: size,
+        height: size,
+        transform: [{ rotate: `${rotation}deg` }],
+      }}
+    >
+      {moon}
+    </View>
+  );
 
   if (variant === "bare") return tilted;
 
