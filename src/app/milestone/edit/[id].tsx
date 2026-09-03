@@ -33,7 +33,7 @@ export default function EditMilestoneScreen() {
   return (
     <MilestoneForm
       initial={milestone}
-      submitLabel="SAVE CHANGES"
+      submitLabel="Save changes"
       onSubmit={handleSubmit}
       onCancel={() => router.back()}
     />
