@@ -72,3 +72,9 @@ export function litMoonPath(
   path.close();
   return path;
 }
+
+export function moonDiscPath(cx: number, cy: number, r: number) {
+  const path = Skia.Path.Make();
+  path.addCircle(cx, cy, r);
+  return path;
+}
