@@ -38,8 +38,8 @@ export const Colors = {
   plateMuted: "#8A887E",
   /** The moon itself, drawn on a plate. */
   moonlight: "#F7F3E4",
-  /** Unlit portion of the moon disc (earthshine), a shade above the plate ground. */
-  earthshine: "#24241C",
+  /** Unlit portion of the moon disc (earthshine), a subtle whisper above the plate ground. */
+  earthshine: "#171712",
   /** Pitch black ground — for the night sky render and full-screen photography viewer. */
   space: "#000000",
 

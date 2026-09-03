@@ -10,6 +10,8 @@ import {
   Path,
   Circle,
   Image as SkiaImage,
+  Mask,
+  BlurMask,
   useImage,
 } from "@shopify/react-native-skia";
 import {
@@ -24,7 +26,7 @@ import {
 import type { Milestone, MoonReturn } from "@/types";
 import { Colors } from "@/constants/theme";
 import { getMoonTextureRotation } from "@/lib/astronomy/brightLimb";
-import { litMoonPath } from "@/components/moon/moonPath";
+import { litMoonPath, moonDiscPath } from "@/components/moon/moonPath";
 
 export const CARD_SIZES = {
   story: { w: 1080, h: 1920 },
@@ -87,6 +89,7 @@ const ExportCardCanvas = React.forwardRef<
   const bodyFont = useFont(Archivo_400Regular, 32);
   const monoFont = useFont(JetBrainsMono_500Medium, 34);
   const monoSmall = useFont(JetBrainsMono_400Regular, 26);
+  const moonImage = useImage(MOON_ASSET);
 
   if (!titleFont || !monoFont || !bodyFont || !headFont || !monoSmall) {
     return (
@@ -122,10 +125,10 @@ const ExportCardCanvas = React.forwardRef<
   const footRuleY = h - PAD - (isStory ? 54 : 44);
   const footY = h - PAD - 12;
 
-  const moonImage = useImage(MOON_ASSET);
   const shownReturns = moonReturns.slice(0, isStory ? 3 : 2);
   const isWaxing = moonPhaseIndex <= 4;
   const path = litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction, isWaxing);
+  const discPath = moonDiscPath(moonCX, moonCY, moonR);
   const moonRotDeg = getMoonTextureRotation(brightLimbAngleDeg, isWaxing);
   const moonRotRad = (moonRotDeg * Math.PI) / 180;
 
@@ -173,12 +176,21 @@ const ExportCardCanvas = React.forwardRef<
             { translateY: -moonCY },
           ]}
         >
-          {/* Unlit base disc (earthshine ground) */}
+          {/* Soft atmospheric moonlight bloom radiating from illuminated terrain */}
+          <Path
+            path={path}
+            color={Colors.moonlight}
+            opacity={0.3}
+          >
+            <BlurMask blur={Math.max(4, moonR * 0.08)} style="normal" />
+          </Path>
+
+          {/* Unlit base disc (deep earthshine tone) */}
           <Circle cx={moonCX} cy={moonCY} r={moonR} color={Colors.earthshine} />
 
           {moonImage ? (
-            <>
-              {/* Faint earthshine texture on unlit disc */}
+            <Group clip={discPath}>
+              {/* Faint earthshine texture on unlit disc (6% opacity) */}
               <Group clip={path} invertClip>
                 <SkiaImage
                   image={moonImage}
@@ -186,11 +198,20 @@ const ExportCardCanvas = React.forwardRef<
                   y={moonCY - moonR}
                   width={moonR * 2}
                   height={moonR * 2}
-                  opacity={0.18}
+                  opacity={0.06}
                 />
               </Group>
-              {/* Lit lunar surface with real photographic texture */}
-              <Group clip={path}>
+              {/* Lit lunar surface with softly diffused terminator transition */}
+              <Mask
+                mode="alpha"
+                mask={
+                  <Group>
+                    <Path path={path} color="white">
+                      <BlurMask blur={Math.max(1.5, moonR * 0.02)} style="normal" />
+                    </Path>
+                  </Group>
+                }
+              >
                 <SkiaImage
                   image={moonImage}
                   x={moonCX - moonR}
@@ -199,8 +220,8 @@ const ExportCardCanvas = React.forwardRef<
                   height={moonR * 2}
                   opacity={1.0}
                 />
-              </Group>
-            </>
+              </Mask>
+            </Group>
           ) : (
             <Path path={path} color={Colors.moonlight} />
           )}

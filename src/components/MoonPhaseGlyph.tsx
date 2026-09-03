@@ -6,11 +6,13 @@ import {
   Group,
   Image as SkiaImage,
   Path,
+  Mask,
+  BlurMask,
   useImage,
 } from "@shopify/react-native-skia";
 import { Colors, Radius } from "@/constants/theme";
 import { getMoonTextureRotation } from "@/lib/astronomy/brightLimb";
-import { litMoonPath } from "@/components/moon/moonPath";
+import { litMoonPath, moonDiscPath } from "@/components/moon/moonPath";
 
 interface MoonPhaseGlyphProps {
   phaseFraction: number; // 0.0–1.0 illuminated fraction
@@ -37,15 +39,13 @@ const MOON_ASSET = require("../../assets/moon_disc.png");
  * Renders the real lunar photograph (NASA LRO 397x397 orthographic near-side projection),
  * lit by the exact 2-arc terminator geometry (circular limb + semi-elliptical terminator).
  *
- * Orientation and tilt:
- * - Texture and path rotate together by getMoonTextureRotation().
- *   This is geometrically correct to within the sub-solar latitude (under 1.6 degrees)
- *   because the lunar equator inclination to the ecliptic is only 1.54°, meaning the
- *   terminator runs almost exactly pole to pole in the lunar frame.
- * - Lunar libration (±8 degrees) is negligible at screen scale and ignored.
- * - The texture is NEVER mirrored (which would move Mare Crisium to the wrong limb).
- *   Waxing/waning lit side is constructed directly in litMoonPath.
- * - Falling back cleanly to vector geometry while the texture loads ensures zero flicker.
+ * Visual fidelity enhancements:
+ * - Anti-clipping gutter: canvas includes a safety margin so anti-aliased subpixels
+ *   and rotated limb features never clip flat at the canvas boundary.
+ * - Soft terminator: lit region uses an alpha mask with a subtle 1.5px blur,
+ *   softening the lunar day/night boundary while preserving crisp outer limb geometry.
+ * - Atmospheric bloom: glowing moonlight halo radiating softly from illuminated terrain.
+ * - Deeper earthshine: dark side rests at deep night tone (#171712) with faint 6% texture.
  */
 export function MoonPhaseGlyph({
   phaseFraction,
@@ -57,56 +57,90 @@ export function MoonPhaseGlyph({
 }: MoonPhaseGlyphProps) {
   const moonImage = useImage(MOON_ASSET);
 
+  // Safety gutter prevents anti-aliased pixels and rotated geometry from clipping at canvas boundary
+  const gutter = Math.max(4, Math.round(size * 0.05));
+  const canvasSize = size + gutter * 2;
+  const cx = canvasSize / 2;
+  const cy = canvasSize / 2;
   const r = size / 2;
   const isWaxing = phaseIndex <= 4;
 
   const path = useMemo(
-    () => litMoonPath(r, r, r, phaseFraction, isWaxing),
-    [r, phaseFraction, isWaxing]
+    () => litMoonPath(cx, cy, r, phaseFraction, isWaxing),
+    [cx, cy, r, phaseFraction, isWaxing]
+  );
+
+  const discPath = useMemo(
+    () => moonDiscPath(cx, cy, r),
+    [cx, cy, r]
   );
 
   const rotDeg = getMoonTextureRotation(brightLimbAngleDeg, isWaxing);
   const rotRad = (rotDeg * Math.PI) / 180;
 
   const canvas = (
-    <Canvas style={{ width: size, height: size }}>
+    <Canvas
+      style={{
+        width: canvasSize,
+        height: canvasSize,
+        margin: -gutter, // Preserves exact layout size in parent flex containers
+      }}
+    >
       <Group
         transform={[
-          { translateX: r },
-          { translateY: r },
+          { translateX: cx },
+          { translateY: cy },
           { rotate: rotRad },
-          { translateX: -r },
-          { translateY: -r },
+          { translateX: -cx },
+          { translateY: -cy },
         ]}
       >
-        {/* Unlit base disc (earthshine ground) */}
-        <Circle cx={r} cy={r} r={r} color={Colors.earthshine} />
+        {/* Soft atmospheric moonlight bloom radiating from the illuminated region */}
+        <Path
+          path={path}
+          color={Colors.moonlight}
+          opacity={0.3}
+        >
+          <BlurMask blur={Math.max(3, r * 0.08)} style="normal" />
+        </Path>
+
+        {/* Unlit base disc (deep earthshine tone) */}
+        <Circle cx={cx} cy={cy} r={r} color={Colors.earthshine} />
 
         {moonImage ? (
-          <>
-            {/* Faint earthshine texture on unlit disc */}
+          <Group clip={discPath}>
+            {/* Faint earthshine texture on unlit disc (6% opacity) */}
             <Group clip={path} invertClip>
               <SkiaImage
                 image={moonImage}
-                x={0}
-                y={0}
+                x={cx - r}
+                y={cy - r}
                 width={size}
                 height={size}
-                opacity={0.18}
+                opacity={0.06}
               />
             </Group>
-            {/* Lit lunar surface with real photographic texture */}
-            <Group clip={path}>
+            {/* Lit lunar surface with softly diffused terminator transition */}
+            <Mask
+              mode="alpha"
+              mask={
+                <Group>
+                  <Path path={path} color="white">
+                    <BlurMask blur={Math.max(1.5, r * 0.02)} style="normal" />
+                  </Path>
+                </Group>
+              }
+            >
               <SkiaImage
                 image={moonImage}
-                x={0}
-                y={0}
+                x={cx - r}
+                y={cy - r}
                 width={size}
                 height={size}
                 opacity={1.0}
               />
-            </Group>
-          </>
+            </Mask>
+          </Group>
         ) : (
           /* Clean vector fallback while texture loads */
           <Path path={path} color={Colors.moonlight} />
@@ -128,6 +162,7 @@ const styles = StyleSheet.create({
   plate: {
     backgroundColor: Colors.plate,
     borderRadius: Radius.plate,
-    alignSelf: "flex-start",
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
