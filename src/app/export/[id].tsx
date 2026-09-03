@@ -12,7 +12,7 @@ import {
 import { useLocalSearchParams, router } from "expo-router";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { useCanvasRef } from "@shopify/react-native-skia";
+import { useCanvasRef, ImageFormat } from "@shopify/react-native-skia";
 import { Colors, FontFamily, FontSize, Spacing, Radius } from "@/constants/theme";
 import { useMilestonesStore } from "@/store/useMilestonesStore";
 import {
@@ -69,19 +69,16 @@ export default function ExportScreen() {
 
     setExporting(true);
     try {
-      // Render the canvas at full resolution → PNG bytes
+      // Render the canvas at full resolution → PNG base64 directly via Skia C++
       const image = await canvasRef.current.makeImageSnapshotAsync();
-      const pngBytes = image.encodeToBytes(); // Uint8Array
+      const base64Data = image.encodeToBase64(ImageFormat.PNG, 100);
 
       // Write to a temp file
       const filename = `trace-${milestone?.title?.replace(/\s+/g, "-").toLowerCase() ?? id}-${format}.png`;
       const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-      await FileSystem.writeAsStringAsync(
-        fileUri,
-        // Convert Uint8Array to base64
-        uint8ArrayToBase64(pngBytes),
-        { encoding: FileSystem.EncodingType.Base64 }
-      );
+      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
 
       // Hand off to OS share sheet
       await Sharing.shareAsync(fileUri, {
@@ -187,16 +184,6 @@ export default function ExportScreen() {
       </View>
     </View>
   );
-}
-
-// ---- base64 helper (Uint8Array → string without btoa which is unavailable in RN) ----
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  const CHUNK = 8192;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
 }
 
 const styles = StyleSheet.create({

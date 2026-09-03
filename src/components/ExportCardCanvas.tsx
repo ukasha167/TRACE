@@ -103,23 +103,23 @@ const ExportCardCanvas = React.forwardRef<
   // ---- Vertical rhythm ----
   const wordmarkY = PAD + 30;
   const ruleY = wordmarkY + 26;
-  const titleY = ruleY + (isStory ? 130 : 108);
-  const dateY = titleY + 52;
+  const titleY = ruleY + (isStory ? 130 : 96);
+  const dateY = titleY + (isStory ? 52 : 44);
 
-  const plateY = dateY + 44;
-  const plateH = isStory ? 620 : 380;
-  const moonR = Math.min(inner, plateH) * 0.32;
+  const plateY = dateY + (isStory ? 44 : 36);
+  const plateH = isStory ? 620 : 330;
+  const moonR = Math.min(inner, plateH) * (isStory ? 0.32 : 0.36);
   const moonCX = w / 2;
   const moonCY = plateY + plateH / 2;
 
-  const phaseY = plateY + plateH + 66;
-  const phaseRuleY = phaseY + 34;
+  const phaseY = plateY + plateH + (isStory ? 66 : 52);
+  const phaseRuleY = phaseY + (isStory ? 34 : 26);
 
-  const returnsLabelY = phaseRuleY + 56;
-  const returnsStartY = returnsLabelY + 52;
-  const returnRowH = 58;
+  const returnsLabelY = phaseRuleY + (isStory ? 56 : 42);
+  const returnsStartY = returnsLabelY + (isStory ? 52 : 44);
+  const returnRowH = isStory ? 58 : 48;
 
-  const footRuleY = h - PAD - 54;
+  const footRuleY = h - PAD - (isStory ? 54 : 44);
   const footY = h - PAD - 12;
 
   const moonImage = useImage(MOON_ASSET);
