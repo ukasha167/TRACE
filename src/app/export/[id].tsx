@@ -1,19 +1,26 @@
-import React, { useRef, useCallback, useState, useMemo } from "react";
+import React, { useCallback, useState, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  useWindowDimensions,
   Platform,
   Alert,
+  type LayoutChangeEvent,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useCanvasRef, ImageFormat } from "@shopify/react-native-skia";
-import { Colors, FontFamily, FontSize, Spacing, Radius } from "@/constants/theme";
+import {
+  Colors,
+  FontFamily,
+  FontSize,
+  Spacing,
+  Radius,
+  Type,
+} from "@/constants/theme";
 import { useMilestonesStore } from "@/store/useMilestonesStore";
 import {
   getMoonPhase,
@@ -27,7 +34,6 @@ import { ExportCardCanvas, CARD_SIZES, type CardFormat } from "@/components/Expo
 
 export default function ExportScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { width: screenWidth } = useWindowDimensions();
 
   const getMilestone = useMilestonesStore((s) => s.getMilestone);
   const milestone = getMilestone(id);
@@ -53,9 +59,15 @@ export default function ExportScreen() {
     };
   }, [milestone]);
 
-  // Preview fits the screen with some horizontal padding
-  const previewPad = Spacing.lg * 2;
-  const previewWidth = screenWidth - previewPad;
+  // The preview is sized from the space it actually gets, not from the screen
+  // width. A story card is 9:16, so sizing on width alone made it 700pt tall in
+  // a 500pt slot: it overflowed upward, hid the format selector, and ran under
+  // the share button. Fit to whichever of the two dimensions binds.
+  const [slot, setSlot] = useState<{ w: number; h: number } | null>(null);
+  const onSlotLayout = useCallback((e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setSlot({ w: width, h: height });
+  }, []);
 
   const handleExport = useCallback(async () => {
     if (!canvasRef.current) {
@@ -105,12 +117,15 @@ export default function ExportScreen() {
   }
 
   const cardAspect = CARD_SIZES[format].h / CARD_SIZES[format].w;
+  const previewWidth = slot
+    ? Math.floor(Math.min(slot.w, slot.h / cardAspect))
+    : 0;
 
   return (
     <View style={styles.root}>
       {/* ---- Format selector ---- */}
       <View style={styles.formatRow}>
-        <Text style={styles.formatLabel}>FORMAT</Text>
+        <Text style={styles.formatLabel}>Format</Text>
         <View style={styles.formatChips}>
           {(["story", "square"] as CardFormat[]).map((f) => (
             <TouchableOpacity
@@ -126,7 +141,7 @@ export default function ExportScreen() {
                   format === f && styles.formatChipTextSelected,
                 ]}
               >
-                {f === "story" ? "Story  9:16" : "Square  1:1"}
+                {f === "story" ? "Story · 9:16" : "Square · 1:1"}
               </Text>
             </TouchableOpacity>
           ))}
@@ -134,29 +149,32 @@ export default function ExportScreen() {
       </View>
 
       {/* ---- Card preview ---- */}
-      <View style={styles.previewWrapper}>
-        <View
-          style={[
-            styles.previewContainer,
-            {
-              width: previewWidth,
-              height: previewWidth * cardAspect,
-            },
-          ]}
-        >
-          <ExportCardCanvas
-            ref={canvasRef}
-            milestone={milestone}
-            moonPhaseFraction={moonPhase.phaseFraction}
-            moonPhaseIndex={moonPhase.phaseIndex}
-            moonPhaseName={describePhase(moonPhase)}
-            moonPhaseIllumination={formatIllumination(moonPhase.phaseFraction)}
-            brightLimbAngleDeg={brightLimbAngleDeg}
-            moonReturns={moonReturns}
-            format={format}
-            previewWidth={previewWidth}
-          />
-        </View>
+      <View style={styles.previewWrapper} onLayout={onSlotLayout}>
+        {previewWidth > 0 && (
+          <View
+            style={[
+              styles.previewContainer,
+              {
+                width: previewWidth,
+                height: previewWidth * cardAspect,
+              },
+            ]}
+          >
+            <ExportCardCanvas
+              ref={canvasRef}
+              milestone={milestone}
+              moonPhaseFraction={moonPhase.phaseFraction}
+              moonPhaseIndex={moonPhase.phaseIndex}
+              moonPhaseName={describePhase(moonPhase)}
+              moonPhaseIllumination={formatIllumination(moonPhase.phaseFraction)}
+              brightLimbAngleDeg={brightLimbAngleDeg}
+              moonReturns={moonReturns}
+              placeLabel={milestone.location?.label ?? null}
+              format={format}
+              previewWidth={previewWidth}
+            />
+          </View>
+        )}
       </View>
 
       {/* ---- Export button ---- */}
@@ -171,7 +189,7 @@ export default function ExportScreen() {
           {exporting ? (
             <ActivityIndicator color={Colors.paper} />
           ) : (
-            <Text style={styles.exportButtonText}>Share Card</Text>
+            <Text style={styles.exportButtonText}>Share this card</Text>
           )}
         </TouchableOpacity>
         <TouchableOpacity
@@ -201,45 +219,31 @@ const styles = StyleSheet.create({
 
   // ---- Format selector ----
   formatRow: {
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.page,
     paddingTop: Spacing.md,
-    paddingBottom: Spacing.sm,
+    paddingBottom: Spacing.md,
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.inkMuted + "22",
   },
-  formatLabel: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.label,
-    color: Colors.inkMuted,
-    letterSpacing: 2,
-  },
+  formatLabel: { ...Type.label },
   formatChips: {
     flexDirection: "row",
     gap: Spacing.sm,
   },
   formatChip: {
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs + 2,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Colors.inkMuted + "44",
-    backgroundColor: Colors.rule,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.paperDim,
   },
-  formatChipSelected: {
-    borderColor: Colors.signal,
-    backgroundColor: Colors.signal + "22",
-  },
+  formatChipSelected: { backgroundColor: Colors.ink },
   formatChipText: {
-    fontFamily: FontFamily.mono,
+    fontFamily: FontFamily.medium,
     fontSize: FontSize.small,
     color: Colors.inkMuted,
   },
-  formatChipTextSelected: {
-    color: Colors.signal,
-  },
+  formatChipTextSelected: { color: Colors.paper },
 
   // ---- Preview ----
   previewWrapper: {
@@ -247,26 +251,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.page,
   },
   previewContainer: {
     borderRadius: Radius.plate,
     overflow: "hidden",
+    backgroundColor: Colors.paperDim,
   },
 
   // ---- APOD status ----
 
   // ---- Footer ----
   footer: {
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.page,
     paddingVertical: Spacing.md,
     paddingBottom: Platform.OS === "ios" ? Spacing.xl : Spacing.md,
     gap: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.inkMuted + "22",
   },
   exportButton: {
-    backgroundColor: Colors.signal,
-    borderRadius: Radius.plate,
+    backgroundColor: Colors.ink,
+    borderRadius: Radius.pill,
     paddingVertical: Spacing.md,
     alignItems: "center",
   },
@@ -274,16 +278,13 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   exportButtonText: {
-    fontFamily: FontFamily.bold,
+    fontFamily: FontFamily.semibold,
     fontSize: FontSize.body,
     color: Colors.paper,
-    letterSpacing: 0.3,
   },
   cancelButton: {
-    borderRadius: Radius.plate,
-    borderWidth: 1,
-    borderColor: Colors.inkMuted + "44",
-    paddingVertical: Spacing.sm + 4,
+    borderRadius: Radius.pill,
+    paddingVertical: Spacing.md,
     alignItems: "center",
   },
   cancelButtonText: {
