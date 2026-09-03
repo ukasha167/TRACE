@@ -5,20 +5,34 @@ import {
   TextInput,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  Switch,
+  Pressable,
   Alert,
   Platform,
   KeyboardAvoidingView,
 } from "react-native";
-import { Colors, FontFamily, FontSize, Spacing, Radius } from "@/constants/theme";
+import {
+  Colors,
+  FontFamily,
+  FontSize,
+  Spacing,
+  Radius,
+  Type,
+} from "@/constants/theme";
 import { useSettingsStore } from "@/store/useSettingsStore";
 
+/**
+ * SETTINGS.
+ *
+ * This screen had drifted furthest from the system: it painted backgrounds with
+ * Colors.rule (a hairline colour used as a fill), built translucency by
+ * concatenating hex strings onto tokens, and mixed three button shapes. All of
+ * it is now paper, paperDim, and the pill.
+ */
 export default function SettingsScreen() {
   const nasaApiKey = useSettingsStore((s) => s.nasaApiKey);
   const setNasaApiKey = useSettingsStore((s) => s.setNasaApiKey);
 
-  // Local draft for the key input — only committed on Save
+  // Local draft for the key input, only committed on save.
   const [keyDraft, setKeyDraft] = useState(nasaApiKey ?? "");
   const [keyVisible, setKeyVisible] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
@@ -28,7 +42,7 @@ export default function SettingsScreen() {
       ? process.env.EXPO_PUBLIC_NASA_API_KEY ?? null
       : null;
 
-  // The active key (store overrides env)
+  // The active key (the stored override beats the env value).
   const activeKey = nasaApiKey || envKey || "DEMO_KEY";
   const usingEnv = !nasaApiKey && !!envKey;
   const usingDemo = !nasaApiKey && !envKey;
@@ -36,7 +50,7 @@ export default function SettingsScreen() {
   const handleSaveKey = useCallback(() => {
     const trimmed = keyDraft.trim();
     if (!trimmed) {
-      // Empty = clear override, fall back to env / DEMO_KEY
+      // Empty clears the override and falls back to env, then DEMO_KEY.
       setNasaApiKey(null);
       setKeyDraft("");
     } else {
@@ -48,10 +62,10 @@ export default function SettingsScreen() {
 
   const handleClearKey = useCallback(() => {
     Alert.alert(
-      "Clear custom key?",
+      "Clear your key?",
       usingEnv
-        ? "The app will use your EXPO_PUBLIC_NASA_API_KEY environment variable."
-        : "The app will fall back to DEMO_KEY (30 req/hr).",
+        ? "TRACE will use the EXPO_PUBLIC_NASA_API_KEY from your environment."
+        : "TRACE will fall back to DEMO_KEY, which allows 30 requests an hour.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -72,317 +86,245 @@ export default function SettingsScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* ---- NASA API key ---- */}
+        <Text style={styles.label}>NASA image key</Text>
+        <Text style={styles.help}>
+          The shared DEMO_KEY allows 30 requests an hour, which one life ledger
+          exhausts on its own. A personal key is free at api.nasa.gov and allows
+          1,000.
+        </Text>
 
-        {/* ---- NASA API Key ---- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>NASA API KEY</Text>
-          <Text style={styles.sectionDesc}>
-            The free DEMO_KEY allows 30 requests/hour and 50/day.{"\n"}
-            Your personal key (free at{" "}
-            <Text style={styles.link}>api.nasa.gov</Text>
-            ) allows 1,000/hour.
+        <View style={styles.statusRow}>
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: usingDemo ? Colors.signal : Colors.ink },
+            ]}
+          />
+          <Text style={styles.statusText}>
+            {usingDemo
+              ? "Using DEMO_KEY, rate limited"
+              : usingEnv
+              ? "Using the key from your environment"
+              : "Using your own key"}
           </Text>
-
-          {/* Status pill */}
-          <View style={styles.statusRow}>
-            <View
-              style={[
-                styles.statusDot,
-                {
-                  backgroundColor: usingDemo
-                    ? Colors.signal
-                    : Colors.ink,
-                },
-              ]}
-            />
-            <Text style={styles.statusText}>
-              {usingDemo
-                ? "Using DEMO_KEY — limited rate"
-                : usingEnv
-                ? "Using EXPO_PUBLIC_NASA_API_KEY from .env"
-                : "Using custom key"}
-            </Text>
-          </View>
-
-          {/* Key input */}
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.keyInput}
-              value={keyDraft}
-              onChangeText={(t) => {
-                setKeyDraft(t);
-                setKeySaved(false);
-              }}
-              placeholder="Paste your API key here"
-              placeholderTextColor={Colors.inkMuted + "88"}
-              selectionColor={Colors.signal}
-              secureTextEntry={!keyVisible}
-              autoCapitalize="none"
-              autoCorrect={false}
-              spellCheck={false}
-              returnKeyType="done"
-              onSubmitEditing={handleSaveKey}
-              accessibilityLabel="NASA API key input"
-            />
-            <TouchableOpacity
-              style={styles.visibilityToggle}
-              onPress={() => setKeyVisible((v) => !v)}
-              accessibilityRole="button"
-              accessibilityLabel={keyVisible ? "Hide key" : "Show key"}
-            >
-              <Text style={styles.visibilityToggleText}>
-                {keyVisible ? "Hide" : "Show"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Save / Clear buttons */}
-          <View style={styles.keyActions}>
-            <TouchableOpacity
-              style={[styles.saveKeyButton, keySaved && styles.saveKeyButtonSaved]}
-              onPress={handleSaveKey}
-              accessibilityRole="button"
-            >
-              <Text style={styles.saveKeyButtonText}>
-                {keySaved ? "✓ Saved" : "Save Key"}
-              </Text>
-            </TouchableOpacity>
-            {nasaApiKey && (
-              <TouchableOpacity
-                style={styles.clearKeyButton}
-                onPress={handleClearKey}
-                accessibilityRole="button"
-              >
-                <Text style={styles.clearKeyButtonText}>Clear</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Active key preview */}
-          <View style={styles.activeKeyRow}>
-            <Text style={styles.activeKeyLabel}>ACTIVE KEY</Text>
-            <Text style={styles.activeKeyValue}>
-              {activeKey.length > 12
-                ? `${activeKey.slice(0, 6)}••••${activeKey.slice(-4)}`
-                : activeKey}
-            </Text>
-          </View>
         </View>
 
-        <View style={styles.divider} />
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.keyInput}
+            value={keyDraft}
+            onChangeText={(t) => {
+              setKeyDraft(t);
+              setKeySaved(false);
+            }}
+            placeholder="Paste your key"
+            placeholderTextColor={Colors.inkMuted}
+            selectionColor={Colors.signal}
+            secureTextEntry={!keyVisible}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+            returnKeyType="done"
+            onSubmitEditing={handleSaveKey}
+            accessibilityLabel="NASA API key"
+          />
+          <Pressable
+            style={styles.ghostButton}
+            onPress={() => setKeyVisible((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={keyVisible ? "Hide key" : "Show key"}
+          >
+            <Text style={styles.ghostButtonText}>
+              {keyVisible ? "Hide" : "Show"}
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.keyActions}>
+          <Pressable
+            style={({ pressed }) => [styles.saveButton, pressed && styles.pressed]}
+            onPress={handleSaveKey}
+            accessibilityRole="button"
+          >
+            <Text style={styles.saveButtonText}>
+              {keySaved ? "Saved" : "Save key"}
+            </Text>
+          </Pressable>
+          {nasaApiKey && (
+            <Pressable
+              style={({ pressed }) => [styles.clearButton, pressed && styles.pressed]}
+              onPress={handleClearKey}
+              accessibilityRole="button"
+            >
+              <Text style={styles.clearButtonText}>Clear</Text>
+            </Pressable>
+          )}
+        </View>
+
+        <View style={styles.activeKeyRow}>
+          <Text style={styles.activeKeyLabel}>In use</Text>
+          <Text style={styles.activeKeyValue}>
+            {activeKey.length > 12
+              ? `${activeKey.slice(0, 6)}••••${activeKey.slice(-4)}`
+              : activeKey}
+          </Text>
+        </View>
 
         {/* ---- About ---- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>ABOUT</Text>
-          <View style={styles.aboutCard}>
-            <Text style={styles.aboutAppName}>TRACE</Text>
-            <Text style={styles.aboutTagline}>
-              Every date has a cosmic story.
+        <Text style={[styles.label, styles.spaced]}>About</Text>
+        <View style={styles.about}>
+          <Text style={styles.aboutName}>TRACE</Text>
+          <Text style={styles.aboutLine}>
+            The sky keeps a schedule, and it happens to line up with the dates
+            you care about.
+          </Text>
+          <View style={styles.aboutMeta}>
+            <Text style={styles.aboutMetaRow}>Moon and sun · SunCalc 2</Text>
+            <Text style={styles.aboutMetaRow}>
+              Planets · astronomy-engine
             </Text>
-            <View style={styles.aboutMeta}>
-              <Text style={styles.aboutMetaRow}>
-                Moon phase · SunCalc 2
-              </Text>
-              <Text style={styles.aboutMetaRow}>
-                Astronomy images · NASA APOD API
-              </Text>
-            </View>
+            <Text style={styles.aboutMetaRow}>
+              Stars · Yale Bright Star Catalog
+            </Text>
+            <Text style={styles.aboutMetaRow}>
+              Lunar surface · NASA LRO
+            </Text>
+            <Text style={styles.aboutMetaRow}>Images · NASA APOD</Text>
           </View>
+          <Text style={styles.aboutNote}>
+            Everything except the NASA images is computed on this device. No
+            account, no telemetry, and your locations never leave the phone.
+          </Text>
         </View>
-
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.paper,
-  },
-  scrollContent: {
-    paddingHorizontal: Spacing.md,
+  root: { flex: 1, backgroundColor: Colors.paper },
+  content: {
+    paddingHorizontal: Spacing.page,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xxl,
   },
+  pressed: { opacity: 0.6 },
 
-  // ---- Sections ----
-  section: {
-    marginBottom: Spacing.lg,
-  },
-  sectionLabel: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.label,
-    color: Colors.inkMuted,
-    letterSpacing: 2,
-    marginBottom: Spacing.sm,
-  },
-  sectionDesc: {
-    fontFamily: FontFamily.regular,
-    fontSize: FontSize.small,
-    color: Colors.inkMuted,
-    lineHeight: 20,
-    opacity: 0.75,
-    marginBottom: Spacing.md,
-  },
-  link: {
-    color: Colors.inkMuted,
-    textDecorationLine: "underline",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.inkMuted,
-    opacity: 0.15,
-    marginBottom: Spacing.lg,
-  },
+  label: { ...Type.label, color: Colors.ink },
+  spaced: { marginTop: Spacing.xl },
+  help: { ...Type.small, marginTop: Spacing.sm },
 
-  // ---- API Key ----
   statusRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
-    marginBottom: Spacing.sm,
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
   },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
+  statusDot: { width: 7, height: 7, borderRadius: Radius.pill },
   statusText: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.label,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
     color: Colors.inkMuted,
-    letterSpacing: 0.3,
   },
+
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
-    marginBottom: Spacing.sm,
+    marginTop: Spacing.md,
   },
   keyInput: {
     flex: 1,
-    backgroundColor: Colors.rule,
-    borderWidth: 1,
-    borderColor: Colors.inkMuted + "44",
+    backgroundColor: Colors.paperDim,
     borderRadius: Radius.plate,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm + 4,
+    paddingVertical: Spacing.md,
     fontFamily: FontFamily.mono,
     fontSize: FontSize.small,
     color: Colors.ink,
-    letterSpacing: 0.5,
   },
-  visibilityToggle: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm + 4,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Colors.inkMuted + "44",
-    backgroundColor: Colors.rule,
+  ghostButton: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.paperDim,
   },
-  visibilityToggleText: {
+  ghostButtonText: {
     fontFamily: FontFamily.medium,
     fontSize: FontSize.small,
     color: Colors.inkMuted,
   },
-  keyActions: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  saveKeyButton: {
+
+  keyActions: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md },
+  saveButton: {
     flex: 1,
-    backgroundColor: Colors.signal,
-    borderRadius: Radius.sm,
-    paddingVertical: Spacing.sm + 2,
+    backgroundColor: Colors.ink,
+    borderRadius: Radius.pill,
+    paddingVertical: Spacing.md,
     alignItems: "center",
   },
-  saveKeyButtonSaved: {
-    backgroundColor: Colors.inkMuted,
-  },
-  saveKeyButtonText: {
-    fontFamily: FontFamily.bold,
-    fontSize: FontSize.small,
+  saveButtonText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: FontSize.body,
     color: Colors.paper,
-    letterSpacing: 0.3,
   },
-  clearKeyButton: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm + 2,
-    borderRadius: Radius.sm,
+  clearButton: {
+    paddingHorizontal: Spacing.lg,
+    justifyContent: "center",
+    borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: Colors.signal + "66",
-    alignItems: "center",
+    borderColor: Colors.rule,
   },
-  clearKeyButtonText: {
+  clearButtonText: {
     fontFamily: FontFamily.medium,
     fontSize: FontSize.small,
-    color: Colors.signal,
+    color: Colors.danger,
   },
+
   activeKeyRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    backgroundColor: Colors.rule,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Colors.inkMuted + "33",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: Spacing.md,
+    marginTop: Spacing.lg,
+    paddingTop: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.rule,
   },
-  activeKeyLabel: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.label,
-    color: Colors.inkMuted,
-    letterSpacing: 1.5,
-    opacity: 0.6,
-  },
+  activeKeyLabel: { ...Type.label },
   activeKeyValue: {
-    flex: 1,
     fontFamily: FontFamily.mono,
     fontSize: FontSize.small,
     color: Colors.ink,
+    flexShrink: 1,
     textAlign: "right",
   },
 
-  // ---- Distance unit ----
-
-  // ---- About ----
-  aboutCard: {
-    backgroundColor: Colors.rule,
-    borderRadius: Radius.plate,
-    borderWidth: 1,
-    borderColor: Colors.inkMuted + "33",
+  about: {
+    marginTop: Spacing.md,
     padding: Spacing.lg,
-    alignItems: "center",
-    gap: Spacing.xs,
+    backgroundColor: Colors.paperDim,
+    borderRadius: Radius.plate,
+    gap: Spacing.sm,
   },
-  aboutAppName: {
-    fontFamily: FontFamily.bold,
-    fontSize: 32,
+  aboutName: {
+    fontFamily: FontFamily.serifMedium,
+    fontSize: FontSize.title,
+    letterSpacing: 1,
     color: Colors.ink,
-    letterSpacing: 6,
   },
-  aboutTagline: {
-    fontFamily: FontFamily.regular,
-    fontSize: FontSize.body,
-    color: Colors.inkMuted,
-    marginBottom: Spacing.sm,
-  },
-  aboutMeta: {
-    gap: 4,
-    alignItems: "center",
-  },
+  aboutLine: { ...Type.bodyMuted },
+  aboutMeta: { gap: 3, marginTop: Spacing.sm },
   aboutMetaRow: {
     fontFamily: FontFamily.mono,
     fontSize: FontSize.label,
+    lineHeight: 18,
     color: Colors.inkMuted,
-    opacity: 0.5,
-    letterSpacing: 0.3,
   },
+  aboutNote: { ...Type.small, marginTop: Spacing.sm },
 });
