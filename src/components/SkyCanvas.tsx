@@ -73,7 +73,7 @@ export function SkyCanvas({ date, location, size, magnitudeLimit = 4.6 }: Props)
       <Canvas style={{ width: size, height: size, backgroundColor: Colors.plate }}>
         <Group>
           {/* Horizon */}
-          <Path path={horizonRing} style="stroke" strokeWidth={1} color="#3A3A30" />
+          <Path path={horizonRing} style="stroke" strokeWidth={1} color={Colors.plateRule} />
 
           {stars.map((s) => {
             const p = projectToDisc(s);
@@ -99,7 +99,7 @@ export function SkyCanvas({ date, location, size, magnitudeLimit = 4.6 }: Props)
                 cx={cx + q.x * R}
                 cy={cy + q.y * R}
                 r={2.6}
-                color={Colors.signal}
+                color={Colors.signalOnPlate}
               />
             );
           })}
