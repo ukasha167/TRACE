@@ -1,6 +1,14 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
-import { Colors, Spacing, Type, FontFamily, FontSize } from "@/constants/theme";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { router, type Href } from "expo-router";
+import {
+  Colors,
+  Spacing,
+  Type,
+  FontFamily,
+  FontSize,
+  Tracking,
+} from "@/constants/theme";
 import { MoonPhaseGlyph } from "../MoonPhaseGlyph";
 import { SectionHeader } from "./SectionHeader";
 import {
@@ -10,6 +18,8 @@ import {
 } from "@/lib/astronomy/moonPhase";
 import type { MoonSnapshot, MilestoneLocation } from "@/types";
 
+const route = (path: string) => path as Href;
+
 type PhaseData = Pick<
   MoonSnapshot,
   "phaseFraction" | "phaseName" | "phaseIndex" | "isTruePhase" | "waxing"
@@ -17,6 +27,7 @@ type PhaseData = Pick<
 
 interface Props {
   n: number;
+  milestoneId: string;
   phase: PhaseData;
   brightLimbAngleDeg: number | null;
   location: MilestoneLocation | null;
@@ -31,7 +42,13 @@ interface Props {
  * Labels go through describePhase(), never phaseName: the raw 8-way bucket
  * calls anything within 1.85 days of full a "Full Moon" (spec §6.2).
  */
-export function MoonSection({ n, phase, brightLimbAngleDeg, location }: Props) {
+export function MoonSection({
+  n,
+  milestoneId,
+  phase,
+  brightLimbAngleDeg,
+  location,
+}: Props) {
   const note = describeSyzygyNote(phase);
 
   return (
@@ -74,6 +91,16 @@ export function MoonSection({ n, phase, brightLimbAngleDeg, location }: Props) {
             : "Add a location to compute this"}
         </Text>
       </View>
+
+      <TouchableOpacity
+        style={styles.immersiveLink}
+        onPress={() => router.push(route(`/sky/${milestoneId}`))}
+        accessibilityRole="button"
+        accessibilityLabel="Open the full sky view"
+      >
+        <Text style={styles.immersiveText}>STAND UNDER THIS SKY</Text>
+        <Text style={styles.immersiveArrow}>&#8594;</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -128,4 +155,25 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: "right",
   },
+  immersiveLink: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: Colors.ink,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  immersiveText: {
+    fontFamily: FontFamily.monoMedium,
+    fontSize: FontSize.small,
+    letterSpacing: Tracking.label,
+    color: Colors.paper,
+  },
+  immersiveArrow: {
+    fontFamily: FontFamily.regular,
+    fontSize: 20,
+    color: Colors.signal,
+  },
 });
+

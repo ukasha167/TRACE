@@ -74,7 +74,12 @@ export function getRarityStat(
   const pad = (n: number) => String(n).padStart(2, "0");
   const threshold = thresholdPct / 100;
 
+  // Illumination on the milestone night itself
+  const sourceNight = toLocalNight(dateString, options.tzOffsetMin);
+  const baseFraction = SunCalc.getMoonIllumination(sourceNight).fraction;
+
   const matchingYears: number[] = [];
+  const matchingDetails: { year: number; illuminationPct: number }[] = [];
   let totalYears = 0;
 
   for (let year = sourceYear; year <= throughYear; year++) {
@@ -84,7 +89,19 @@ export function getRarityStat(
     const fraction = SunCalc.getMoonIllumination(
       toLocalNight(target, options.tzOffsetMin)
     ).fraction;
-    if (fraction >= threshold) matchingYears.push(year);
+
+    // A year matches if it clears the threshold OR lands within ±1.0%
+    // of the milestone date's illumination (bare-eye indistinguishable).
+    const isWithinTolerance = Math.abs(fraction - baseFraction) <= 0.010001;
+    const meetsThreshold = fraction >= threshold;
+
+    if (meetsThreshold || isWithinTolerance) {
+      matchingYears.push(year);
+      matchingDetails.push({
+        year,
+        illuminationPct: Math.round(fraction * 1000) / 10,
+      });
+    }
   }
 
   const frequency = measureFrequency(thresholdPct);
@@ -94,6 +111,7 @@ export function getRarityStat(
     frequency,
     oneInN: 1 / frequency,
     matchingYears,
+    matchingDetails,
     totalYears,
   };
 }

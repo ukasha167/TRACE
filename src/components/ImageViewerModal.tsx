@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   Modal,
   View,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -18,7 +19,14 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors, FontFamily, FontSize, Spacing, Tracking } from "@/constants/theme";
+import {
+  Colors,
+  FontFamily,
+  FontSize,
+  Spacing,
+  Tracking,
+  Radius,
+} from "@/constants/theme";
 
 interface ImageViewerModalProps {
   visible: boolean;
@@ -180,9 +188,16 @@ export function ImageViewerModal({
     ],
   }));
 
-  if (!visible) return null;
+  const hasHd = Boolean(hdUrl && hdUrl !== imageUrl);
+  const [isHdLoaded, setIsHdLoaded] = useState(false);
 
-  const activeUri = hdUrl || imageUrl;
+  useEffect(() => {
+    if (visible) {
+      setIsHdLoaded(false);
+    }
+  }, [visible, hdUrl]);
+
+  if (!visible) return null;
 
   return (
     <Modal
@@ -196,15 +211,47 @@ export function ImageViewerModal({
       <View style={styles.root}>
         <GestureDetector gesture={gesture}>
           <Animated.View style={[styles.canvas, animatedImageStyle]}>
+            {/* Low-res thumbnail opens instantaneously from cache with zero blank screen */}
             <Image
-              source={{ uri: activeUri }}
-              style={{ width, height }}
+              source={{ uri: imageUrl }}
+              style={{ width, height, position: "absolute" }}
               contentFit="contain"
-              transition={200}
               accessibilityLabel={title}
             />
+
+            {/* Hi-res image loaded progressively over thumbnail and faded in once decoded */}
+            {hasHd && (
+              <Image
+                source={{ uri: hdUrl! }}
+                style={{
+                  width,
+                  height,
+                  position: "absolute",
+                  opacity: isHdLoaded ? 1 : 0,
+                }}
+                contentFit="contain"
+                transition={300}
+                onLoad={() => setIsHdLoaded(true)}
+                onError={() => setIsHdLoaded(false)}
+                accessibilityLabel={title}
+              />
+            )}
           </Animated.View>
         </GestureDetector>
+
+        {/* Loading badge while hi-res image downloads and decodes */}
+        {hasHd && !isHdLoaded && (
+          <View
+            style={[
+              styles.loaderBadge,
+              { bottom: insets.bottom + (copyright ? Spacing.xl + Spacing.sm : Spacing.xl) },
+            ]}
+            pointerEvents="none"
+          >
+            <ActivityIndicator size="small" color={Colors.signal} />
+            <Text style={styles.loaderText}>LOADING HI-RES</Text>
+          </View>
+        )}
 
         {showChrome && (
           <>
@@ -321,4 +368,24 @@ const styles = StyleSheet.create({
     color: Colors.plateMuted,
     letterSpacing: 0.5,
   },
+  loaderBadge: {
+    position: "absolute",
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    backgroundColor: Colors.plate,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.plate,
+    borderWidth: 1,
+    borderColor: Colors.rule,
+  },
+  loaderText: {
+    fontFamily: FontFamily.monoMedium,
+    fontSize: FontSize.label,
+    color: Colors.plateInk,
+    letterSpacing: Tracking.label,
+  },
 });
+

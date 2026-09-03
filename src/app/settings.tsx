@@ -190,9 +190,6 @@ export default function SettingsScreen() {
               <Text style={styles.aboutMetaRow}>
                 Astronomy images · NASA APOD API
               </Text>
-              <Text style={styles.aboutMetaRow}>
-                Planetary ages · Sidereal orbital periods
-              </Text>
             </View>
           </View>
         </View>

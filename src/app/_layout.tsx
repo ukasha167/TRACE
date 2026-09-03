@@ -68,7 +68,6 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="age-converter" options={{ title: "PLANETARY AGES" }} />
         <Stack.Screen
           name="settings"
           options={{ title: "SETTINGS", presentation: "modal" }}
