@@ -27,7 +27,7 @@ import {
   Type,
   FontFamily,
   FontSize,
-  Tracking,
+  Radius,
 } from "@/constants/theme";
 import {
   toLocalNoon,
@@ -43,10 +43,13 @@ import {
  * too easy to get subtly wrong twice (see the lat/lng-0 bug that made typed
  * places useless for historical dates).
  *
- * No pictograms. Swiss form conventions: labels are small uppercase mono, inputs
- * are underlined rather than boxed, and the selected chip is an ink fill. The
- * emoji that used to sit on the type chips were the single most generic element
- * in the app and rendered as tofu on some devices besides.
+ * No pictograms. Labels are small uppercase Figtree, inputs are underlined
+ * rather than boxed, and the selected chip is an ink fill. The emoji that used
+ * to sit on the type chips were the single most generic element in the app and
+ * rendered as tofu on some devices besides.
+ *
+ * Chip and button labels are sentence case. They were MONO CAPS, which made a
+ * form for recording a birthday read like a terminal prompt.
  */
 
 export interface MilestoneFormValues {
@@ -66,10 +69,10 @@ interface MilestoneFormProps {
 }
 
 const TYPES: Array<{ value: MilestoneType; label: string }> = [
-  { value: "birthday", label: "BIRTHDAY" },
-  { value: "anniversary", label: "ANNIVERSARY" },
-  { value: "graduation", label: "GRADUATION" },
-  { value: "custom", label: "RECORD" },
+  { value: "birthday", label: "Birthday" },
+  { value: "anniversary", label: "Anniversary" },
+  { value: "graduation", label: "Graduation" },
+  { value: "custom", label: "Record" },
 ];
 
 export function MilestoneForm({
@@ -131,7 +134,7 @@ export function MilestoneForm({
       if (status !== "granted") {
         Alert.alert(
           "Location permission denied",
-          "You can type a place instead, or save without one — everything except the sky view still works."
+          "You can type a place instead, or save without one. Everything except the sky view still works."
         );
         return;
       }
@@ -215,7 +218,7 @@ export function MilestoneForm({
         showsVerticalScrollIndicator={false}
       >
         {/* ---- Title ---- */}
-        <Text style={styles.label}>TITLE</Text>
+        <Text style={styles.label}>Title</Text>
         <TextInput
           style={[styles.input, titleError && styles.inputError]}
           value={title}
@@ -233,7 +236,7 @@ export function MilestoneForm({
         {titleError && <Text style={styles.error}>A title is required.</Text>}
 
         {/* ---- Type ---- */}
-        <Text style={[styles.label, styles.spaced]}>TYPE</Text>
+        <Text style={[styles.label, styles.spaced]}>Type</Text>
         <View style={styles.chips}>
           {TYPES.map((t) => {
             const selected = type === t.value;
@@ -254,7 +257,7 @@ export function MilestoneForm({
         </View>
 
         {/* ---- Date ---- */}
-        <Text style={[styles.label, styles.spaced]}>DATE</Text>
+        <Text style={[styles.label, styles.spaced]}>Date</Text>
         {Platform.OS === "android" && (
           <TouchableOpacity
             onPress={() => setShowDatePicker(true)}
@@ -279,7 +282,7 @@ export function MilestoneForm({
         )}
 
         {/* ---- Notes ---- */}
-        <Text style={[styles.label, styles.spaced]}>NOTES · OPTIONAL</Text>
+        <Text style={[styles.label, styles.spaced]}>Notes, optional</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
           value={notes}
@@ -293,7 +296,7 @@ export function MilestoneForm({
         />
 
         {/* ---- Location ---- */}
-        <Text style={[styles.label, styles.spaced]}>LOCATION · OPTIONAL</Text>
+        <Text style={[styles.label, styles.spaced]}>Location, optional</Text>
         <Text style={styles.help}>
           Needed for the sky view and the moon&apos;s tilt. Everything else works
           without it.
@@ -325,7 +328,7 @@ export function MilestoneForm({
             {busy === "lookup" ? (
               <ActivityIndicator size="small" color={Colors.ink} />
             ) : (
-              <Text style={styles.outlineButtonText}>FIND PLACE</Text>
+              <Text style={styles.outlineButtonText}>Find place</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity
@@ -337,14 +340,14 @@ export function MilestoneForm({
             {busy === "gps" ? (
               <ActivityIndicator size="small" color={Colors.ink} />
             ) : (
-              <Text style={styles.outlineButtonText}>USE CURRENT</Text>
+              <Text style={styles.outlineButtonText}>Use current</Text>
             )}
           </TouchableOpacity>
         </View>
 
         {location && (
           <View style={styles.resolved}>
-            <Text style={styles.resolvedLabel}>RESOLVED</Text>
+            <Text style={styles.resolvedLabel}>Resolved</Text>
             <Text style={styles.resolvedValue}>
               {Math.abs(location.latitude).toFixed(3)}°
               {location.latitude >= 0 ? "N" : "S"}{"   "}
@@ -367,7 +370,7 @@ export function MilestoneForm({
           onPress={onCancel}
           accessibilityRole="button"
         >
-          <Text style={styles.cancelText}>CANCEL</Text>
+          <Text style={styles.cancelText}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.save}
@@ -394,31 +397,38 @@ const styles = StyleSheet.create({
   help: { ...Type.small, marginTop: Spacing.xs, marginBottom: Spacing.sm },
 
   input: {
-    fontFamily: FontFamily.regular,
-    fontSize: FontSize.lead,
+    fontFamily: FontFamily.serif,
+    fontSize: FontSize.title,
+    lineHeight: 38,
     color: Colors.ink,
     paddingVertical: Spacing.sm,
     marginTop: Spacing.xs,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.ink,
+    borderBottomColor: Colors.rule,
   },
-  inputError: { borderBottomColor: Colors.signal },
-  multiline: { minHeight: 72, textAlignVertical: "top" },
-  error: { ...Type.small, color: Colors.signal, marginTop: Spacing.sm },
+  inputError: { borderBottomColor: Colors.danger },
+  multiline: {
+    fontFamily: FontFamily.regular,
+    fontSize: FontSize.body,
+    lineHeight: 24,
+    minHeight: 72,
+    textAlignVertical: "top",
+  },
+  error: { ...Type.small, color: Colors.danger, marginTop: Spacing.sm },
 
   chips: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm, marginTop: Spacing.sm },
   chip: {
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.sm + 2,
     paddingHorizontal: Spacing.md,
+    borderRadius: Radius.pill,
     borderWidth: 1,
-    borderColor: Colors.ink,
+    borderColor: Colors.rule,
   },
-  chipOn: { backgroundColor: Colors.ink },
+  chipOn: { backgroundColor: Colors.ink, borderColor: Colors.ink },
   chipText: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.label,
-    letterSpacing: Tracking.label,
-    color: Colors.ink,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
+    color: Colors.inkMuted,
   },
   chipTextOn: { color: Colors.paper },
 
@@ -428,7 +438,7 @@ const styles = StyleSheet.create({
     color: Colors.ink,
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.ink,
+    borderBottomColor: Colors.rule,
   },
   pickerWrap: { marginTop: Spacing.xs, alignItems: "center" },
 
@@ -437,14 +447,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 42,
-    borderWidth: 1,
-    borderColor: Colors.ink,
+    minHeight: 46,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.paperDim,
   },
   outlineButtonText: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.label,
-    letterSpacing: Tracking.label,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
     color: Colors.ink,
   },
 
@@ -459,38 +468,42 @@ const styles = StyleSheet.create({
   },
   resolvedLabel: { ...Type.label, color: Colors.signal },
   resolvedValue: {
-    fontFamily: FontFamily.monoMedium,
+    fontFamily: FontFamily.mono,
     fontSize: FontSize.small,
     color: Colors.ink,
   },
 
   footer: {
     flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.page,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: Colors.ink,
+    borderTopColor: Colors.rule,
   },
   cancel: {
     paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.page,
+    paddingHorizontal: Spacing.md,
     justifyContent: "center",
   },
   cancelText: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.label,
-    letterSpacing: Tracking.label,
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.body,
     color: Colors.inkMuted,
   },
   save: {
     flex: 1,
     backgroundColor: Colors.ink,
+    borderRadius: Radius.pill,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: Spacing.md,
   },
   saveText: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.small,
-    letterSpacing: Tracking.label,
+    fontFamily: FontFamily.semibold,
+    fontSize: FontSize.body,
     color: Colors.paper,
   },
 });
