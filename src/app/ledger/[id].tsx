@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, ActivityIndicator } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import {
@@ -12,7 +12,9 @@ import {
 import { useMilestonesStore } from "@/store/useMilestonesStore";
 import { getLifeLedger, type LedgerYear } from "@/lib/astronomy/lifeLedger";
 import { LedgerRow } from "@/components/LedgerRow";
+import { ImageViewerModal } from "@/components/ImageViewerModal";
 import { useApodBatch } from "@/hooks/useApodBatch";
+import type { ApodCacheEntry } from "@/types";
 
 /**
  * THE LIFE LEDGER — spec §2 / §8.5.
@@ -23,6 +25,7 @@ import { useApodBatch } from "@/hooks/useApodBatch";
  * it has to pass.
  */
 export default function LedgerScreen() {
+  const [activeApod, setActiveApod] = useState<ApodCacheEntry | null>(null);
   const { id } = useLocalSearchParams<{ id: string }>();
   const getMilestone = useMilestonesStore((s) => s.getMilestone);
   const milestone = getMilestone(id);
@@ -105,6 +108,7 @@ export default function LedgerScreen() {
             row={item}
             apod={apod.entries.get(item.date) ?? null}
             isLast={index === rows.length - 1}
+            onApodPress={setActiveApod}
           />
         )}
         ListFooterComponent={
@@ -115,6 +119,18 @@ export default function LedgerScreen() {
           </Text>
         }
       />
+
+      {activeApod && (
+        <ImageViewerModal
+          visible={Boolean(activeApod)}
+          onClose={() => setActiveApod(null)}
+          imageUrl={activeApod.url}
+          hdUrl={activeApod.hdurl}
+          title={activeApod.title}
+          date={activeApod.date}
+          copyright={activeApod.copyright}
+        />
+      )}
     </View>
   );
 }

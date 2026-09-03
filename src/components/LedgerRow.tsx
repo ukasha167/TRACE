@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Image } from "expo-image";
 import { Colors, Spacing, Type, FontFamily, FontSize } from "@/constants/theme";
 import { MoonPhaseGlyph } from "./MoonPhaseGlyph";
@@ -11,6 +11,7 @@ interface LedgerRowProps {
   row: LedgerYear;
   apod: ApodCacheEntry | null;
   isLast: boolean;
+  onApodPress?: (apod: ApodCacheEntry) => void;
 }
 
 /**
@@ -25,7 +26,7 @@ interface LedgerRowProps {
  * paint instantly, while APOD images land later and must never hold a row back.
  * No text is truncated.
  */
-export function LedgerRow({ row, apod, isLast }: LedgerRowProps) {
+export function LedgerRow({ row, apod, isLast, onApodPress }: LedgerRowProps) {
   const showThumb = apod?.kind === "photograph";
 
   return (
@@ -58,14 +59,23 @@ export function LedgerRow({ row, apod, isLast }: LedgerRowProps) {
       </View>
 
       {showThumb ? (
-        <Image
-          source={{ uri: apod!.url }}
-          style={styles.thumb}
-          contentFit="cover"
-          transition={250}
-          accessibilityLabel={apod!.title}
-        />
+        <TouchableOpacity
+          onPress={() => onApodPress?.(apod!)}
+          disabled={!onApodPress}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={`View full screen image: ${apod!.title}`}
+        >
+          <Image
+            source={{ uri: apod!.url }}
+            style={styles.thumb}
+            contentFit="cover"
+            transition={250}
+            accessibilityLabel={apod!.title}
+          />
+        </TouchableOpacity>
       ) : (
+
         <View style={[styles.thumb, styles.thumbEmpty]}>
           <Text style={styles.thumbMark}>
             {apod ? (apod.kind === "video" ? "VID" : "DIA") : ""}
