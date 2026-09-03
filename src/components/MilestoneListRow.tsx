@@ -1,7 +1,14 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { router, type Href } from "expo-router";
-import { Colors, Spacing, Type, FontFamily, FontSize, sectionNumber } from "@/constants/theme";
+import {
+  Colors,
+  Spacing,
+  Type,
+  FontFamily,
+  FontSize,
+  formatShortDate,
+} from "@/constants/theme";
 import { MoonPhaseGlyph } from "./MoonPhaseGlyph";
 import { getMoonPhase, formatIllumination, describePhase } from "@/lib/astronomy/moonPhase";
 import { getBrightLimbAngle } from "@/lib/astronomy/brightLimb";
@@ -11,28 +18,32 @@ import type { Milestone } from "@/types";
 const route = (path: string) => path as Href;
 
 const TYPE_LABELS: Record<Milestone["type"], string> = {
-  birthday: "BIRTHDAY",
-  anniversary: "ANNIVERSARY",
-  graduation: "GRADUATION",
-  custom: "RECORD",
+  birthday: "Birthday",
+  anniversary: "Anniversary",
+  graduation: "Graduation",
+  custom: "Record",
 };
 
 interface Props {
   milestone: Milestone;
-  index: number;
   isLast: boolean;
 }
 
 /**
- * A single row of the record ledger.
+ * A single record in the ledger.
  *
- * Layout is a Swiss three-column split: index number, content block, moon plate.
- * The glyph is informative as well as decorative — it is that date's real phase
- * at its real tilt.
+ * The name is set in the serif and is the only thing given any size. It is a
+ * person, and everything else on the row is a fact about their sky. The moon
+ * sits in a disc rather than a square, so the thumbnail echoes the object
+ * inside it instead of boxing it.
+ *
+ * The row used to open with a zero-padded index (001, 002). That number encoded
+ * nothing: the list is not a sequence and the position is not a fact about the
+ * record. It is gone.
  *
  * No text is truncated. The row grows to fit its title and notes.
  */
-export function MilestoneListRow({ milestone, index, isLast }: Props) {
+export function MilestoneListRow({ milestone, isLast }: Props) {
   const tz = milestone.location?.timezoneOffsetMin;
 
   const { phase, tilt } = useMemo(() => {
@@ -46,31 +57,26 @@ export function MilestoneListRow({ milestone, index, isLast }: Props) {
     };
   }, [milestone, tz]);
 
-  const [year, month, day] = milestone.date.split("-");
-
   return (
-    <TouchableOpacity
-      style={[styles.row, !isLast && styles.rowRule]}
-      activeOpacity={0.6}
+    <Pressable
+      style={({ pressed }) => [
+        styles.row,
+        !isLast && styles.rowRule,
+        pressed && styles.rowPressed,
+      ]}
       accessibilityRole="button"
       accessibilityLabel={`${milestone.title}, ${describePhase(phase)}`}
       onPress={() => router.push(route(`/milestone/${milestone.id}`))}
     >
-      <Text style={styles.index}>{sectionNumber(index + 1)}</Text>
-
       <View style={styles.content}>
         <Text style={styles.type}>{TYPE_LABELS[milestone.type]}</Text>
         <Text style={styles.title}>{milestone.title}</Text>
-        <Text style={styles.date}>
-          {day}.{month}.{year}
-        </Text>
-        <Text style={styles.phase}>
-          {describePhase(phase)}
-          <Text style={styles.phaseData}>
-            {"   "}
-            {formatIllumination(phase.phaseFraction)}
+        <View style={styles.factRow}>
+          <Text style={styles.date}>{formatShortDate(milestone.date)}</Text>
+          <Text style={styles.phase}>
+            {describePhase(phase)}, {formatIllumination(phase.phaseFraction)}
           </Text>
-        </Text>
+        </View>
         {milestone.notes ? (
           <Text style={styles.notes}>{milestone.notes}</Text>
         ) : null}
@@ -79,44 +85,44 @@ export function MilestoneListRow({ milestone, index, isLast }: Props) {
       <MoonPhaseGlyph
         phaseFraction={phase.phaseFraction}
         phaseIndex={phase.phaseIndex}
-        size={34}
+        size={36}
         brightLimbAngleDeg={tilt}
-        platePadding={8}
+        platePadding={7}
+        round
       />
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: Spacing.md,
     paddingVertical: Spacing.lg,
   },
   rowRule: { borderBottomWidth: 1, borderBottomColor: Colors.rule },
-  index: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.label,
-    color: Colors.inkMuted,
-    width: 30,
-    marginTop: 3,
-  },
+  rowPressed: { opacity: 0.55 },
+
   content: { flex: 1 },
   type: { ...Type.label, marginBottom: Spacing.xs },
   title: { ...Type.heading },
+  factRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
   date: {
-    fontFamily: FontFamily.monoMedium,
+    fontFamily: FontFamily.mono,
     fontSize: FontSize.small,
     color: Colors.signal,
-    marginTop: 2,
   },
   phase: {
     fontFamily: FontFamily.regular,
     fontSize: FontSize.small,
     color: Colors.inkMuted,
-    marginTop: Spacing.sm,
   },
-  phaseData: { fontFamily: FontFamily.monoMedium, color: Colors.ink },
   notes: { ...Type.small, marginTop: Spacing.sm },
 });
