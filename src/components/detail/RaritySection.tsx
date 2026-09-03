@@ -35,9 +35,18 @@ export function RaritySection({ n, rarity, unitLabel }: Props) {
           <Text style={styles.personalCount}>{rarity.totalYears}</Text>
           <Text style={styles.personalOf}> {unitLabel} have had one</Text>
         </Text>
-        {rarity.matchingYears.length > 0 && (
+        {rarity.matchingDetails && rarity.matchingDetails.length > 0 ? (
+          <View style={styles.matchGrid}>
+            {rarity.matchingDetails.map((item) => (
+              <View key={item.year} style={styles.matchRow}>
+                <Text style={styles.matchYear}>{item.year}</Text>
+                <Text style={styles.matchIllum}>{item.illuminationPct.toFixed(1)}%</Text>
+              </View>
+            ))}
+          </View>
+        ) : rarity.matchingYears.length > 0 ? (
           <Text style={styles.years}>{rarity.matchingYears.join("   ")}</Text>
-        )}
+        ) : null}
       </View>
     </View>
   );
@@ -66,6 +75,31 @@ const styles = StyleSheet.create({
     color: Colors.signal,
   },
   personalOf: { fontFamily: FontFamily.regular, color: Colors.ink },
+  matchGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  matchRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.rule,
+  },
+  matchYear: {
+    fontFamily: FontFamily.monoMedium,
+    fontSize: FontSize.body,
+    color: Colors.ink,
+  },
+  matchIllum: {
+    fontFamily: FontFamily.mono,
+    fontSize: FontSize.small,
+    color: Colors.signal,
+  },
   years: {
     fontFamily: FontFamily.monoMedium,
     fontSize: FontSize.lead,
@@ -73,3 +107,4 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
 });
+

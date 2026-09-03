@@ -27,7 +27,6 @@ import { MoonSection } from "@/components/detail/MoonSection";
 import { RaritySection } from "@/components/detail/RaritySection";
 import { MoonReturnSection } from "@/components/detail/MoonReturnSection";
 import { ApodCard } from "@/components/detail/ApodCard";
-import { SkySection } from "@/components/detail/SkySection";
 
 const route = (path: string) => path as Href;
 
@@ -115,12 +114,9 @@ export default function MilestoneDetailScreen() {
   const unitLabel =
     milestone.type === "birthday" ? "birthdays" : "anniversaries";
 
-  // Sections are numbered in the order they actually render, so an absent sky
-  // or rarity block never leaves a gap in the sequence.
-  const hasSky = milestone.location !== null && milestone.location.latitude !== 0;
+  // Sections are numbered in the order they render. Moon that night leads.
   let section = 0;
   const nextSection = () => ++section;
-  const skyN = hasSky ? nextSection() : 0;
   const moonN = nextSection();
   const rarityN = computed.rarity ? nextSection() : 0;
   const returnsN = computed.returns.length > 0 ? nextSection() : 0;
@@ -172,17 +168,9 @@ export default function MilestoneDetailScreen() {
           ) : null}
         </View>
 
-        {hasSky && (
-          <SkySection
-            n={skyN}
-            milestoneId={milestone.id}
-            date={computed.night}
-            location={milestone.location!}
-          />
-        )}
-
         <MoonSection
           n={moonN}
+          milestoneId={milestone.id}
           phase={computed.phase}
           brightLimbAngleDeg={computed.brightLimbAngleDeg}
           location={milestone.location}

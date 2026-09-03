@@ -127,6 +127,17 @@ test("personal rarity counts only real anniversaries", () => {
   const stat = getRarityStat("2015-09-28", 99, { throughYear: 2025, tzOffsetMin: 0 });
   assert.equal(stat.totalYears, 11);
   assert.ok(stat.matchingYears.every((y) => y >= 2015 && y <= 2025));
+  assert.ok(stat.matchingDetails != null && stat.matchingDetails.length > 0);
+  assert.ok(stat.matchingDetails.every((m) => typeof m.illuminationPct === "number"));
+});
+
+test("personal rarity includes years within ±1.0% of milestone moon", () => {
+  const stat = getRarityStat("2015-09-28", 99.5, { throughYear: 2025, tzOffsetMin: 0 });
+  // 2015 moon was 98.8%. With threshold 99.5%, it is included via the ±1.0% tolerance
+  assert.ok(stat.matchingYears.includes(2015));
+  assert.ok(stat.matchingDetails!.some((m) => m.year === 2015 && m.illuminationPct >= 98.0));
+  // 2023 cleared the 99.5% threshold directly (99.7%)
+  assert.ok(stat.matchingYears.includes(2023));
 });
 
 // ---- Date handling ----

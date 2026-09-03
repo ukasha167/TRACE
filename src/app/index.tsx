@@ -76,12 +76,6 @@ export default function HomeScreen() {
         <View style={styles.utility}>
           <TouchableOpacity
             accessibilityRole="button"
-            onPress={() => router.push(route("/age-converter"))}
-          >
-            <Text style={styles.utilityLink}>PLANETARY AGES</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            accessibilityRole="button"
             onPress={() => router.push(route("/settings"))}
           >
             <Text style={styles.utilityLink}>SETTINGS</Text>

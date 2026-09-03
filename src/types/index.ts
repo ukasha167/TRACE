@@ -61,11 +61,17 @@ export interface MoonReturn {
   cycleLabel: string;
 }
 
+export interface RarityYearMatch {
+  year: number;
+  illuminationPct: number;
+}
+
 export interface RarityStat {
   thresholdPct: number;        // e.g. 99
   frequency: number;           // measured fraction of days meeting it
   oneInN: number;              // 1 / frequency, for display
   matchingYears: number[];     // which of THIS person's anniversaries qualified
+  matchingDetails?: RarityYearMatch[];
   totalYears: number;
 }
 
