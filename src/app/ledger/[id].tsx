@@ -7,7 +7,7 @@ import {
   Type,
   FontFamily,
   FontSize,
-  Tracking,
+  Radius,
 } from "@/constants/theme";
 import { useMilestonesStore } from "@/store/useMilestonesStore";
 import { getLifeLedger, type LedgerYear } from "@/lib/astronomy/lifeLedger";
@@ -17,11 +17,11 @@ import { useApodBatch } from "@/hooks/useApodBatch";
 import type { ApodCacheEntry } from "@/types";
 
 /**
- * THE LIFE LEDGER — spec §2 / §8.5.
+ * THE LIFE LEDGER. Spec §2 and §8.5.
  *
  * A whole life on one vertical axis. Rows are pure local computation and paint
  * immediately; APOD thumbnails arrive progressively behind them. Turning the
- * network off changes nothing structural about this screen — that is the test
+ * network off changes nothing structural about this screen, which is the test
  * it has to pass.
  */
 export default function LedgerScreen() {
@@ -63,9 +63,8 @@ export default function LedgerScreen() {
         windowSize={9}
         ListHeaderComponent={
           <View style={styles.header}>
-            <Text style={styles.kicker}>LIFE IN SKIES</Text>
+            <Text style={styles.kicker}>Life in skies</Text>
             <Text style={styles.title}>{milestone.title}</Text>
-            <View style={styles.heavyRule} />
             <Text style={styles.subtitle}>
               {rows.length} {label}, and the moon over each one.
             </Text>
@@ -74,7 +73,7 @@ export default function LedgerScreen() {
               <View style={styles.summary}>
                 <Text style={styles.summaryText}>
                   <Text style={styles.summaryNumber}>{fullest.length}</Text> of
-                  these {label} had a moon at least 99% full —{" "}
+                  these {label} had a moon at least 99% full, in{" "}
                   <Text style={styles.summaryNumber}>
                     {fullest.map((r) => r.year).join(", ")}
                   </Text>
@@ -86,7 +85,7 @@ export default function LedgerScreen() {
               <View style={styles.notice}>
                 <Text style={styles.noticeText}>
                   NASA's rate limit stopped the image fetch partway. Everything
-                  above is unaffected — the images fill in next time.
+                  above is unaffected. The images fill in next time.
                 </Text>
               </View>
             )}
@@ -114,8 +113,8 @@ export default function LedgerScreen() {
         ListFooterComponent={
           <Text style={styles.footer}>
             Moon phase and tilt are computed on device. Images are NASA's
-            Astronomy Picture of the Day for each date — the picture NASA
-            featured that day, not one taken on it.
+            Astronomy Picture of the Day for each date, which is the picture
+            NASA featured that day rather than one taken on it.
           </Text>
         }
       />
@@ -144,16 +143,8 @@ const styles = StyleSheet.create({
   },
 
   header: { marginBottom: Spacing.lg },
-  kicker: { ...Type.label, color: Colors.signal },
-  title: {
-    fontFamily: FontFamily.black,
-    fontSize: FontSize.title,
-    letterSpacing: Tracking.title,
-    lineHeight: 40,
-    color: Colors.ink,
-    marginTop: Spacing.sm,
-  },
-  heavyRule: { height: 3, backgroundColor: Colors.ink, marginTop: Spacing.md },
+  kicker: { ...Type.label },
+  title: { ...Type.display, marginTop: Spacing.sm },
   subtitle: { ...Type.bodyMuted, marginTop: Spacing.sm },
 
   summary: {
@@ -171,8 +162,8 @@ const styles = StyleSheet.create({
   notice: {
     marginTop: Spacing.md,
     padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.signal,
+    borderRadius: Radius.plate,
+    backgroundColor: Colors.paperDim,
   },
   noticeText: { ...Type.small, color: Colors.ink },
 
@@ -185,7 +176,6 @@ const styles = StyleSheet.create({
   progressText: {
     fontFamily: FontFamily.mono,
     fontSize: FontSize.label,
-    letterSpacing: Tracking.label,
     color: Colors.inkMuted,
   },
 
