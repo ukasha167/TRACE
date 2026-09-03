@@ -28,6 +28,11 @@ interface MoonPhaseGlyphProps {
   variant?: "plate" | "bare";
   /** Padding between the moon and the plate edge. */
   platePadding?: number;
+  /**
+   * Round the plate into a disc. Used in list rows, where a circular thumbnail
+   * echoes the moon inside it instead of boxing it.
+   */
+  round?: boolean;
 }
 
 // Statically required asset so it bundles reliably with Metro
@@ -54,6 +59,7 @@ export function MoonPhaseGlyph({
   brightLimbAngleDeg = null,
   variant = "plate",
   platePadding = 10,
+  round = false,
 }: MoonPhaseGlyphProps) {
   const moonImage = useImage(MOON_ASSET);
 
@@ -152,7 +158,13 @@ export function MoonPhaseGlyph({
   if (variant === "bare") return canvas;
 
   return (
-    <View style={[styles.plate, { padding: platePadding }]}>
+    <View
+      style={[
+        styles.plate,
+        { padding: platePadding },
+        round && { borderRadius: (size + platePadding * 2) / 2 },
+      ]}
+    >
       {canvas}
     </View>
   );
