@@ -1,5 +1,11 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  useWindowDimensions,
+} from "react-native";
 import { router, type Href } from "expo-router";
 import {
   Colors,
@@ -10,7 +16,6 @@ import {
   Radius,
 } from "@/constants/theme";
 import { MoonPhaseGlyph } from "../MoonPhaseGlyph";
-import { SectionHeader } from "./SectionHeader";
 import {
   formatIllumination,
   describePhase,
@@ -33,14 +38,25 @@ interface Props {
 }
 
 /**
- * The moon as it actually looked.
+ * THE MOON THAT NIGHT. The hero of the record.
  *
- * The glyph sits on a dark plate, the way a figure is tipped into a printed
- * page, with the data below it on paper as a caption would be. The plate is
- * rounded now and inset from the page edges rather than a hard-cornered band.
+ * WHAT WAS WRONG WITH IT. It was a 148pt moon centred in an inset rounded
+ * plate, under a numbered section header. Three things stopped it reading as
+ * the subject of the screen and every one of them was framing rather than
+ * content:
  *
- * Labels go through describePhase(), never phaseName: the raw 8-way bucket
- * calls anything within 1.85 days of full a "Full Moon" (spec §6.2).
+ *   1. A section header above it announced it as one section among five. The
+ *      hero of a page is not introduced, it is the first thing there.
+ *   2. The plate was inset from the page margins, which makes any dark block
+ *      read as a card. Cards are things a page contains; a plate is something
+ *      the page is tucked under.
+ *   3. A small disc adrift in a large dark rectangle. Emptiness around a
+ *      subject reads as a placeholder, not as space.
+ *
+ * So: full bleed to both screen edges, the moon at 62% of the screen width, and
+ * the wide halo (see MoonPhaseGlyph's `glow`) so the light carries into the
+ * plate instead of stopping at the limb. Nothing else is on the plate. The
+ * caption stays on paper below it, because reading surfaces are never dark.
  */
 export function MoonSection({
   milestoneId,
@@ -48,19 +64,24 @@ export function MoonSection({
   brightLimbAngleDeg,
   location,
 }: Props) {
+  const { width } = useWindowDimensions();
   const note = describeSyzygyNote(phase);
+
+  // Scaled, not fixed. A 148pt moon is a hero on a small phone and a thumbnail
+  // on a tablet, and the whole point is its size relative to the frame.
+  const moonSize = Math.min(width * 0.62, 320);
+  const plateHeight = Math.round(moonSize * 1.5);
 
   return (
     <View style={styles.section}>
-      <SectionHeader label="The moon that night" />
-
-      <View style={styles.plate}>
+      <View style={[styles.plate, { height: plateHeight }]}>
         <MoonPhaseGlyph
           phaseFraction={phase.phaseFraction}
-          phaseIndex={phase.phaseIndex}
-          size={148}
+          waxing={phase.waxing}
+          size={moonSize}
           brightLimbAngleDeg={brightLimbAngleDeg}
           variant="bare"
+          glow="hero"
         />
       </View>
 
@@ -108,19 +129,22 @@ const styles = StyleSheet.create({
   section: { marginBottom: Spacing.xl },
   plate: {
     backgroundColor: Colors.plate,
-    borderRadius: Radius.hero,
+    // Escapes the screen's page padding so the plate runs edge to edge. Square
+    // corners are right here and only here: a full-bleed block has no visible
+    // side corners, so rounding would only cut two odd notches out of the top
+    // and bottom rules.
+    marginHorizontal: -Spacing.page,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: Spacing.xl,
   },
   caption: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "baseline",
     gap: Spacing.md,
-    marginTop: Spacing.md,
+    marginTop: Spacing.lg,
   },
-  phaseName: { ...Type.heading, flexShrink: 1 },
+  phaseName: { ...Type.title, flexShrink: 1 },
   illumination: {
     fontFamily: FontFamily.monoMedium,
     fontSize: FontSize.lead,
