@@ -49,7 +49,7 @@ export function LedgerRow({ row, apod, isLast, onApodPress }: LedgerRowProps) {
 
       <MoonPhaseGlyph
         phaseFraction={row.phaseFraction}
-        phaseIndex={row.phaseIndex}
+        waxing={row.waxing}
         size={30}
         brightLimbAngleDeg={row.brightLimbAngleDeg}
         platePadding={7}
