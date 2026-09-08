@@ -15,7 +15,12 @@ import {
   buildSkySphere,
   makeCameraBasis,
   projectSphere,
+  projectVector,
+  anchorTransform,
+  CONSTELLATION_ART_TILE,
+  CONSTELLATION_ART_COLS,
 } from "@/lib/astronomy/skySphere";
+import { CONSTELLATION_NAMES } from "@/data/constellationNames";
 import catalog from "@/data/bsc.json";
 import type { Star } from "@/types";
 
@@ -337,4 +342,196 @@ test("looking down shows a different sky than looking up", () => {
 
   assert.ok(up > 0 && down > 0, "both directions should show stars");
   assert.notDeepEqual(upFirst, downFirst, "up and down must not render identically");
+});
+
+// ---------------------------------------------------------------------------
+// WHAT THE SPHERE DECIDES TO SHOW
+// ---------------------------------------------------------------------------
+
+const LAHORE = { latitude: 31.5204, longitude: 74.3587 };
+const NIGHT = new Date("2004-10-27T19:00:00Z");
+
+test("constellation figures are grouped and named", () => {
+  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+
+  // 89 entries for 88 constellations: Serpens is drawn as two figures, because
+  // Ophiuchus splits it across the sky. Both halves take the name "Serpens".
+  assert.equal(sphere.figures.length, 89);
+  assert.equal(new Set(sphere.figures.map((c) => c.id)).size, 88);
+  assert.equal(sphere.figures.filter((c) => c.id === "Ser").length, 2);
+
+  const orion = sphere.figures.find((c) => c.id === "Ori");
+  assert.ok(orion, "Orion must be present");
+  assert.equal(orion.name, "Orion", "abbreviations are resolved to real names");
+  assert.ok(orion.lines.length > 0);
+
+  // The centroid must be a unit vector, or the dot product against the camera
+  // forward stops being a cosine and the fade threshold means nothing.
+  for (const con of sphere.figures) {
+    const len = Math.hypot(...con.centroid);
+    assert.ok(
+      Math.abs(len - 1) < 1e-5,
+      `${con.id} centroid is not a unit vector (length ${len})`
+    );
+    // Ara and Leo are their own full names, so compare against the map rather
+    // than asserting the name differs from the abbreviation.
+    assert.equal(
+      con.name,
+      CONSTELLATION_NAMES[con.id],
+      `${con.id} did not resolve through the IAU name map`
+    );
+  }
+});
+
+test("the centroid lands inside the figure it names", () => {
+  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+
+  // Averaging unit vectors, rather than azimuths, is what keeps this true for
+  // figures that straddle the azimuth seam. Ursa Minor contains the pole and is
+  // the worst case: every azimuth appears in it.
+  for (const id of ["Ori", "UMi", "Cas", "Cru"]) {
+    const con = sphere.figures.find((c) => c.id === id);
+    assert.ok(con, `${id} must be present`);
+
+    let worst = 1;
+    for (const line of con.lines) {
+      for (let i = 0; i < line.length; i += 3) {
+        const dot =
+          line[i] * con.centroid[0] +
+          line[i + 1] * con.centroid[1] +
+          line[i + 2] * con.centroid[2];
+        worst = Math.min(worst, dot);
+      }
+    }
+    const spread = (Math.acos(Math.max(-1, worst)) * 180) / Math.PI;
+    assert.ok(
+      spread < 90,
+      `${id}: centroid is ${spread.toFixed(1)}° from its furthest vertex`
+    );
+  }
+});
+
+test("deep sky keeps only named nebulae and galaxies", () => {
+  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+
+  assert.equal(sphere.deepSky.length, 24, "24 of the 110 Messier objects");
+
+  const allowed = new Set(["galaxy", "nebula", "planetary nebula", "supernova remnant"]);
+  for (const o of sphere.deepSky) {
+    assert.ok(allowed.has(o.kind), `${o.id} is a ${o.kind}, which should be filtered`);
+    assert.notEqual(o.name, o.id, `${o.id} has no common name and should be filtered`);
+  }
+
+  const ids = new Set(sphere.deepSky.map((o) => o.id));
+  for (const famous of ["M42", "M31", "M1", "M51", "M57", "M104"]) {
+    assert.ok(ids.has(famous), `${famous} must survive the cut`);
+  }
+  // M45 is the Pleiades. It goes, and does not vanish: its stars are in the
+  // catalogue and keep drawing. A glyph over stars that already render is the
+  // clutter this rule exists to remove.
+  for (const cut of ["M45", "M13", "M58", "M59"]) {
+    assert.ok(!ids.has(cut), `${cut} should have been filtered out`);
+  }
+});
+
+test("the star density cut keeps three quarters of the catalogue", () => {
+  // The immersive view builds its sphere at 6.2 rather than the catalogue's 6.5.
+  const full = buildSkySphere(STARS, LAHORE, NIGHT, 6.5);
+  const shown = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+
+  const ratio = shown.count / full.count;
+  assert.ok(
+    ratio > 0.74 && ratio < 0.76,
+    `expected about 75% of the catalogue, got ${(ratio * 100).toFixed(1)}%`
+  );
+
+  // Every star anyone has a name for must survive the cut.
+  assert.equal(
+    shown.labels.length,
+    full.labels.length,
+    "the density cut must not drop a named star"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// CONSTELLATION ARTWORK
+// ---------------------------------------------------------------------------
+
+test("artwork data is well formed and fits its sheet", () => {
+  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+  const withArt = sphere.figures.filter((c) => c.art);
+
+  assert.equal(withArt.length, 15, "fifteen figures carry artwork");
+
+  const seen = new Set<string>();
+  for (const con of withArt) {
+    const art = con.art!;
+    const [col, row] = art.tile;
+    const key = `${col},${row}`;
+    assert.ok(!seen.has(key), `${con.id} shares tile ${key} with another figure`);
+    seen.add(key);
+    assert.ok(col >= 0 && col < CONSTELLATION_ART_COLS, `${con.id} column out of sheet`);
+    assert.ok(row >= 0 && row < CONSTELLATION_ART_COLS, `${con.id} row out of sheet`);
+
+    assert.equal(art.anchors.length, 3, `${con.id} needs exactly three anchors`);
+    for (const a of art.anchors) {
+      assert.ok(a.u >= 0 && a.u <= 1, `${con.id} anchor u out of range`);
+      assert.ok(a.v >= 0 && a.v <= 1, `${con.id} anchor v out of range`);
+      const len = Math.hypot(...a.vec);
+      assert.ok(Math.abs(len - 1) < 1e-5, `${con.id} anchor is not a unit vector`);
+    }
+  }
+
+  // Orion has to be there or the whole exercise was pointless.
+  assert.ok(withArt.some((c) => c.id === "Ori"));
+});
+
+test("the anchor transform puts each anchor exactly where it projects", () => {
+  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+  const tile = CONSTELLATION_ART_TILE;
+  const W = 400, H = 800;
+
+  let checked = 0;
+  for (const con of sphere.figures) {
+    if (!con.art) continue;
+
+    // Look straight at the figure, so all three anchors are in front.
+    const [e, n, u] = con.art.anchors[1].vec;
+    const alt = (Math.asin(u) * 180) / Math.PI;
+    const az = (Math.atan2(e, n) * 180) / Math.PI;
+    const cam = makeCameraBasis(az, alt, 90, W);
+
+    const m = anchorTransform(con.art, cam, W, H, tile);
+    if (!m) continue;
+    const [a, b, c, d, ee, f] = m;
+
+    for (const anchor of con.art.anchors) {
+      const want = projectVector(anchor.vec, cam, W, H);
+      assert.ok(want, `${con.id}: anchor should be in front of the camera`);
+      const x = a * anchor.u * tile + b * anchor.v * tile + c;
+      const y = d * anchor.u * tile + ee * anchor.v * tile + f;
+      assert.ok(
+        Math.hypot(x - want.x, y - want.y) < 1e-6,
+        `${con.id}: anchor lands at ${x.toFixed(2)},${y.toFixed(2)} not ${want.x.toFixed(2)},${want.y.toFixed(2)}`
+      );
+    }
+    checked++;
+  }
+  assert.ok(checked >= 10, `only ${checked} figures were transformable`);
+});
+
+test("the anchor transform refuses to place a figure it cannot see", () => {
+  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+  const orion = sphere.figures.find((c) => c.id === "Ori");
+  assert.ok(orion?.art);
+
+  // Face the exact opposite direction. With every anchor behind the camera
+  // there is no honest placement, and a fitted affine would smear the figure
+  // across the sphere rather than simply not draw.
+  const [e, n, u] = orion.art.anchors[0].vec;
+  const alt = (Math.asin(u) * 180) / Math.PI;
+  const az = (Math.atan2(e, n) * 180) / Math.PI;
+  const behind = makeCameraBasis((az + 180) % 360, -alt, 60, 400);
+
+  assert.equal(anchorTransform(orion.art, behind, 400, 800, CONSTELLATION_ART_TILE), null);
 });
