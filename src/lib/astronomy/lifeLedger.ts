@@ -1,6 +1,6 @@
 import type { MilestoneLocation, MoonPhaseName } from "@/types";
 import { getMoonPhase } from "./moonPhase";
-import { getBrightLimbAngle } from "./brightLimb";
+import { getBrightLimbAngle, getLunarNorthRotation } from "./brightLimb";
 import { getMoonReturns } from "./moonReturn";
 import { toLocalNight, toLocalDayStart, parseDateString } from "./dateUtils";
 
@@ -27,6 +27,12 @@ export interface LedgerYear {
   isTruePhase: boolean;
   waxing: boolean;
   brightLimbAngleDeg: number | null;
+  /**
+   * Screen rotation of the Moon's north pole, which orients the lunar
+   * photograph independently of the terminator. Carried on the row because the
+   * ledger draws 20-40 real moons and each needs its own libration.
+   */
+  northAngleDeg: number | null;
   /** This year's moon returns to the source phase (spec §6.3). */
   isReturn: boolean;
   /** Why, when isReturn — "Metonic cycle (19 years)". */
@@ -57,6 +63,10 @@ export function getLifeLedger(
     getMoonReturns(dateString, { tzOffsetMin }).map((r) => [r.year, r])
   );
 
+  // A place with no coordinates is not a place (spec §10) — an earlier build
+  // stored typed locations at lat/lng 0 and silently killed the tilt.
+  const hasCoordinates = location !== null && location.latitude !== 0;
+
   const rows: LedgerYear[] = [];
 
   for (let year = sourceYear; year <= throughYear; year++) {
@@ -78,10 +88,12 @@ export function getLifeLedger(
       phaseName: phase.phaseName,
       isTruePhase: phase.isTruePhase,
       waxing: phase.waxing,
-      brightLimbAngleDeg:
-        location && location.latitude !== 0
-          ? getBrightLimbAngle(night, location)
-          : null,
+      brightLimbAngleDeg: hasCoordinates
+        ? getBrightLimbAngle(night, location!)
+        : null,
+      northAngleDeg: hasCoordinates
+        ? getLunarNorthRotation(night, location!)
+        : null,
       isReturn: hit !== undefined,
       cycleLabel: hit?.cycleLabel ?? null,
     });

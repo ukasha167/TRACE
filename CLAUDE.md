@@ -16,7 +16,7 @@ authority for its own subject.
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Stack, layers, module map, storage, the render path, data files. |
 | [docs/ASTRONOMY.md](docs/ASTRONOMY.md) | Date conventions, phase honesty, moon return, rarity, orientation maths, fixtures. |
 | [docs/DESIGN.md](docs/DESIGN.md) | The Keepsake / Nocturne system: colour, type, grid, motion, hard rules. |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Fifteen bugs that shipped, and why the fixes look the way they do. |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Eighteen bugs that shipped, and why the fixes look the way they do. |
 
 Read DECISIONS.md before changing anything in `lib/astronomy/`, `hooks/useSkyOrientation.ts`, or
 `app/sky/[id].tsx`. Most of what looks like an odd choice in those files is a scar.

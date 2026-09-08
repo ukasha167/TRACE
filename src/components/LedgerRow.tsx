@@ -52,6 +52,7 @@ export function LedgerRow({ row, apod, isLast, onApodPress }: LedgerRowProps) {
         waxing={row.waxing}
         size={30}
         brightLimbAngleDeg={row.brightLimbAngleDeg}
+        northAngleDeg={row.northAngleDeg}
         platePadding={7}
         round
       />

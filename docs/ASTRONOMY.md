@@ -118,27 +118,32 @@ brightLimbAngleDeg = illumination.angle - moonPosition.parallacticAngle
 
 Both terms are already degrees. Do not add a radians conversion (see DECISIONS.md).
 
-Two rotation helpers consume it:
+### The moon is drawn with two rotations, not one
 
-- `getMoonLimbRotation` rotates a glyph drawn with its bright limb on the right.
-- `getMoonTextureRotation` rotates the lunar photograph and the terminator path together.
+They are independent, and keeping them independent is the whole point.
 
-Rotating texture and terminator as one body is correct because the lunar equator is inclined only
-1.54 degrees to the ecliptic, so the terminator always runs almost exactly pole to pole, and the
-sub-solar point sits on the lunar equator. The bright limb midpoint is therefore 90 degrees from the
-lunar rotation axis in position angle, which is what makes a single rotation valid.
+| Helper | Drives | Follows |
+|---|---|---|
+| `getMoonLimbRotation` | a glyph drawn with its bright limb on the right | the Sun |
+| `getLitPathRotation` | the lit region path: illuminated limb and terminator ellipse | the Sun |
+| `getLunarNorthRotation` | the lunar photograph | the Moon's north pole |
 
-**Measured error of that approximation**, against lunar north pole position angles computed from
-`astronomy-engine`'s `RotationAxis`, across six sites and phases: **2.9 to 8.4 degrees**. The error
-is optical libration, which reaches 8 degrees and shifts the pole away from exactly 90 degrees off
-the bright limb. Below about 1% illumination the relation collapses (60 degrees out at an elongation
-of 1.3 degrees), and it does not matter because there is no lit surface to orient.
+**The terminator follows the Sun, exactly.** It is the great circle whose plane is perpendicular to
+the Moon-to-Sun direction, so its projection onto the disc is an ellipse whose minor axis lies along
+the projected Sun direction. No libration correction applies, because that relation is fixed by the
+Sun alone and says nothing about where the Moon's poles are.
 
-To remove the approximation, rotate the texture by the pole angle and the terminator path by the
-bright-limb angle as two independent transforms.
+**The photograph follows the pole.** `getLunarNorthRotation` returns `-(P - q)`, where `P` is the
+position angle of the Moon's north pole from celestial north (from `astronomy-engine`'s
+`RotationAxis`, topocentric) and `q` is the parallactic angle that re-references it to the observer's
+zenith. `q` comes from SunCalc, the same source `getBrightLimbAngle` uses, so both rotations share a
+zenith and a shared error in `q` cancels between them.
 
-The rotation must be driven by `snapshot.waxing`, never by `phaseIndex <= 4`. The measured cost of
-getting that wrong is 171 degrees (Greenwich, 2015-09-28, a 98.8% waning moon in bucket 4).
+One angle used to drive both, which assumes the pole sits exactly 90 degrees from the bright limb in
+position angle. See DECISIONS.md entry 18 for why that is false and what it cost.
+
+The lit path rotation must be driven by `snapshot.waxing`, never by `phaseIndex <= 4`. The measured
+cost of getting that wrong is 171 degrees (Greenwich, 2015-09-28, a 98.8% waning moon in bucket 4).
 
 ## Sky transform
 
@@ -208,6 +213,8 @@ eclipse at exactly new, which pins the maths against physics rather than against
 | 2015-09-28 02:47, total lunar eclipse | `fraction` about 1.0000 |
 | 2024-04-08 18:17, total solar eclipse | `fraction` about 0.0000 |
 | 2015-09-28 02:47 at Greenwich | `brightLimbAngleDeg` about 133.87 |
+| any date and site | `getLunarNorthRotation` within 1 degree of an independent spherical-trig pole angle |
+| any date and site | the pole is **not** 90 degrees from the bright limb, which is the libration |
 
 Also assert that `getBrightLimbAngle` stays within (-180, 180], and that moon return on a known date
 reproduces the +11 / +19 / +30 structure.

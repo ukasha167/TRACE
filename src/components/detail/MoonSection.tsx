@@ -34,6 +34,7 @@ interface Props {
   milestoneId: string;
   phase: PhaseData;
   brightLimbAngleDeg: number | null;
+  northAngleDeg: number | null;
   location: MilestoneLocation | null;
 }
 
@@ -62,6 +63,7 @@ export function MoonSection({
   milestoneId,
   phase,
   brightLimbAngleDeg,
+  northAngleDeg,
   location,
 }: Props) {
   const { width } = useWindowDimensions();
@@ -80,6 +82,7 @@ export function MoonSection({
           waxing={phase.waxing}
           size={moonSize}
           brightLimbAngleDeg={brightLimbAngleDeg}
+          northAngleDeg={northAngleDeg}
           variant="bare"
           glow="hero"
         />
