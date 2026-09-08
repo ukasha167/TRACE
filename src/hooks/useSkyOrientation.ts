@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
 import * as Location from "expo-location";
 import {
@@ -105,6 +106,32 @@ function smoothingFor(fovDeg: number): number {
 /** Beyond this the view snaps instead of easing, so fast turns don't lag. */
 const SNAP_DEG = 45;
 
+/**
+ * WHICH WAY THE ACCELEROMETER POINTS, PER PLATFORM.
+ *
+ * `lookDirectionFromSensors` wants `gravity` to be world UP expressed in device
+ * coordinates. Lying flat with the screen up, that is (0, 0, +1). The raw
+ * reading in that posture is not the same on both platforms, and expo-sensors
+ * does not normalise it:
+ *
+ *   Android  AccelerometerModule.kt forwards Sensor.TYPE_ACCELEROMETER divided
+ *            by GRAVITY_EARTH and nothing else. Android reports the REACTION to
+ *            gravity, so screen-up reads (0, 0, +1). Sign +1.
+ *   iOS      AccelerometerModule.swift forwards CMAccelerometerData.acceleration
+ *            unchanged. CoreMotion reports the opposite, so screen-up reads
+ *            (0, 0, -1). Sign -1.
+ *
+ * This was hardcoded to -1 for both, which is right on iOS and wrong on Android.
+ * The symptom is specific and worth recognising: altitude inverts AND azimuth
+ * mirrors, together, because east comes from `magnetic x gravity` and negating
+ * gravity flips that cross product too. So a user turning on "Flip up/down"
+ * appears to fix the left/right axis as well, which is what happened here.
+ *
+ * The manual overrides stay. Sensor conventions are a vendor decision and a
+ * switch someone can flip in two seconds beats a default nobody can correct.
+ */
+const GRAVITY_SIGN = Platform.OS === "android" ? 1 : -1;
+
 export function useSkyOrientation(
   initialAzimuth = 180,
   fovDeg = 65
@@ -147,17 +174,6 @@ export function useSkyOrientation(
   const declination = useRef(0);
   const magCount = useRef(0);
   const gyroCount = useRef(0);
-  /**
-   * Accelerometer sign, measured on hardware rather than detected at runtime.
-   *
-   * A previous revision refereed this against DeviceMotion's Euler tilt — but
-   * the Euler convention is the very thing that proved unreliable, and the
-   * referee got it wrong on a Pixel 7 Pro. Resolving an ambiguity with an
-   * unreliable arbiter is worse than a constant that has actually been tested,
-   * so this is now the tested value, with a manual override kept for hardware
-   * that disagrees.
-   */
-  const GRAVITY_SIGN = -1;
 
   /** Fused look direction, world frame. The gyro drives it, accel/mag corrects it. */
   const look = useRef<Vec3 | null>(null);
