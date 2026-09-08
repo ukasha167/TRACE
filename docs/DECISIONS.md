@@ -136,11 +136,19 @@ should follow the horizon rotates by `+roll`.
 
 ### 15. A colour system can fail a measurement, not just a taste test
 
-The Keepsake palette fails three of nine contrast pairs, and the worst is `signal` on `paper` at
+The Keepsake palette failed three of nine contrast pairs, and the worst was `signal` on `paper` at
 3.47:1 against a 4.5 minimum. That token carries every date, every illumination figure and every
-return year. "The colours feel off" turned out to have a number behind it.
+return year, so the accent was the least legible thing on the page. "The colours feel off" turned
+out to have a number behind it.
 
-Check a palette with a real ratio calculation before arguing about it.
+Fixed by the Atlas palette, and the check is now `src/constants/__tests__/theme.test.ts` rather than
+a habit. `theme.ts` imports nothing, so it runs under tsx like the astronomy library does.
+
+Two things fell out of it worth keeping. **A warm accent on warm paper has nowhere to go**: every
+candidate that cleared 4.5:1 against both paper grounds had left that neighbourhood entirely. And
+**a token borrowed across contexts breaks when either context moves**: planets took
+`Colors.signalOnPlate`, which was safe while the accent was brass and became a bug the moment it
+went cool, because a planet drawn in the grid's own blue reads as a coordinate line.
 
 ### 16. Labels drawn independently will print on top of each other
 

@@ -267,9 +267,11 @@ export default function ImmersiveSkyScreen() {
     // Alpha is set per draw by the fade; the value here is only a seed.
     const figurePaint = mk(SkyColors.figure, FIGURE_BASE_ALPHA, 0.6);
     const horizonPaint = mk(SkyColors.horizon, 0.32, 1.0);
-    const planetPaint = mk(Colors.signalOnPlate, 1);
+    // SkyColors.planet, not the app accent: under Atlas the accent is the same
+    // blue as the grid, so a planet would be indistinguishable from a meridian.
+    const planetPaint = mk(SkyColors.planet, 1);
     const planetGlow = Skia.Paint();
-    planetGlow.setColor(Skia.Color(Colors.signalOnPlate));
+    planetGlow.setColor(Skia.Color(SkyColors.planet));
     planetGlow.setAlphaf(0.4);
     planetGlow.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, 5, true));
     const dsoPaint = mk(SkyColors.deepSky, 0.75, 1);
@@ -282,7 +284,7 @@ export default function ImmersiveSkyScreen() {
     artPaint.setBlendMode(BlendMode.Plus);
     const conNamePaint = mk(SkyColors.figure, 1);
     const labelPaint = mk(SkyColors.label, 0.85);
-    const labelAccent = mk(Colors.signalOnPlate, 0.95);
+    const labelAccent = mk(SkyColors.planet, 0.95);
     const dsoLabel = mk(SkyColors.deepSky, 0.8);
 
     const tick = () => {
