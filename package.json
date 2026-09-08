@@ -46,9 +46,11 @@
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "~19.2.2",
     "@types/suncalc": "^1.9.2",
     "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0",
     "tsx": "^4.23.13",
     "typescript": "~6.0.3"
   },
