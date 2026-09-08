@@ -164,7 +164,7 @@ export default function ExportScreen() {
               ref={canvasRef}
               milestone={milestone}
               moonPhaseFraction={moonPhase.phaseFraction}
-              moonPhaseIndex={moonPhase.phaseIndex}
+              moonWaxing={moonPhase.waxing}
               moonPhaseName={describePhase(moonPhase)}
               moonPhaseIllumination={formatIllumination(moonPhase.phaseFraction)}
               brightLimbAngleDeg={brightLimbAngleDeg}
