@@ -16,7 +16,18 @@ import { litMoonPath, moonDiscPath } from "@/components/moon/moonPath";
 
 interface MoonPhaseGlyphProps {
   phaseFraction: number; // 0.0–1.0 illuminated fraction
-  phaseIndex: number; // 0–7
+  /**
+   * Which way the moon is heading, from SunCalc via MoonSnapshot.waxing.
+   *
+   * REQUIRED, and never derived from phaseIndex. This prop used to be
+   * `phaseIndex` with `isWaxing = phaseIndex <= 4` computed inside. Buckets 0
+   * and 4 straddle their syzygy, so half of every "Full Moon" bucket is waning
+   * and half of every "New Moon" bucket is waxing, and the photograph rendered
+   * upside down for all of them. Measured against lunar north pole position
+   * angles from astronomy-engine: 171.6 degrees wrong for a 98.8% waning moon
+   * over Greenwich, against a 2.9-5.5 degree floor when it is right.
+   */
+  waxing: boolean;
   size?: number;
   /** Bright-limb tilt in degrees (getBrightLimbAngle). Null = no tilt correction. */
   brightLimbAngleDeg?: number | null;
@@ -33,6 +44,16 @@ interface MoonPhaseGlyphProps {
    * echoes the moon inside it instead of boxing it.
    */
   round?: boolean;
+  /**
+   * How far the moonlight carries into the dark around the disc.
+   *
+   * "tight" is the thumbnail treatment: enough bloom that the limb is not a cut
+   * edge, and no more. "hero" adds a second, much wider and fainter pass so the
+   * moon sits IN the plate rather than on it. At hero scale the tight bloom
+   * alone reads as a sticker on a black rectangle, which is most of why the
+   * large moons did not feel like the subject of their screens.
+   */
+  glow?: "tight" | "hero";
 }
 
 // Statically required asset so it bundles reliably with Metro
@@ -54,26 +75,32 @@ const MOON_ASSET = require("../../assets/moon_disc.png");
  */
 export function MoonPhaseGlyph({
   phaseFraction,
-  phaseIndex,
+  waxing,
   size = 40,
   brightLimbAngleDeg = null,
   variant = "plate",
   platePadding = 10,
   round = false,
+  glow = "tight",
 }: MoonPhaseGlyphProps) {
   const moonImage = useImage(MOON_ASSET);
+  const hero = glow === "hero";
 
-  // Safety gutter prevents anti-aliased pixels and rotated geometry from clipping at canvas boundary
-  const gutter = Math.max(4, Math.round(size * 0.05));
+  // Safety gutter prevents anti-aliased pixels and rotated geometry from
+  // clipping at the canvas boundary. The hero halo needs far more room: a blur
+  // wider than the gutter gets sliced off square, which looks worse than no
+  // halo at all. Negative margin below keeps the laid-out size at `size`.
+  const gutter = hero
+    ? Math.round(size * 0.26)
+    : Math.max(4, Math.round(size * 0.05));
   const canvasSize = size + gutter * 2;
   const cx = canvasSize / 2;
   const cy = canvasSize / 2;
   const r = size / 2;
-  const isWaxing = phaseIndex <= 4;
 
   const path = useMemo(
-    () => litMoonPath(cx, cy, r, phaseFraction, isWaxing),
-    [cx, cy, r, phaseFraction, isWaxing]
+    () => litMoonPath(cx, cy, r, phaseFraction, waxing),
+    [cx, cy, r, phaseFraction, waxing]
   );
 
   const discPath = useMemo(
@@ -81,7 +108,7 @@ export function MoonPhaseGlyph({
     [cx, cy, r]
   );
 
-  const rotDeg = getMoonTextureRotation(brightLimbAngleDeg, isWaxing);
+  const rotDeg = getMoonTextureRotation(brightLimbAngleDeg, waxing);
   const rotRad = (rotDeg * Math.PI) / 180;
 
   const canvas = (
@@ -101,6 +128,13 @@ export function MoonPhaseGlyph({
           { translateY: -cy },
         ]}
       >
+        {/* The wide halo, hero surfaces only: light carrying into the plate. */}
+        {hero && (
+          <Path path={path} color={Colors.moonlight} opacity={0.13}>
+            <BlurMask blur={r * 0.42} style="normal" />
+          </Path>
+        )}
+
         {/* Soft atmospheric moonlight bloom radiating from the illuminated region */}
         <Path
           path={path}
