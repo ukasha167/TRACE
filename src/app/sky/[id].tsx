@@ -11,7 +11,9 @@ import {
   Picture,
   Skia,
   BlurStyle,
+  BlendMode,
   useFont,
+  useImage,
   type SkPicture,
 } from "@shopify/react-native-skia";
 import { JetBrainsMono_400Regular } from "@expo-google-fonts/jetbrains-mono";
@@ -34,6 +36,8 @@ import {
   cameraBasisFromAxes,
   projectSphere,
   projectVector,
+  anchorTransform,
+  CONSTELLATION_ART_TILE,
 } from "@/lib/astronomy/skySphere";
 import { toLocalNight } from "@/lib/astronomy/dateUtils";
 import { normalizeDeg, rollFromAxes } from "@/lib/astronomy/attitude";
@@ -44,9 +48,57 @@ import catalogJson from "@/data/bsc.json";
 import type { Star, Milestone } from "@/types";
 
 const CATALOG = catalogJson as Star[];
-const MAG_LIMIT = 6.5;
+
+/**
+ * STAR DENSITY: the 75th percentile of the bundled catalogue.
+ *
+ * The catalogue runs to magnitude 6.5 and 8,404 stars, which is roughly what a
+ * perfect eye sees from a perfect site. On a phone that reads as noise: the
+ * faintest quarter carries no shape a person can recognise, and it fogs the
+ * bright stars that make the sky legible as constellations. Cutting at 6.2
+ * keeps 6,331 of them, exactly 75%, and leaves every star anyone has a name
+ * for. The catalogue keeps the rest, so raising this line brings them back.
+ */
+const MAG_LIMIT = 6.2;
+
 const FOV_MIN = 18;
 const FOV_MAX = 100;
+const DEG = Math.PI / 180;
+
+/**
+ * CONSTELLATION FADE.
+ *
+ * Every figure used to draw at one fixed alpha, so 89 constellations were
+ * always on at once and the sky read as a wireframe. Now a figure sits at a
+ * base almost too faint to notice and lifts when you look at it, easing over
+ * about half a second rather than switching, and it carries its name while it
+ * is up. Look away and it settles back.
+ *
+ * That is the Stellarium behaviour and it is also the answer to clutter: the
+ * structure is there the whole time, but only where you are actually looking.
+ */
+const FIGURE_BASE_ALPHA = 0.05;
+const FIGURE_FOCUS_ALPHA = 0.34;
+/** Fraction of the half-field that counts as "looking at it". */
+const FIGURE_FOCUS_CONE = 0.6;
+/** Per-frame easing. 0.06 at 60fps is about 0.8s to settle. */
+const FIGURE_FADE_RATE = 0.06;
+
+/**
+ * FIGURE ARTWORK.
+ *
+ * Fifteen constellations carry a drawn figure (see
+ * scripts/build-constellation-art.mjs). It rides the same fade as the lines, so
+ * the hunter appears when you look at Orion and is gone by the time you have
+ * turned away, and it is drawn UNDER the lines so the schematic stays readable
+ * on top of the illustration.
+ *
+ * Kept very faint on purpose. These are 19th-century figure drawings and the
+ * app is not one; at full strength they take the screen away from the sky,
+ * which is the thing the user actually came to see.
+ */
+const ART_ALPHA = 0.22;
+const ART_SHEET = require("../../../assets/constellations/figures.png");
 
 /**
  * IMMERSIVE SKY — spec §7.
@@ -180,6 +232,7 @@ export default function ImmersiveSkyScreen() {
     })()
   );
   const labelFont = useFont(JetBrainsMono_400Regular, 11);
+  const artSheet = useImage(ART_SHEET);
   const drawnRef = useRef(0);
   const [drawn, setDrawn] = useState(0);
 
@@ -187,6 +240,13 @@ export default function ImmersiveSkyScreen() {
     if (!sphere || !labelFont) return;
     let raf = 0;
     let frames = 0;
+
+    // Per-constellation alpha, carried across frames so the fade has somewhere
+    // to live. Reallocated with the sphere, which is correct: a new date or
+    // place is a new sky and nothing should still be lit from the old one.
+    const figureAlpha = new Float32Array(sphere.figures.length).fill(
+      FIGURE_BASE_ALPHA
+    );
 
     // Paints are built once. Allocating them per frame is pure waste.
     const starPaint = Skia.Paint(); starPaint.setColor(Skia.Color(Colors.moonlight));
@@ -204,7 +264,8 @@ export default function ImmersiveSkyScreen() {
     };
     // Dimmed hard: this is scaffolding you should feel rather than read.
     const gridPaint = mk(SkyColors.grid, 0.07, 0.5);
-    const figurePaint = mk(SkyColors.figure, 0.16, 0.6);
+    // Alpha is set per draw by the fade; the value here is only a seed.
+    const figurePaint = mk(SkyColors.figure, FIGURE_BASE_ALPHA, 0.6);
     const horizonPaint = mk(SkyColors.horizon, 0.32, 1.0);
     const planetPaint = mk(Colors.signalOnPlate, 1);
     const planetGlow = Skia.Paint();
@@ -212,11 +273,14 @@ export default function ImmersiveSkyScreen() {
     planetGlow.setAlphaf(0.4);
     planetGlow.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, 5, true));
     const dsoPaint = mk(SkyColors.deepSky, 0.75, 1);
-    const dsoFill = mk(SkyColors.deepSky, 0.85);
     const dsoDashedPaint = mk(SkyColors.deepSky, 0.75, 1);
     dsoDashedPaint.setPathEffect(Skia.PathEffect.MakeDash([3.5, 2.5], 0));
-    const dsoDottedPaint = mk(SkyColors.deepSky, 0.75, 1);
-    dsoDottedPaint.setPathEffect(Skia.PathEffect.MakeDash([1.5, 2.5], 0));
+    // Plus (additive) blending is what makes the black ground of a greyscale
+    // illustration disappear: black adds nothing. Anything else would paste a
+    // black square over the star field.
+    const artPaint = Skia.Paint();
+    artPaint.setBlendMode(BlendMode.Plus);
+    const conNamePaint = mk(SkyColors.figure, 1);
     const labelPaint = mk(SkyColors.label, 0.85);
     const labelAccent = mk(Colors.signalOnPlate, 0.95);
     const dsoLabel = mk(SkyColors.deepSky, 0.8);
@@ -269,18 +333,98 @@ export default function ImmersiveSkyScreen() {
         poly(pts, gridPaint);
       }
 
-      // ---- Constellation figures ----
-      const fig = Skia.Path.Make();
-      for (const pts of sphere.figures) {
-        let started = false;
-        for (let i = 0; i < pts.length; i += 3) {
-          const pt = projectVector([pts[i], pts[i + 1], pts[i + 2]], cam, width, height);
-          if (!pt) { started = false; continue; }
-          if (!started) { fig.moveTo(pt.x, pt.y); started = true; }
-          else fig.lineTo(pt.x, pt.y);
+      // ---- Constellation figures, faded by where you are looking ----
+      //
+      // Figures at the resting alpha all go into ONE path and draw in a single
+      // call, which is what the whole set used to do. Only the handful actually
+      // fading get their own path and their own alpha, so the common case costs
+      // exactly what it did before.
+      const focusCos = Math.cos((f / 2) * FIGURE_FOCUS_CONE * DEG);
+      const restingFigures = Skia.Path.Make();
+      const litFigures: { path: any; alpha: number }[] = [];
+      const conNames: { x: number; y: number; text: string; alpha: number }[] = [];
+
+      for (let ci = 0; ci < sphere.figures.length; ci++) {
+        const con = sphere.figures[ci];
+        const c = con.centroid;
+        const dot =
+          c[0] * axes.forward.x + c[1] * axes.forward.y + c[2] * axes.forward.z;
+        const target = dot >= focusCos ? FIGURE_FOCUS_ALPHA : FIGURE_BASE_ALPHA;
+        const alpha =
+          figureAlpha[ci] + (target - figureAlpha[ci]) * FIGURE_FADE_RATE;
+        figureAlpha[ci] = alpha;
+
+        const lit = alpha > FIGURE_BASE_ALPHA + 0.002;
+        const path = lit ? Skia.Path.Make() : restingFigures;
+        for (const pts of con.lines) {
+          let started = false;
+          for (let i = 0; i < pts.length; i += 3) {
+            const pt = projectVector(
+              [pts[i], pts[i + 1], pts[i + 2]],
+              cam,
+              width,
+              height
+            );
+            if (!pt) { started = false; continue; }
+            if (!started) { path.moveTo(pt.x, pt.y); started = true; }
+            else path.lineTo(pt.x, pt.y);
+          }
+        }
+        if (!lit) continue;
+
+        litFigures.push({ path, alpha });
+        const shown =
+          (alpha - FIGURE_BASE_ALPHA) / (FIGURE_FOCUS_ALPHA - FIGURE_BASE_ALPHA);
+
+        // Artwork goes down here, inside the loop, so it lands beneath every
+        // line: the lit paths are all drawn after this loop ends.
+        if (artSheet && con.art && shown > 0.02) {
+          const m = anchorTransform(
+            con.art,
+            cam,
+            width,
+            height,
+            CONSTELLATION_ART_TILE
+          );
+          if (m) {
+            const [col, row] = con.art.tile;
+            artPaint.setAlphaf(shown * ART_ALPHA);
+            cv.save();
+            cv.concat(m);
+            cv.drawImageRect(
+              artSheet,
+              Skia.XYWHRect(
+                col * CONSTELLATION_ART_TILE,
+                row * CONSTELLATION_ART_TILE,
+                CONSTELLATION_ART_TILE,
+                CONSTELLATION_ART_TILE
+              ),
+              Skia.XYWHRect(0, 0, CONSTELLATION_ART_TILE, CONSTELLATION_ART_TILE),
+              artPaint
+            );
+            cv.restore();
+          }
+        }
+
+        if (shown > 0.04) {
+          const pt = projectVector(c, cam, width, height);
+          if (pt) {
+            conNames.push({
+              x: pt.x,
+              y: pt.y,
+              text: con.name.toUpperCase(),
+              alpha: shown,
+            });
+          }
         }
       }
-      cv.drawPath(fig, figurePaint);
+
+      figurePaint.setAlphaf(FIGURE_BASE_ALPHA);
+      cv.drawPath(restingFigures, figurePaint);
+      for (const lf of litFigures) {
+        figurePaint.setAlphaf(lf.alpha);
+        cv.drawPath(lf.path, figurePaint);
+      }
       poly(ring(0), horizonPaint);
 
       // ---- Stars: glow underneath, cores on top ----
@@ -300,18 +444,22 @@ export default function ImmersiveSkyScreen() {
       cv.drawPath(cores, starPaint);
 
       // ---- Deep sky ----
-      const dsoLimit = f > 70 ? 9 : 11;
+      //
+      // No magnitude gate. buildSkySphere already cut the catalogue to the 24
+      // objects with names people use, so fame is the filter and a faint famous
+      // object (the Little Dumbbell at 11.5) should still be findable. Gating on
+      // brightness as well would hide exactly the ones worth going to look for.
       const dsoSeen: { x: number; y: number; name: string }[] = [];
       for (const o of sphere.deepSky) {
-        if (o.mag > dsoLimit) continue;
         const pt = projectVector(o.vec, cam, width, height);
         if (!pt) continue;
 
-        // Differentiated Messier glyphs (§17.3)
+        // Three glyphs for three kinds of object, following chart convention.
+        // Cluster glyphs are gone with the clusters themselves.
         const rr = Math.max(3, 260 / f);
         switch (o.kind) {
           case "galaxy": {
-            // Dashed oval inclined at 30° representing tilted galactic disc
+            // Dashed oval inclined at 30°, a disc seen at an angle.
             const ov = Skia.Path.Make();
             ov.addOval(Skia.XYWHRect(pt.x - rr * 1.25, pt.y - rr * 0.65, rr * 2.5, rr * 1.3));
             cv.save();
@@ -320,23 +468,9 @@ export default function ImmersiveSkyScreen() {
             cv.restore();
             break;
           }
-          case "open cluster":
-          case "asterism": {
-            // Dotted ring for cluster of discrete stars
-            const ring = Skia.Path.Make();
-            ring.addCircle(pt.x, pt.y, rr);
-            cv.drawPath(ring, dsoDottedPaint);
-            break;
-          }
-          case "globular cluster": {
-            // Solid ring with dense core nucleus dot
-            cv.drawCircle(pt.x, pt.y, rr, dsoPaint);
-            cv.drawCircle(pt.x, pt.y, Math.max(1.2, rr * 0.28), dsoFill);
-            break;
-          }
           case "planetary nebula":
           case "supernova remnant": {
-            // Ring with external crosshair ticks (astronomical planetary nebula glyph)
+            // Ring with external crosshair ticks, the standard planetary glyph.
             cv.drawCircle(pt.x, pt.y, rr, dsoPaint);
             const ch = Skia.Path.Make();
             const tick = Math.max(2.5, rr * 0.45);
@@ -349,7 +483,7 @@ export default function ImmersiveSkyScreen() {
           }
           case "nebula":
           default: {
-            // Diffuse nebula: dashed box framing the gas cloud
+            // Diffuse nebula: a dashed box framing the cloud.
             const box = Skia.Path.Make();
             box.addRect(Skia.XYWHRect(pt.x - rr, pt.y - rr, rr * 2, rr * 2));
             cv.drawPath(box, dsoDashedPaint);
@@ -385,17 +519,44 @@ export default function ImmersiveSkyScreen() {
       // ---- Labels, in the SAME pass as the things they name ----
       //
       // Near the right edge the label flips to the left of its object rather
-      // than being suppressed. Roll counter-rotation keeps text level with the horizon.
+      // than being suppressed.
+      //
+      // NOTHING OVERLAPS. Every label that gets drawn claims a rectangle, and a
+      // later one that would land on top is dropped rather than stacked. Order
+      // is the priority: solar system, then named stars, then deep sky, then
+      // constellation names, because "ORIONBellatrix" is what you get when a
+      // region name and a star name are both allowed to print at the same spot.
+      //
+      // ROLL: the rotation is +rollDeg, NOT -rollDeg.
+      //
+      // Text drawn with no transform is already level with the SCREEN, so it
+      // needs no correction to stay that way. What it should stay level with is
+      // the HORIZON, and the horizon rotates clockwise on screen by exactly
+      // rollDeg (see cameraAxesFromAngles: positive roll turns `up` toward
+      // `-right`, which reads as a clockwise turn of the sky in y-down screen
+      // space). Rotating by -rollDeg therefore drove the text away from the
+      // horizon at double rate, so labels visibly swung the wrong way.
+      const placed: number[][] = [];
+      const claim = (x0: number, y0: number, x1: number, y1: number) => {
+        for (const r of placed) {
+          if (x0 < r[2] && x1 > r[0] && y0 < r[3] && y1 > r[1]) return false;
+        }
+        placed.push([x0, y0, x1, y1]);
+        return true;
+      };
+
       const label = (x: number, y: number, text: string, paint: any) => {
         if (y < 40 || y > height - 40 || x < -20 || x > width + 20) return;
         const w = labelFont.measureText(text).width;
         const left = x + 11 + w > width - 6;
         const lx = left ? x - 11 - w : x + 11;
         const ly = y + 4;
+        // Padded by 2pt so neighbours never touch, which reads as one word.
+        if (!claim(lx - 2, ly - 11, lx + w + 2, ly + 3)) return;
 
         if (Math.abs(rollDeg) > 0.1) {
           cv.save();
-          cv.rotate(-rollDeg, x, y);
+          cv.rotate(rollDeg, x, y);
           cv.drawText(text, lx, ly, paint, labelFont);
           cv.restore();
         } else {
@@ -416,13 +577,36 @@ export default function ImmersiveSkyScreen() {
       }
       for (const d of dsoSeen) label(d.x, d.y, d.name, dsoLabel);
 
+      // Constellation names last, centred on the figure rather than offset from
+      // a point, because they name a region and not an object. They ride the
+      // same fade as their lines, so a name never appears without its figure,
+      // and they yield to every other label because a region can afford to go
+      // unnamed for a frame while you are reading a star.
+      for (const c of conNames) {
+        if (c.y < 40 || c.y > height - 40) continue;
+        const w = labelFont.measureText(c.text).width;
+        const cx = c.x - w / 2;
+        if (cx < 8 || cx + w > width - 8) continue;
+        // Sat 14pt below the centroid: the centre of a figure is exactly where
+        // its brightest star, and so its star label, tends to be.
+        const cy = c.y + 18;
+        if (cy > height - 40) continue;
+        if (!claim(cx - 3, cy - 11, cx + w + 3, cy + 3)) continue;
+
+        conNamePaint.setAlphaf(c.alpha * 0.75);
+        cv.save();
+        cv.rotate(rollDeg, c.x, cy);
+        cv.drawText(c.text, cx, cy, conNamePaint, labelFont);
+        cv.restore();
+      }
+
       picture.value = rec.finishRecordingAsPicture();
       if (++frames % 30 === 0) setDrawn(drawnRef.current);
     };
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [sphere, labelFont, width, height, picture]);
+  }, [sphere, labelFont, artSheet, width, height, picture]);
 
   if (!milestone?.location) {
     return (
