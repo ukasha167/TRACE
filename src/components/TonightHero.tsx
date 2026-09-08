@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, useWindowDimensions } from "react-native";
 import { router, type Href } from "expo-router";
 import Animated, {
   FadeIn,
@@ -64,6 +64,7 @@ interface TonightHeroProps {
  * N = 10. The callout stays a genuinely rare event rather than a monthly repeat.
  */
 export function TonightHero({ milestones, location, topInset }: TonightHeroProps) {
+  const { width } = useWindowDimensions();
   const todayStr = todayDateString();
   const { year: todayYear, month: todayMonth, day: todayDay } = useMemo(
     () => parseDateString(todayStr),
@@ -134,12 +135,17 @@ export function TonightHero({ milestones, location, topInset }: TonightHeroProps
       </View>
 
       <Animated.View style={[styles.moonWrap, moonStyle]}>
+        {/* Sized against the screen, not a constant. At a fixed 132pt the moon
+            was smaller than the headline under it, which is not what a hero
+            does. The wide halo carries the light into the plate so the disc is
+            part of the surface rather than sitting on it. */}
         <MoonPhaseGlyph
           phaseFraction={tonightMoon.phase.phaseFraction}
-          phaseIndex={tonightMoon.phase.phaseIndex}
-          size={132}
+          waxing={tonightMoon.phase.waxing}
+          size={Math.min(width * 0.56, 260)}
           brightLimbAngleDeg={tonightMoon.tilt}
           variant="bare"
+          glow="hero"
         />
       </Animated.View>
 
@@ -219,8 +225,8 @@ const styles = StyleSheet.create({
 
   moonWrap: {
     alignItems: "center",
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.md,
+    marginTop: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
 
   headline: {
