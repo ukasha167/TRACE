@@ -22,22 +22,19 @@ An earlier version of this project was a stack of unrelated facts about a date. 
 
 **Immersive sky.** A full-screen planetarium showing the sky as it was over that place on that night, not tonight. 8,404 stars, 89 constellations, 110 Messier objects, the naked-eye planets and the moon. Point the phone and it tracks, or drag and pinch. The horizon rotates with the device and the view passes below it, because standing somewhere means being able to look down.
 
-**Static sky chart.** A stereographic planisphere on the detail screen, zenith at centre, horizon on the rim.
-
 **Bright-limb tilt.** The moon is drawn at the angle an observer at that latitude actually saw it.
 
 **Export card.** A Skia-rendered share card at 1080x1920 or 1080x1080.
 
-Screens: home ledger, add and edit record, milestone detail, immersive sky, life ledger, export preview, planetary age converter, settings.
+Screens: home, add and edit record, record detail, immersive sky, life ledger, export preview, settings.
 
 ## What is left
 
-Listed in full in `CLAUDE.md` section 17. The short version:
+The full list is at the end of `docs/PRD.md`. The short version:
 
-- The moon glyph is geometrically wrong at some phases. It composes the terminator from stacked views and needs replacing with a real lunar texture masked by the correct arc geometry.
-- APOD photographs should open full screen with pinch zoom. Right now they only render as a bounded card.
-- Sky work: constellation figure artwork, label culling by angular distance from the view centre, distinct illustrations per deep-sky type, a star density budget at wide field, and label text that stays level when the device rolls.
-- Phase H: the export card verified at both sizes, and a home surface showing tonight's sky.
+- Constellation figure artwork that fades in and out and stays pinned to its stars, the way Stellarium does it. The reveal mechanism is cheap; bundled raster artwork is not.
+- A notification when a return is approaching. The home screen already knows, but nothing tells you when the app is closed.
+- Real timezone data. Offsets are approximated from longitude today.
 
 ## Running it
 
@@ -49,7 +46,7 @@ npx expo start
 Then open it in Expo Go, or press `i` for the iOS simulator and `a` for an Android emulator. Everything works in Expo Go. No custom native modules, no development build required.
 
 ```bash
-npm test          # 98 tests
+npm test          # 105 tests
 npx tsc --noEmit
 ```
 
@@ -76,11 +73,13 @@ You can also paste a key into Settings at runtime, which overrides the environme
 
 ### Layers
 
-`src/lib/astronomy/` holds pure functions. No network, no React Native imports, no side effects. This is the highest risk code in the app and the cheapest to test, so all 98 tests point at it.
+`src/lib/astronomy/` holds pure functions. No network, no React Native imports, no side effects. This is the highest risk code in the app and the cheapest to test, so all 105 tests point at it.
 
 `src/lib/apod/` is the only code that touches the network. Response shapes are mapped into the app's own types at the fetch boundary, so no raw API shape reaches a component.
 
 `src/app/` is Expo Router file-based routes. `src/components/` is presentation. `src/store/` is Zustand with AsyncStorage persistence.
+
+The full module map is in `docs/ARCHITECTURE.md`, the domain maths in `docs/ASTRONOMY.md`, and the design system in `docs/DESIGN.md`.
 
 ### Decisions worth explaining
 
@@ -100,7 +99,7 @@ You can also paste a key into Settings at runtime, which overrides the environme
 
 ## Problems worth knowing about
 
-Six bugs shipped during construction and were fixed. Each has a comment at the site and a regression test. All six are documented in `CLAUDE.md`.
+Fifteen bugs shipped during construction and were fixed. Each has a comment at the site and, where it is testable, a regression test. All of them are written up in `docs/DECISIONS.md`.
 
 **SunCalc v2 returns degrees, not radians.** The spec this was built from asserted radians, which was true for v1. The code multiplied an already-degrees value by 180/pi, inflating it 57 times. It did not crash. Normalisation into (-180, 180] turned it into a plausible looking but wrong angle, so the moon simply rendered at the wrong tilt forever. Check the installed type definitions before trusting any angle.
 
@@ -127,7 +126,9 @@ The same habit applies to correctness. `skyTransform` is cross-validated against
 | 8,404 stars to magnitude 6.5 | Yale Bright Star Catalog, 5th Revised Ed. | Public domain |
 | 333 proper star names | IAU Working Group on Star Names (IAU-CSN) | Official IAU catalogue |
 | 89 constellation figures | d3-celestial | BSD-3-Clause |
-| 110 Messier objects | d3-celestial | BSD-3-Clause |
+| 110 Messier objects, 24 of them drawn | d3-celestial | BSD-3-Clause |
+| 15 constellation figure illustrations | Johan Meuris, for Stellarium | Free Art License 1.3 |
+| Figure anchor data | Stellarium | CC BY-SA 4.0 |
 | Astronomy Picture of the Day | NASA | Public domain, individual images may be copyrighted |
 
 Everything bundled is rebuildable:
@@ -135,7 +136,10 @@ Everything bundled is rebuildable:
 ```bash
 node scripts/build-star-catalog.mjs <bsc5.dat>
 node scripts/build-sky-data.mjs <constellations.lines.json> <IAU-CSN.txt> <messier.json>
+node scripts/build-constellation-art.mjs
 ```
+
+The figure artwork is the one bundled asset that is not public domain. The Free Art License is copyleft, so the images keep it while the app's own source stays MIT, and the attribution in `assets/constellations/ATTRIBUTION.md` must stay visible in the credits.
 
 The catalogue is generated rather than committed as an opaque blob so the byte offsets stay auditable. Four stars with independently known J2000 positions are asserted in the test suite.
 
