@@ -42,7 +42,8 @@ const MOON_ASSET = require("../../assets/moon_disc.png");
 interface ExportCardCanvasProps {
   milestone: Milestone;
   moonPhaseFraction: number;
-  moonPhaseIndex: number;
+  /** From MoonSnapshot.waxing. Never from phaseIndex — see MoonPhaseGlyph. */
+  moonWaxing: boolean;
   /** Honest label from describePhase(), never the raw 8-way bucket name. */
   moonPhaseName: string;
   moonPhaseIllumination: string;
@@ -74,7 +75,7 @@ const ExportCardCanvas = React.forwardRef<
   {
     milestone,
     moonPhaseFraction,
-    moonPhaseIndex,
+    moonWaxing,
     moonPhaseName,
     moonPhaseIllumination,
     brightLimbAngleDeg,
@@ -134,10 +135,9 @@ const ExportCardCanvas = React.forwardRef<
   const footY = h - PAD - 12;
 
   const shownReturns = moonReturns.slice(0, isStory ? 4 : 2);
-  const isWaxing = moonPhaseIndex <= 4;
-  const path = litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction, isWaxing);
+  const path = litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction, moonWaxing);
   const discPath = moonDiscPath(moonCX, moonCY, moonR);
-  const moonRotDeg = getMoonTextureRotation(brightLimbAngleDeg, isWaxing);
+  const moonRotDeg = getMoonTextureRotation(brightLimbAngleDeg, moonWaxing);
   const moonRotRad = (moonRotDeg * Math.PI) / 180;
 
   return (
