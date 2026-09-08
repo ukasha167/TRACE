@@ -99,12 +99,26 @@ export function getMoonLimbRotation(
  * - Waxing crescent is lit on the RIGHT (+90°, Mare Crisium side)
  * - Waning crescent is lit on the LEFT (-90°, Oceanus Procellarum side)
  *
- * Rotating texture and terminator together by this angle is geometrically
- * correct to within the sub-solar latitude (under 1.6 degrees), because the
- * lunar equator's inclination to the ecliptic is only 1.54°, meaning the
- * terminator always runs almost exactly from the lunar North Pole to the South
- * Pole. Lunar libration (±8 degrees) is likewise negligible at phone scale
- * and ignored.
+ * ACCURACY, MEASURED, NOT ASSUMED.
+ *
+ * Rotating texture and terminator together assumes the bright limb sits exactly
+ * 90° from the lunar pole in position angle. That holds to the sub-solar
+ * latitude (1.54°, because the lunar equator is barely inclined to the ecliptic
+ * so the terminator runs almost pole to pole) and is then shifted by optical
+ * libration of up to 8°.
+ *
+ * Cross-checked against lunar north pole position angles from astronomy-engine's
+ * RotationAxis across six sites and phases, the disagreement runs 2.9° to 8.4°.
+ * An earlier revision of this comment claimed "under 1.6 degrees" and called
+ * libration negligible; that was the sub-solar term quoted as if it were the
+ * whole error. See __tests__/brightLimbRotation.test.ts.
+ *
+ * Below about 1% illumination the relation collapses entirely (60° out at an
+ * elongation of 1.3°, where topocentric parallax alone moves the bright-limb
+ * angle by 29°). It does not matter: there is no lit surface to orient.
+ *
+ * To remove the approximation, rotate the texture by the pole angle and the
+ * terminator path by the bright-limb angle as two independent transforms.
  *
  * In the observer's sky, the bright limb points at angle psi = -brightLimbAngleDeg
  * (clockwise from Zenith).
@@ -113,6 +127,10 @@ export function getMoonLimbRotation(
  * - Waxing:  rotation = psi - 90° = -brightLimbAngleDeg - 90°
  * - Waning:  rotation = psi - (-90°) = -brightLimbAngleDeg + 90°
  * - Null tilt (no location): rotation = 0° (standard upright almanac orientation, North up)
+ *
+ * @param isWaxing MUST come from SunCalc via MoonSnapshot.waxing. Deriving it
+ *        as `phaseIndex <= 4` is a 180° error for every waning moon in the
+ *        primary buckets, and it shipped.
  */
 export function getMoonTextureRotation(
   brightLimbAngleDeg: number | null,
