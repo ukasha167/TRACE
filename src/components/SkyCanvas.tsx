@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Canvas, Circle, Group, Path, Skia } from "@shopify/react-native-skia";
-import { Colors, Spacing, FontFamily, FontSize, Tracking } from "@/constants/theme";
+import { Colors, SkyColors, Spacing, FontFamily, FontSize, Tracking } from "@/constants/theme";
 import { visibleStars, projectToDisc } from "@/lib/astronomy/skyTransform";
 import { getSolarSystemSky } from "@/lib/astronomy/skyBodies";
 import catalogJson from "@/data/bsc.json";
@@ -89,8 +89,9 @@ export function SkyCanvas({ date, location, size, magnitudeLimit = 4.6 }: Props)
             );
           })}
 
-          {/* Planets — signal red, the one accent, so they read as different
-              in kind from the stars rather than merely brighter. */}
+          {/* Planets take SkyColors.planet, so they read as different in kind
+              from the stars rather than merely brighter, and stay distinct from
+              the cool blues everything structural is drawn in. */}
           {solar.planets.map((p) => {
             const q = projectToDisc(p);
             return (
@@ -99,7 +100,7 @@ export function SkyCanvas({ date, location, size, magnitudeLimit = 4.6 }: Props)
                 cx={cx + q.x * R}
                 cy={cy + q.y * R}
                 r={2.6}
-                color={Colors.signalOnPlate}
+                color={SkyColors.planet}
               />
             );
           })}

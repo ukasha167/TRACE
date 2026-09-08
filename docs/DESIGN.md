@@ -1,7 +1,7 @@
 # TRACE — design system
 
-Direction: **Keepsake / Nocturne**. Defined in `src/constants/theme.ts`, which is the only file
-allowed to contain a colour literal.
+Direction: **Atlas**. Defined in `src/constants/theme.ts`, which is the only file allowed to contain
+a colour literal, and checked by `src/constants/__tests__/theme.test.ts`.
 
 ## The plate idea
 
@@ -11,9 +11,13 @@ Two materials, and the contrast between them carries the whole app.
 named, generous leading, hairlines that guide rather than divide. The reference is a letterpress
 book of hours, not a lab printout.
 
-**Plate** is where the sky lives. Deep warm ink, with the moon and the star field set into it the
-way figures were tipped into printed books. On Home the plate is the hero and takes the top of the
-page; everywhere else it is an inset.
+**Plate** is where the sky lives. A deep Prussian night, with the moon and the star field set into it
+the way figures were tipped into printed books. On Home the plate is the hero and takes the top of
+the page; everywhere else it is an inset.
+
+**The accent is the plate, brought up onto the page.** Every date and every return year is printed in
+the colour of the sky it refers to. That is why it is not a decorative choice that could be swapped
+for another hue of the same value.
 
 **Reading surfaces are never dark. Sky surfaces are never light.** This is also why a light UI stays
 usable at night: the immersive sky mode is a full-screen plate.
@@ -38,24 +42,38 @@ and phase labels stay honest.
 
 | Token | Hex | Use |
 |---|---|---|
-| `paper` | `#F5F0E6` | Warm bone stock. The ground for every reading surface. |
-| `paperDim` | `#EAE3D3` | Recessed paper: inset blocks, empty thumbnails, pressed states. |
-| `ink` | `#211D16` | Warm near-black. Primary text. Never pure `#000`. |
-| `inkMuted` | `#7E7566` | Secondary text, captions, resolved values. |
-| `rule` | `#DED5C3` | Hairlines between rows. |
-| `plate` | `#14110C` | Deep warm ink. The ground for anything showing sky. |
-| `plateInk` | `#F0E6D2` | Text on a plate. |
-| `plateMuted` | `#8E8168` | Muted text on a plate. |
-| `plateRule` | `#4A412F` | Hairlines and outlined buttons on a plate. |
-| `moonlight` | `#F4E8CE` | The moon itself, drawn on a plate. |
-| `earthshine` | `#1A160F` | The unlit disc, a whisper above the plate ground. |
+| `paper` | `#F3F0E8` | Warm bone stock. The ground for every reading surface. |
+| `paperDim` | `#E6E2D6` | Recessed paper: inset blocks, empty thumbnails, pressed states. |
+| `ink` | `#15181F` | Near-black carrying a trace of the plate's blue. Never pure `#000`. |
+| `inkMuted` | `#646A76` | Secondary text, captions, resolved values. |
+| `rule` | `#D6D2C6` | Hairlines between rows. |
+| `plate` | `#0A1120` | Prussian night. The ground for anything showing sky. |
+| `plateInk` | `#E8EDF6` | Text on a plate. |
+| `plateMuted` | `#78849C` | Muted text on a plate. |
+| `plateRule` | `#1E2A40` | Hairlines and outlined buttons on a plate. |
+| `moonlight` | `#F5F2E6` | The moon itself. Warm, because moonlight is. |
+| `earthshine` | `#0D1526` | The unlit disc, a whisper above the plate ground. |
 | `space` | `#000000` | Pitch black. The immersive sky and the full-screen image viewer only. |
-| `signal` | `#A8763E` | Aged brass. The single accent, on paper. |
-| `signalOnPlate` | `#C79A55` | Brass lifted for dark grounds. Using the paper value on a plate is the most likely mistake here. |
-| `danger` | `#8E3B2E` | Destructive actions and validation errors only. |
+| `signal` | `#2D4A7C` | The plate colour lifted onto the page. The single accent. |
+| `signalOnPlate` | `#93B4E8` | The accent lifted for dark grounds. Using the paper value on a plate is the most likely mistake here. |
+| `danger` | `#9B3B2A` | Destructive actions and validation errors only. |
 
-Brass replaced signal red because the accent could not also mean "this will delete something". One
-colour cannot carry both jobs.
+### Why Atlas replaced Keepsake
+
+Keepsake was warm paper, warm ink, warm plate, aged brass. It failed on two counts.
+
+**Measured.** Three of nine contrast pairs fell below WCAG AA, and the worst was `signal` on `paper`
+at 3.47:1 against a 4.5 minimum. That token carries every date, every illumination figure and every
+return year, so the accent was the least legible thing on the page. A warm accent on warm paper has
+nowhere to go: clearing 4.5:1 against both paper grounds meant leaving that neighbourhood.
+
+**Unmeasured.** Everything was one temperature, so the dark plate read as dark paper rather than as
+night, and a warm-black plate pushed the neutral-grey lunar photograph on it toward green.
+
+Cooling the plate does most of the work. The paper stays warm, because a record is a document.
+
+**The accent is never red.** `danger` owns red. One colour cannot mean both "this is the important
+figure" and "this will delete something", and this rule has now outlived two accents.
 
 ### The planetarium palette
 
@@ -71,6 +89,11 @@ these**, because a brass constellation line would read as a real object.
 | `horizon` | `#C9C4B8` | The horizon ring, the one line that marks the ground. |
 | `deepSky` | `#9BE0C8` | Messier objects. Green-cyan, so a galaxy never reads as another star. |
 | `label` | `#93A7B4` | Star and body names. Cooler and quieter than the stars. |
+| `planet` | `#D9A15C` | Planets and their labels. Warm, so they never read as scaffolding. |
+
+`planet` exists because planets used to borrow `Colors.signalOnPlate`. That was safe while the accent
+was brass and became a bug the moment it went cool: a planet drawn in the grid's own blue reads as a
+coordinate line. Warm is also truer, since Mars, Jupiter and Saturn are warm objects.
 
 ## Typography
 
@@ -128,3 +151,8 @@ grep -rnE '"#[0-9a-fA-F]{3,8}"' src/ --include="*.tsx"    # theme.ts only
 **No drop shadows, no elevation.** Separation comes from the paper and plate contrast.
 
 **Mono carries every number.** Data reads as data.
+
+**The palette is checked, not argued about.** `src/constants/__tests__/theme.test.ts` asserts every
+contrast pair, that hairlines stay visible, that earthshine sits above the plate without becoming a
+grey coin, that the accent is nowhere near `danger` in hue, and that planets do not borrow the
+accent. A colour swap is exactly the kind of change that gets made quickly and reviewed by eye.

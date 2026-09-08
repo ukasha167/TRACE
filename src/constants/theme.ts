@@ -1,7 +1,7 @@
 /**
  * TRACE design system
  *
- * DIRECTION: Keepsake / Nocturne.
+ * DIRECTION: Atlas.
  *
  * Two materials, and the contrast between them carries the whole app.
  *
@@ -9,10 +9,15 @@
  * wrote or was named, generous leading, hairlines that guide rather than divide.
  * The reference is a letterpress book of hours, not a lab printout.
  *
- * PLATE is where the sky lives: deep warm ink, the moon and the star field set
- * into it the way figures were tipped into printed books. On the home screen the
- * plate is the hero and takes the top of the page; everywhere else it is an
- * inset. Reading surfaces are never dark, sky surfaces are never light.
+ * PLATE is where the sky lives: a deep Prussian night, the moon and the star
+ * field set into it the way figures were tipped into printed books. On the home
+ * screen the plate is the hero and takes the top of the page; everywhere else it
+ * is an inset. Reading surfaces are never dark, sky surfaces are never light.
+ *
+ * THE ACCENT IS THE PLATE, BROUGHT UP ONTO THE PAGE. Every date and every return
+ * year is printed in the colour of the sky it refers to. That is the whole idea,
+ * and it is why the accent is not a decorative choice that could be swapped for
+ * another hue of the same value.
  *
  * WHAT CHANGED FROM THE PREVIOUS SYSTEM, AND WHY
  *
@@ -27,65 +32,95 @@
  *   3. Square corners plus hairlines read as unstyled to anyone not already
  *      fluent in Swiss design. Rigour was landing as absence.
  *
- * THREE RULES THAT SURVIVE UNCHANGED
+ * WHAT CHANGED WHEN KEEPSAKE BECAME ATLAS
+ *
+ * Keepsake was warm paper, warm ink, warm plate, aged brass. It failed on two
+ * counts, one of them measurable.
+ *
+ *   1. MEASURED. Three of nine contrast pairs fell below WCAG AA, and the worst
+ *      was `signal` on `paper` at 3.47:1 against a 4.5 minimum. That token
+ *      carries every date, every illumination figure and every return year in
+ *      the app, so the accent was the least legible thing on the page. A warm
+ *      accent on warm paper has nowhere to go; clearing 4.5:1 against both paper
+ *      grounds meant leaving that neighbourhood entirely.
+ *   2. UNMEASURED. Everything was one temperature, so the dark plate read as
+ *      dark paper rather than as night, and a warm-black plate pushed the
+ *      neutral-grey lunar photograph sitting on it toward green.
+ *
+ * Cooling the plate does most of the work. The paper stays warm, because a
+ * record is a document and documents are warm.
+ *
+ * FOUR RULES THAT SURVIVE UNCHANGED
  *
  *   - Mono carries every number, so data reads as data.
  *   - Text is NEVER truncated. No numberOfLines, no ellipsis. Layouts grow.
  *   - Phase labels stay honest and always ship the exact percentage (§6.2).
+ *   - The accent is NEVER red. `danger` owns red, and one colour cannot mean
+ *     both "this is the important figure" and "this will delete something".
  */
 
 // ---- Color ----
 export const Colors = {
   /** Warm bone stock. The ground for every reading surface. */
-  paper: "#F5F0E6",
+  paper: "#F3F0E8",
   /** Recessed paper, for inset blocks, empty thumbnails and pressed states. */
-  paperDim: "#EAE3D3",
-  /** Warm near-black. Primary text. Never pure #000. */
-  ink: "#211D16",
-  /** Secondary text, captions, resolved values. */
-  inkMuted: "#7E7566",
-  /** Hairlines between rows. Softer than the old rule, so it guides rather than divides. */
-  rule: "#DED5C3",
+  paperDim: "#E6E2D6",
+  /** Near-black carrying a trace of the plate's blue. Primary text, never #000. */
+  ink: "#15181F",
+  /** Secondary text, captions, resolved values. 4.77:1 on paper. */
+  inkMuted: "#646A76",
+  /** Hairlines between rows. Guides rather than divides. */
+  rule: "#D6D2C6",
 
-  /** Deep warm ink. The plate ground for anything showing sky. */
-  plate: "#14110C",
+  /**
+   * Prussian night. The plate ground for anything showing sky.
+   *
+   * This is the single change that does the most work in the system. A warm
+   * black is dark paper; a cool one is night, and it lets the neutral-grey
+   * lunar photograph on top of it read as grey instead of drifting green.
+   */
+  plate: "#0A1120",
   /** Text on a plate. */
-  plateInk: "#F0E6D2",
+  plateInk: "#E8EDF6",
   /** Muted text on a plate. */
-  plateMuted: "#8E8168",
-  /** The moon itself, drawn on a plate. */
-  moonlight: "#F4E8CE",
+  plateMuted: "#78849C",
+  /** The moon itself, drawn on a plate. Warm, because moonlight is. */
+  moonlight: "#F5F2E6",
   /** Unlit disc (earthshine), a whisper above the plate ground. */
-  earthshine: "#1A160F",
+  earthshine: "#0D1526",
   /** Hairlines and outlined buttons ON a plate. The dark counterpart to `rule`. */
-  plateRule: "#4A412F",
+  plateRule: "#1E2A40",
   /** Pitch black. The immersive sky and the full-screen image viewer only. */
   space: "#000000",
 
   /**
-   * The single accent: aged brass.
+   * The single accent: the plate colour lifted onto the page.
    *
-   * It replaces signal red, which was borrowed from Swiss print convention and
-   * from red observing torches. Both are true and neither survives contact with
-   * a phone, where red means something is wrong. Brass is warm, quiet, reads as
-   * gilding on a printed page, and sits naturally beside moonlight.
+   * It replaces aged brass, which replaced signal red. Brass was warm on warm
+   * and came out at 3.47:1, below AA for the text it carried. This clears 7.74:1
+   * on paper and 6.81:1 on paperDim.
+   *
+   * It also means something, which brass did not: a date set in this colour is
+   * printed in the colour of the night it names.
    */
-  signal: "#A8763E",
+  signal: "#2D4A7C",
   /**
-   * Brass lifted for dark grounds. #A8763E is legible on paper and muddy on the
-   * plate, so anything accented on a dark surface uses this instead. Using the
-   * paper value on a plate is the most likely mistake here.
+   * The accent lifted for dark grounds. #2D4A7C is legible on paper and vanishes
+   * into the plate, so anything accented on a dark surface uses this instead.
+   * Using the paper value on a plate is the most likely mistake here.
+   *
+   * NOTE for the immersive sky: planets do NOT use this. See SkyColors.planet.
    */
-  signalOnPlate: "#C79A55",
+  signalOnPlate: "#93B4E8",
 
   /**
    * Destructive actions and validation errors only.
    *
-   * A muted brick rather than a pure red. It exists because the accent stopped
-   * being red: brass now means "this is the important figure", so it cannot
-   * also mean "this will delete something". One colour cannot carry both jobs.
+   * A muted brick. It stays the only red in the system precisely so that red
+   * keeps meaning one thing. The accent has been three different hues now and
+   * red has never been available to it.
    */
-  danger: "#8E3B2E",
+  danger: "#9B3B2A",
 } as const;
 
 export type ColorToken = keyof typeof Colors;
@@ -96,8 +131,10 @@ export type ColorToken = keyof typeof Colors;
  * These live apart from `Colors` because they answer to physics rather than to
  * the design direction: they are chosen so faint structure separates from stars
  * on a pitch-black ground without ever competing with the moonlight the stars
- * are drawn in. Changing the app's accent must not change these, because a brass
- * constellation line would read as a real object.
+ * are drawn in. Changing the app's accent must not change these, and the reverse
+ * caught us out: planets borrowed the accent, so cooling it to Prussian would
+ * have drawn them in the grid's own blue. Anything in this view that names a
+ * real object gets its colour from here, not from Colors.
  *
  * They were inline hex literals in the sky renderer, which broke the one-source
  * rule and made them invisible to anyone reading the design system.
@@ -113,6 +150,18 @@ export const SkyColors = {
   deepSky: "#9BE0C8",
   /** Star and body names. Cool grey-blue, quieter than the stars themselves. */
   label: "#93A7B4",
+  /**
+   * Planets, and their labels.
+   *
+   * Planets used to borrow Colors.signalOnPlate, which was safe while the accent
+   * was brass and stopped being safe the moment it went cool: under Atlas a
+   * planet and a grid meridian would be drawn in the same blue, so the one class
+   * of object that moves against the stars would read as scaffolding.
+   *
+   * Warm is also truer. Mars is red, Jupiter cream, Saturn gold, and none of
+   * them are the colour of a coordinate line.
+   */
+  planet: "#D9A15C",
 } as const;
 
 // ---- Typography ----
