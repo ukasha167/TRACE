@@ -20,6 +20,10 @@ import {
   cameraAxesFromAngles,
   rollFromAxes,
 } from "@/lib/astronomy/attitude";
+import {
+  cameraBasisFromAxes,
+  projectVector,
+} from "@/lib/astronomy/skySphere";
 
 const D = Math.PI / 180;
 
@@ -487,4 +491,63 @@ test("roll is zero for a level camera and matches what was applied", () => {
 
 test("roll is reported as zero when looking straight up", () => {
   assert.equal(rollFromAxes(cameraAxesFromAngles(0, 90, 0)), 0);
+});
+
+// ---------------------------------------------------------------------------
+// ROLL AND SCREEN ROTATION
+// ---------------------------------------------------------------------------
+
+/**
+ * WHICH WAY THE SKY TURNS WHEN THE PHONE ROLLS.
+ *
+ * This pins the fact the immersive view's label rotation depends on. Labels are
+ * drawn in screen space, so text with no transform is already level with the
+ * SCREEN. To keep it level with the HORIZON it must turn the same way the
+ * horizon turns, and the renderer had it turning the opposite way.
+ *
+ * Positive roll rotates the sky CLOCKWISE on screen (y-down), so a label that
+ * should follow the horizon rotates by +rollDeg. See app/sky/[id].tsx.
+ */
+test("positive roll turns the sky clockwise on screen", () => {
+  const AZ = 0; // facing north
+  const ALT = 0; // at the horizon
+  // A point 10 degrees above the view centre: straight up the screen at roll 0.
+  const above = lookVector(AZ, 10);
+
+  const screenAngle = (rollDeg: number) => {
+    const axes = cameraAxesFromAngles(AZ, ALT, rollDeg);
+    const cam = cameraBasisFromAxes(axes, 60, 400);
+    const pt = projectVector([above.x, above.y, above.z], cam, 400, 800);
+    assert.ok(pt, "the test point must be in front of the camera");
+    // Screen bearing, clockwise from straight up (y is down).
+    return (Math.atan2(pt.x - 200, 400 - pt.y) * 180) / Math.PI;
+  };
+
+  assert.ok(Math.abs(screenAngle(0)) < 0.01, "at roll 0 the point sits straight up");
+
+  for (const roll of [15, 30, -25, 60]) {
+    const bearing = screenAngle(roll);
+    assert.ok(
+      Math.abs(bearing - roll) < 0.01,
+      `roll ${roll}° should move the point to a screen bearing of ${roll}°, got ${bearing.toFixed(2)}°`
+    );
+  }
+});
+
+test("rollFromAxes inverts cameraAxesFromAngles", () => {
+  // The renderer reads roll back out of the axes it was handed, so the two must
+  // round-trip exactly or the label correction is applied at the wrong size.
+  for (const [az, alt, roll] of [
+    [0, 0, 0],
+    [0, 0, 35],
+    [120, 25, -40],
+    [270, -30, 80],
+    [45, 60, 15],
+  ] as const) {
+    const back = rollFromAxes(cameraAxesFromAngles(az, alt, roll));
+    assert.ok(
+      Math.abs(angleDelta(back, roll)) < 1e-6,
+      `az ${az} alt ${alt} roll ${roll}: read back ${back.toFixed(4)}`
+    );
+  }
 });
