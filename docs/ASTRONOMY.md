@@ -1,0 +1,219 @@
+# TRACE — astronomy spec
+
+Everything under `src/lib/astronomy/` is a pure function: no side effects, no network, no React
+Native imports. It is the highest-risk-of-silent-wrongness code in the app and the easiest to test.
+
+**The rule that overrides everything here: never state an astronomical claim the data does not
+support.** The app's entire premise is that the numbers are real. A rounded label that reads as a
+precise claim is a bug, not a UI detail.
+
+## Dates and timezones
+
+Every date is a **calendar date**, not an instant. Store it as `"YYYY-MM-DD"`.
+
+To get a `Date`, construct it explicitly. Never `new Date("YYYY-MM-DD")`, which parses as UTC
+midnight and silently lands on the previous calendar day anywhere behind UTC.
+
+| Helper | Instant | Use for |
+|---|---|---|
+| `toLocalNoon` | 12:00 on the date | Calendar-date identity: cache keys, display, age arithmetic. |
+| `toLocalDayStart` | 00:00 beginning the date | The `isTruePhase` syzygy check. |
+| `toLocalNight` | 00:00 of the **following** day | Everything about how the moon *looked*. |
+
+"That night" means local midnight at the end of the date, because that is when the moon is actually
+observed on the evening of a given date. The illuminated fraction moves up to about 1.2% per hour
+near the quarters, so noon and night can differ by more than a percentage point, and near the
+terminator the phase name can flip outright.
+
+A record with a location is evaluated in **that place's** local time, not the device's. A birthday
+in Lahore is a Lahore night, and `MilestoneLocation.timezoneOffsetMin` is what lets someone viewing
+from another country still see the right sky. With `location: null`, fall back to device local time
+and say so in the UI.
+
+### Timezone offsets are approximated from longitude
+
+Real timezone boundaries are political, and resolving them properly needs a date-keyed database
+(offsets move, DST rules change, countries re-zone). The value only picks which instant counts as
+"that night", so an hour of error moves the illuminated fraction by well under a percent.
+
+Correct to the hour for most of the world. About 30 minutes out for India, up to 2 hours out for
+western China. It is never used for displaying clock times, where that error would matter.
+
+## Moon phase, and the labelling rule
+
+```typescript
+const PHASE_NAMES = [
+  "New Moon", "Waxing Crescent", "First Quarter", "Waxing Gibbous",
+  "Full Moon", "Waning Gibbous", "Last Quarter", "Waning Crescent",
+];
+```
+
+`Math.round(illumination.phase * 8) % 8` buckets anything within 1.85 days of full into
+`"Full Moon"`. **Illumination as low as about 87% gets labelled "Full Moon."** That misled this
+app's own author into believing a date was a full moon when it was 96%.
+
+Rules that follow from that:
+
+- **Display labels gate on illumination, not on `isTruePhase` alone.** A moon at 99.9% whose exact
+  full instant lands at 08:00 the next morning *is* a full moon to any observer. Calling it "Waxing
+  Gibbous" understates reality as badly as the bucket overstated it at 96%. `describePhase()` uses a
+  99% threshold (`FULL_ENOUGH`), and `describeSyzygyNote()` then discloses where the exact instant
+  fell. Both directions of error are bugs.
+- **`isTruePhase` is computed** for the four primary phases. It is true only when the exact syzygy
+  instant falls inside the observer's local calendar day. That is the almanac convention and it is
+  precise.
+- **The exact percentage is always displayed** alongside the name. Never the name alone.
+- **`waxing` comes from SunCalc, never from `phaseIndex`.** The primary buckets (index 0 and 4) span
+  both sides of the syzygy, so half of every "Full Moon" bucket is waning. Inferring direction from
+  the index is a 180 degree error waiting to happen, and it has happened twice.
+
+## Moon return
+
+For a source date, find the anniversaries whose moon returns to the same phase.
+
+```
+For each year y in [sourceYear - 60, sourceYear + 60]:
+  p(y)  = illuminated phase at (y, sourceMonth, sourceDay), local midnight-of-night
+  delta = circular distance between p(y) and p(source), in days
+          min(|dp|, 1 - |dp|) * 29.530589
+  A return is delta < 1.0 day.
+Return the nearest past hit, the next future hit, and the full list.
+```
+
+Verified output for 2004-10-27 in Lahore: returns at +11y (0.75d off), +19y (0.83d), +30y (0.75d),
++38y (0.88d), +49y (0.82d). Exactly the 8/11/19 structure the thesis predicts, and a good
+end-to-end sanity check.
+
+Every hit is labelled with *why* it recurs (11-year, Metonic 19-year, 30 = 11 + 19). The explanation
+carries most of the emotional payload: it says the sky is on a schedule, not that a coincidence
+happened.
+
+**`MoonReturn.direction` is relative to the record, not to today.** Using it for "in N years"
+produces negative years.
+
+## Rarity
+
+Measure, do not assert. The frequency is computed by walking days over a multi-decade window rather
+than hardcoding a figure. Measured over 29,220 days from 1980 to 2060:
+
+| Illumination | Frequency | Reads as |
+|---|---|---|
+| >= 90% | 20.19% | about 1 in 5 |
+| >= 95% | 13.99% | about 1 in 7 |
+| >= 97% | 10.86% | about 1 in 9 |
+| >= 99% | **6.06%** | **about 1 in 16.5** |
+| >= 99.5% | 3.94% | about 1 in 25 |
+
+The personal number is far stronger than the global one and falls straight out of the ledger:
+"2 of your 22 birthdays have had a moon this full."
+
+## Bright limb and moon rotation
+
+`getBrightLimbAngle` returns the position angle of the midpoint of the illuminated limb, measured
+from the zenith, counter-clockwise (eastward) positive, normalised into (-180, 180].
+
+```
+brightLimbAngleDeg = illumination.angle - moonPosition.parallacticAngle
+```
+
+Both terms are already degrees. Do not add a radians conversion (see DECISIONS.md).
+
+Two rotation helpers consume it:
+
+- `getMoonLimbRotation` rotates a glyph drawn with its bright limb on the right.
+- `getMoonTextureRotation` rotates the lunar photograph and the terminator path together.
+
+Rotating texture and terminator as one body is correct because the lunar equator is inclined only
+1.54 degrees to the ecliptic, so the terminator always runs almost exactly pole to pole, and the
+sub-solar point sits on the lunar equator. The bright limb midpoint is therefore 90 degrees from the
+lunar rotation axis in position angle, which is what makes a single rotation valid.
+
+**Measured error of that approximation**, against lunar north pole position angles computed from
+`astronomy-engine`'s `RotationAxis`, across six sites and phases: **2.9 to 8.4 degrees**. The error
+is optical libration, which reaches 8 degrees and shifts the pole away from exactly 90 degrees off
+the bright limb. Below about 1% illumination the relation collapses (60 degrees out at an elongation
+of 1.3 degrees), and it does not matter because there is no lit surface to orient.
+
+To remove the approximation, rotate the texture by the pole angle and the terminator path by the
+bright-limb angle as two independent transforms.
+
+The rotation must be driven by `snapshot.waxing`, never by `phaseIndex <= 4`. The measured cost of
+getting that wrong is 171 degrees (Greenwich, 2015-09-28, a 98.8% waning moon in bucket 4).
+
+## Sky transform
+
+RA/Dec to local sidereal time to hour angle to altitude/azimuth. Standard spherical trigonometry,
+roughly 30 lines. Azimuth is north-based clockwise.
+
+**Precession is deliberately skipped.** It runs about 50 arcseconds per year, so even a 30-year
+lookback accumulates about 25 arcminutes, under a pixel at phone scale. J2000 catalogue coordinates
+are used directly. This is a legitimate simplification, documented in the code so nobody "fixes" it.
+
+**Atmospheric refraction is ignored** for the same reason. It matters only within a few degrees of
+the horizon.
+
+**Validation.** `skyTransform` is cross-validated against `astronomy-engine`, an independently
+written implementation. Worst disagreement is 23.6 arcseconds across 100 comparisons spanning 1990
+to 2050 and five sites from the Arctic to Sydney. Asserting my own arithmetic against numbers
+derived from that same arithmetic would prove nothing; agreeing with a separate codebase is
+evidence.
+
+## Device orientation
+
+Orientation comes from physics, not from platform convention. Gravity gives "down" and the magnetic
+field gives "north"; together they pin a complete world basis with nothing left to assume. This is
+the same construction as Android's `SensorManager.getRotationMatrix`.
+
+```
+A = normalize(gravity)        up, in device coordinates
+H = normalize(magnetic x A)   east, in device coordinates
+M = A x H                     north, in device coordinates
+R = rows [H, M, A]            maps device vectors to world (East, North, Up)
+```
+
+The camera looks along device -Z, so its world direction is `-(H.z, M.z, A.z)`.
+
+**Sensor fusion, not sensor averaging.** The accelerometer and magnetometer give an orientation that
+is stable over minutes but noisy frame to frame. The gyroscope gives motion that is smooth over a
+second but drifts over minutes. Smoothing the noisy one hard enough to look calm necessarily makes
+it lag, and that trade is unwinnable. A complementary filter escapes it: integrate the gyro for fast
+motion, then blend gently toward the absolute reading (factor about 0.035) to cancel its drift.
+
+**The accelerometer sign is platform-specific and must be a constant, not a runtime guess.** Android
+reports the reaction to gravity (+1 g on z when face-up); iOS CoreMotion reports the opposite. Expo
+passes both through unchanged. Getting it wrong inverts altitude *and* mirrors azimuth, because east
+comes from `magnetic x gravity`. Manual overrides stay in the debug panel for hardware that
+disagrees.
+
+**Roll comes from gravity alone**, which is stable and drift-free, while the view direction comes
+from the fused estimate.
+
+**Pointing accuracy.** Phone magnetometers run 10 to 15 degrees out, worse indoors or near metal.
+There is deliberately no reticle: drawing a crosshair on top of that error would be a lie the
+interface tells continuously. Drag-to-pan is always available and is the default when the
+magnetometer reports low accuracy.
+
+## Test fixtures
+
+`npm test` runs Node's built-in test runner through `tsx`. Unit tests cover everything in
+`src/lib/astronomy/`.
+
+Use publicly verifiable, impersonal reference dates. Do not put personal dates in fixtures. Eclipse
+instants are good fixtures because a lunar eclipse can only occur at exactly full and a solar
+eclipse at exactly new, which pins the maths against physics rather than against arithmetic.
+
+| Date (instant, UTC) | Assert |
+|---|---|
+| 2000-01-21 04:44, total lunar eclipse | `fraction` about 1.0000 |
+| 2015-09-28 02:47, total lunar eclipse | `fraction` about 1.0000 |
+| 2024-04-08 18:17, total solar eclipse | `fraction` about 0.0000 |
+| 2015-09-28 02:47 at Greenwich | `brightLimbAngleDeg` about 133.87 |
+
+Also assert that `getBrightLimbAngle` stays within (-180, 180], and that moon return on a known date
+reproduces the +11 / +19 / +30 structure.
+
+## Limits, stated plainly
+
+The immersive view shows about 8,400 real stars, the constellations, the Messier catalogue, and the
+solar system bodies, correctly placed for a given time and place. There is no deep-sky catalogue
+beyond Messier, no atmosphere model, no satellites, and no telescope control.
