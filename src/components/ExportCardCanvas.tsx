@@ -26,7 +26,7 @@ import {
 } from "@expo-google-fonts/jetbrains-mono";
 import type { Milestone, MoonReturn } from "@/types";
 import { Colors } from "@/constants/theme";
-import { getMoonTextureRotation } from "@/lib/astronomy/brightLimb";
+import { getLitPathRotation } from "@/lib/astronomy/brightLimb";
 import { litMoonPath, moonDiscPath } from "@/components/moon/moonPath";
 
 export const CARD_SIZES = {
@@ -48,6 +48,12 @@ interface ExportCardCanvasProps {
   moonPhaseName: string;
   moonPhaseIllumination: string;
   brightLimbAngleDeg: number | null;
+  /**
+   * Screen rotation of the Moon's north pole (getLunarNorthRotation). Orients
+   * the photograph independently of the terminator — see getLunarNorthRotation.
+   * Null on records with no coordinates, where neither rotation applies.
+   */
+  northAngleDeg: number | null;
   moonReturns: MoonReturn[];
   /** Place label, when the record has one. Printed under the phase readout. */
   placeLabel: string | null;
@@ -79,6 +85,7 @@ const ExportCardCanvas = React.forwardRef<
     moonPhaseName,
     moonPhaseIllumination,
     brightLimbAngleDeg,
+    northAngleDeg,
     moonReturns,
     placeLabel,
     format,
@@ -137,8 +144,20 @@ const ExportCardCanvas = React.forwardRef<
   const shownReturns = moonReturns.slice(0, isStory ? 4 : 2);
   const path = litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction, moonWaxing);
   const discPath = moonDiscPath(moonCX, moonCY, moonR);
-  const moonRotDeg = getMoonTextureRotation(brightLimbAngleDeg, moonWaxing);
-  const moonRotRad = (moonRotDeg * Math.PI) / 180;
+  // TWO INDEPENDENT ROTATIONS, matching MoonPhaseGlyph. The lit path follows
+  // the Sun; the photograph follows the Moon's north pole.
+  const pathRotDeg = getLitPathRotation(brightLimbAngleDeg, moonWaxing);
+  const pathRotRad = (pathRotDeg * Math.PI) / 180;
+
+  // The photograph sits inside the path's frame, so it carries the difference.
+  const textureRotDeg = northAngleDeg ?? pathRotDeg;
+  const textureTransform = [
+    { translateX: moonCX },
+    { translateY: moonCY },
+    { rotate: ((textureRotDeg - pathRotDeg) * Math.PI) / 180 },
+    { translateX: -moonCX },
+    { translateY: -moonCY },
+  ];
 
   return (
     <Canvas ref={ref as any} style={{ width: w * scale, height: h * scale }}>
@@ -187,7 +206,7 @@ const ExportCardCanvas = React.forwardRef<
           transform={[
             { translateX: moonCX },
             { translateY: moonCY },
-            { rotate: moonRotRad },
+            { rotate: pathRotRad },
             { translateX: -moonCX },
             { translateY: -moonCY },
           ]}
@@ -208,14 +227,16 @@ const ExportCardCanvas = React.forwardRef<
             <Group clip={discPath}>
               {/* Faint earthshine texture on unlit disc (6% opacity) */}
               <Group clip={path} invertClip>
-                <SkiaImage
-                  image={moonImage}
-                  x={moonCX - moonR}
-                  y={moonCY - moonR}
-                  width={moonR * 2}
-                  height={moonR * 2}
-                  opacity={0.06}
-                />
+                <Group transform={textureTransform}>
+                  <SkiaImage
+                    image={moonImage}
+                    x={moonCX - moonR}
+                    y={moonCY - moonR}
+                    width={moonR * 2}
+                    height={moonR * 2}
+                    opacity={0.06}
+                  />
+                </Group>
               </Group>
               {/* Lit lunar surface with softly diffused terminator transition */}
               <Mask
@@ -228,14 +249,16 @@ const ExportCardCanvas = React.forwardRef<
                   </Group>
                 }
               >
-                <SkiaImage
-                  image={moonImage}
-                  x={moonCX - moonR}
-                  y={moonCY - moonR}
-                  width={moonR * 2}
-                  height={moonR * 2}
-                  opacity={1.0}
-                />
+                <Group transform={textureTransform}>
+                  <SkiaImage
+                    image={moonImage}
+                    x={moonCX - moonR}
+                    y={moonCY - moonR}
+                    width={moonR * 2}
+                    height={moonR * 2}
+                    opacity={1.0}
+                  />
+                </Group>
               </Mask>
             </Group>
           ) : (

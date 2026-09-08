@@ -21,7 +21,10 @@ import {
 } from "@/constants/theme";
 import { MoonPhaseGlyph } from "./MoonPhaseGlyph";
 import { getMoonPhase, describePhase, formatIllumination } from "@/lib/astronomy/moonPhase";
-import { getBrightLimbAngle } from "@/lib/astronomy/brightLimb";
+import {
+  getBrightLimbAngle,
+  getLunarNorthRotation,
+} from "@/lib/astronomy/brightLimb";
 import { getMoonReturns } from "@/lib/astronomy/moonReturn";
 import {
   todayDateString,
@@ -93,7 +96,8 @@ export function TonightHero({ milestones, location, topInset }: TonightHeroProps
     const dayStart = toLocalDayStart(todayStr, tz);
     const phase = getMoonPhase(night, dayStart);
     const tilt = location ? getBrightLimbAngle(night, location) : null;
-    return { phase, tilt };
+    const north = location ? getLunarNorthRotation(night, location) : null;
+    return { phase, tilt, north };
   }, [todayStr, location]);
 
   // The moon settles rather than appearing: it scales up a couple of percent
@@ -144,6 +148,7 @@ export function TonightHero({ milestones, location, topInset }: TonightHeroProps
           waxing={tonightMoon.phase.waxing}
           size={Math.min(width * 0.56, 260)}
           brightLimbAngleDeg={tonightMoon.tilt}
+          northAngleDeg={tonightMoon.north}
           variant="bare"
           glow="hero"
         />

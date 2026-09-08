@@ -5,7 +5,8 @@ import * as Astronomy from "astronomy-engine";
 import {
   getBrightLimbAngle,
   getMoonLimbRotation,
-  getMoonTextureRotation,
+  getLitPathRotation,
+  getLunarNorthRotation,
   normalizeAngleDeg,
 } from "@/lib/astronomy/brightLimb";
 
@@ -160,135 +161,233 @@ test("old buggy consumer code fails the physical assertions", () => {
 });
 
 /**
- * PROOF OF TEXTURE ROTATION, AGAINST AN INDEPENDENT IMPLEMENTATION
+ * PROOF OF LUNAR NORTH ROTATION
  *
- * getMoonTextureRotation rotates the lunar photograph, so what it must agree
- * with is the on-screen direction of the Moon's own north pole. That comes from
- * astronomy-engine's RotationAxis, a separately written codebase that shares no
- * arithmetic with SunCalc or with brightLimb.ts.
+ * The lunar photograph and the terminator are two different things pinned to
+ * two different directions in space:
  *
- *   P = position angle of the lunar north pole from celestial north, eastward
- *   q = parallactic angle
- *   P - q = pole angle from the zenith, eastward
- *   clockwise screen rotation = -(P - q)
+ *   - The terminator is fixed by the Sun. Its projected ellipse has its minor
+ *     axis exactly along the bright limb, and `getLitPathRotation` follows it.
+ *   - The photograph is fixed by the Moon's rotation axis, and
+ *     `getLunarNorthRotation` follows that.
  *
- * THE BUG THIS PINS. Both callers used to compute `isWaxing = phaseIndex <= 4`.
- * Buckets 0 and 4 straddle their syzygy, so half of every "Full Moon" bucket is
- * waning. Greenwich on 2015-09-28 is a 98.8% WANING moon sitting in bucket 4,
- * and the bucket-derived value was 171.6 degrees out: the photograph rendered
- * upside down. Reykjavik 2019-01-05 is the same failure at new moon, 119.8 out.
+ * The app used to drive both from the bright limb alone, which assumes the pole
+ * sits exactly 90° from the bright limb in position angle. Libration (~8°) and
+ * the sub-solar latitude (1.54°) break that assumption, and near syzygy it
+ * breaks completely.
  *
- * THE RESIDUAL, MEASURED. On the correct path the disagreement runs 2.9 to 8.4
- * degrees across ordinary phases. That is libration, not sloppiness: rotating
- * the texture and the terminator as one body assumes the bright limb sits
- * exactly 90 degrees from the lunar pole in position angle, which is true to
- * the sub-solar latitude (1.54 degrees) but is then shifted by optical
- * libration of up to 8 degrees. The code comment used to claim 1.6 degrees;
- * that was the sub-solar term alone.
- *
- * NEAR EXACT NEW MOON IT BREAKS DOWN COMPLETELY, and that is fine. At an
- * elongation of 1.3 degrees (Reykjavik, 2019-01-05) the vector from the Moon
- * toward the Sun projects to almost nothing on the sky plane, so its direction
- * is set by residuals: topocentric parallax alone moves the bright-limb angle
- * 28.7 degrees there, and the pole relation is 60 degrees out. Nothing is lit
- * at 0.01 percent illumination, so there is no surface orientation to get
- * wrong. The tolerance below therefore covers phases a person can actually see.
+ * `lunarNorthScreenRotation` below is an independent implementation: classical
+ * spherical trigonometry on scalar RA/Dec in the OF-DATE frame, against the
+ * production function's vector projection in J2000. Different arithmetic and a
+ * different frame, so agreement is evidence rather than a tautology.
  */
-function lunarNorthScreenRotation(when: Date, lat: number, lon: number): number {
-  const t = Astronomy.MakeTime(when);
-  const obs = new Astronomy.Observer(lat, lon, 0);
-  const eq = Astronomy.Equator(Astronomy.Body.Moon, t, obs, true, true);
-  const alpha = eq.ra * 15 * DEG;
-  const delta = eq.dec * DEG;
+function lunarNorthScreenRotation(date: Date, lat: number, lng: number): number {
+  const rad = Math.PI / 180;
+  const observer = new Astronomy.Observer(lat, lng, 0);
 
-  // RotationAxis reports the pole in J2000; the Moon's apparent place above is
-  // of-date, so the pole has to be rotated into the same frame before the two
-  // can be differenced.
-  const ax = Astronomy.RotationAxis(Astronomy.Body.Moon, t);
-  const poleEqd = Astronomy.RotateVector(
-    Astronomy.Rotation_EQJ_EQD(t),
-    Astronomy.VectorFromSphere(new Astronomy.Spherical(ax.dec, ax.ra * 15, 1), t)
+  // Topocentric Moon, equinox of date.
+  const moon = Astronomy.Equator(Astronomy.Body.Moon, date, observer, true, true);
+  // RotationAxis reports the pole in J2000, so rotate it into the same frame.
+  const pole = Astronomy.EquatorFromVector(
+    Astronomy.RotateVector(
+      Astronomy.Rotation_EQJ_EQD(date),
+      Astronomy.RotationAxis(Astronomy.Body.Moon, date).north
+    )
   );
-  const ps = Astronomy.SphereFromVector(poleEqd);
-  const alphaP = ps.lon * DEG;
-  const deltaP = ps.lat * DEG;
 
+  const a1 = moon.ra * 15 * rad;
+  const d1 = moon.dec * rad;
+  const a2 = pole.ra * 15 * rad;
+  const d2 = pole.dec * rad;
+
+  // Position angle of the pole from celestial north, through east.
   const P =
     Math.atan2(
-      Math.cos(deltaP) * Math.sin(alphaP - alpha),
-      Math.sin(deltaP) * Math.cos(delta) -
-        Math.cos(deltaP) * Math.sin(delta) * Math.cos(alphaP - alpha)
-    ) / DEG;
+      Math.cos(d2) * Math.sin(a2 - a1),
+      Math.sin(d2) * Math.cos(d1) -
+        Math.cos(d2) * Math.sin(d1) * Math.cos(a2 - a1)
+    ) / rad;
 
-  const lst = (Astronomy.SiderealTime(t) + lon / 15) * 15 * DEG;
-  const H = lst - alpha;
-  const q =
-    Math.atan2(
-      Math.sin(H),
-      Math.tan(lat * DEG) * Math.cos(delta) - Math.sin(delta) * Math.cos(H)
-    ) / DEG;
+  const q = SunCalc.getMoonPosition(date, lat, lng).parallacticAngle;
 
+  // Screen transforms turn clockwise; position angles run counter-clockwise.
   return normalizeAngleDeg(-(P - q));
 }
 
-/** Measured envelope across ordinary phases, rounded up from 8.4. */
-const LIBRATION_TOLERANCE_DEG = 12;
+/**
+ * Tolerance for the two pole implementations. The measured worst case over
+ * 5,400 samples (six sites, 1985-2024) is 0.15°, which is the J2000 vs of-date
+ * frame difference and nothing else. 1° leaves headroom without letting a real
+ * regression through — the bug this replaced was off by 3-66°.
+ */
+const POLE_TOLERANCE_DEG = 1;
 
-const TEXTURE_CASES: [string, string, number, number][] = [
-  // The screenshot case: a 99.9% waxing moon over Lahore. Measured error 3.4°.
-  ["Lahore, near-full waxing", "2004-10-28T00:00:00+05:00", 31.5204, 74.3587],
-  // Bucket 4 while WANING. This is the one that was 171.6 degrees wrong.
-  ["Greenwich, near-full waning", "2015-09-29T00:00:00Z", 51.4779, 0.0015],
-  ["Quito, young crescent", "2023-03-25T00:00:00-05:00", -0.18, -78.47],
-  ["Sydney, waning gibbous", "2020-06-11T00:00:00+10:00", -33.87, 151.21],
-  ["Lahore, waning crescent", "2004-04-16T00:00:00+05:00", 31.5204, 74.3587],
+/**
+ * How far the pole may sit from perpendicular-to-the-bright-limb at
+ * well-conditioned phases. This is the libration the old coupled rotation threw
+ * away. Measured max over the same sweep, restricted to 0.15 < illumination <
+ * 0.85: 5.54°.
+ */
+const LIBRATION_TOLERANCE_DEG = 8;
+
+const SITES: [string, number, number][] = [
+  ["London", 51.5, 0],
+  ["Lahore", 31.55, 74.34],
+  ["Sydney", -33.87, 151.21],
+  ["Equator", 0, 0],
+  ["Reykjavik", 64.13, -21.9],
+  ["Quito", -0.18, -78.47],
 ];
 
-for (const [name, iso, lat, lon] of TEXTURE_CASES) {
-  test(`texture rotation matches astronomy-engine's lunar pole: ${name}`, () => {
-    const when = new Date(iso);
-    const illumination = SunCalc.getMoonIllumination(when);
-    const tilt = getBrightLimbAngle(when, {
-      latitude: lat,
-      longitude: lon,
-      label: name,
-    });
+const PHASES = [
+  "2024-04-15T19:30:00Z", // first quarter
+  "2024-04-02T05:00:00Z", // last quarter
+  "2004-10-27T19:00:00Z", // 99.9% waning
+  "1996-04-21T20:46:00Z", // 15% waxing crescent
+];
 
-    const ours = getMoonTextureRotation(tilt, illumination.waxing);
-    const truth = lunarNorthScreenRotation(when, lat, lon);
-    const error = Math.abs(normalizeAngleDeg(ours - truth));
-
-    assert.ok(
-      error < LIBRATION_TOLERANCE_DEG,
-      `${name}: rotation ${ours.toFixed(1)}° vs pole ${truth.toFixed(1)}°, off by ${error.toFixed(1)}°`
-    );
-  });
-}
-
-test("the pole relation degenerates at exact new moon, where nothing is lit", () => {
-  // Reykjavik, 2019-01-05. Elongation 1.29°, illumination 0.013%.
-  const when = new Date("2019-01-06T00:00:00Z");
-  const illumination = SunCalc.getMoonIllumination(when);
-  assert.ok(illumination.fraction < 0.001, "fixture must be essentially new");
-
-  const tilt = getBrightLimbAngle(when, {
-    latitude: 64.13,
-    longitude: -21.9,
-    label: "Reykjavik",
-  });
-  const ours = getMoonTextureRotation(tilt, illumination.waxing);
-  const truth = lunarNorthScreenRotation(when, 64.13, -21.9);
-  const error = Math.abs(normalizeAngleDeg(ours - truth));
-
-  // Recorded rather than tolerated: if a future change makes this small, the
-  // texture path has become topocentric and the tolerance above can tighten.
+test("lunar north rotation matches an independent spherical-trig implementation", () => {
+  let worst = 0;
+  let worstAt = "";
+  for (const iso of PHASES) {
+    for (const [name, lat, lng] of SITES) {
+      const date = new Date(iso);
+      const mine = getLunarNorthRotation(date, {
+        latitude: lat,
+        longitude: lng,
+      });
+      const independent = lunarNorthScreenRotation(date, lat, lng);
+      const diff = Math.abs(normalizeAngleDeg(mine - independent));
+      if (diff > worst) {
+        worst = diff;
+        worstAt = `${iso} ${name}`;
+      }
+    }
+  }
   assert.ok(
-    error > LIBRATION_TOLERANCE_DEG,
-    `expected the near-new case to be far out, got ${error.toFixed(1)}°`
+    worst < POLE_TOLERANCE_DEG,
+    `worst pole disagreement ${worst.toFixed(3)}° at ${worstAt}`
   );
 });
 
+test("the pole is NOT 90° from the bright limb — this is the libration the old code dropped", () => {
+  // At well-conditioned phases the two rotations stay within libration of each
+  // other, which is why the old coupled model looked plausible. But the offset
+  // is real, and on at least one fixture it is degrees, not rounding.
+  let largest = 0;
+  for (const iso of ["2024-04-15T19:30:00Z", "2004-10-27T19:00:00Z", "1996-04-21T20:46:00Z"]) {
+    for (const [name, lat, lng] of SITES) {
+      const date = new Date(iso);
+      const location = { latitude: lat, longitude: lng, label: name };
+      const illumination = SunCalc.getMoonIllumination(date);
+      const litPath = getLitPathRotation(
+        getBrightLimbAngle(date, location),
+        illumination.phase < 0.5
+      );
+      const north = getLunarNorthRotation(date, location);
+      const offset = Math.abs(normalizeAngleDeg(north - litPath));
+
+      assert.ok(
+        offset < LIBRATION_TOLERANCE_DEG,
+        `${iso} ${name}: offset ${offset.toFixed(2)}° exceeds libration`
+      );
+      largest = Math.max(largest, offset);
+    }
+  }
+  // If this ever collapses to zero the two rotations have been re-coupled.
+  assert.ok(
+    largest > 2,
+    `expected a real libration offset, largest was only ${largest.toFixed(2)}°`
+  );
+});
+
+test("near syzygy the bright limb degenerates and the pole does not", () => {
+  // At exact new or full the Sun sits almost directly behind or in front of the
+  // observer, so its projection onto the lunar disc is a vanishing vector that
+  // points anywhere. The bright-limb rotation therefore whips through a near-
+  // complete turn in two hours. The pole has no such degeneracy.
+  //
+  // This is the inverse of what the coupled model claimed: it is precisely where
+  // that model was worst, and precisely where the whole lunar face is on show.
+  const swing = (iso: string, lat: number, lng: number) => {
+    const centre = new Date(iso).getTime();
+    let pole = 0;
+    let coupled = 0;
+    let prevPole: number | null = null;
+    let prevCoupled: number | null = null;
+    for (let step = -6; step <= 6; step++) {
+      const date = new Date(centre + step * 10 * 60_000);
+      const location = { latitude: lat, longitude: lng, label: "fixture" };
+      const illumination = SunCalc.getMoonIllumination(date);
+      const p = getLunarNorthRotation(date, location);
+      const c = getLitPathRotation(
+        getBrightLimbAngle(date, location),
+        illumination.phase < 0.5
+      );
+      if (prevPole !== null) pole += Math.abs(normalizeAngleDeg(p - prevPole));
+      if (prevCoupled !== null)
+        coupled += Math.abs(normalizeAngleDeg(c - prevCoupled));
+      prevPole = p;
+      prevCoupled = c;
+    }
+    return { pole, coupled };
+  };
+
+  // Total solar eclipse — exact new moon.
+  const newMoon = swing("2024-04-08T18:17:00Z", 31.55, 74.34);
+  assert.ok(
+    newMoon.coupled > 250,
+    `expected the bright limb to whip round at new moon, got ${newMoon.coupled.toFixed(1)}°`
+  );
+  assert.ok(
+    newMoon.pole < 60,
+    `expected the pole to stay smooth at new moon, got ${newMoon.pole.toFixed(1)}°`
+  );
+
+  // Total lunar eclipse — exact full moon.
+  const fullMoon = swing("2015-09-28T02:47:00Z", 51.5, 0);
+  assert.ok(
+    fullMoon.coupled > 250,
+    `expected the bright limb to whip round at full moon, got ${fullMoon.coupled.toFixed(1)}°`
+  );
+  assert.ok(
+    fullMoon.pole < 60,
+    `expected the pole to stay smooth at full moon, got ${fullMoon.pole.toFixed(1)}°`
+  );
+
+  // At a quarter both track the same parallactic rotation, so the divergence
+  // above is the degeneracy and not a difference in how they follow the sky.
+  const quarter = swing("2024-04-15T19:30:00Z", 51.5, 0);
+  assert.ok(
+    Math.abs(quarter.pole - quarter.coupled) < 5,
+    `at a quarter the two should track together: ${quarter.pole.toFixed(1)}° vs ${quarter.coupled.toFixed(1)}°`
+  );
+});
+
+test("lunar north rotation stays within (-180, 180]", () => {
+  for (let step = 0; step < 120; step++) {
+    const date = new Date(Date.UTC(2024, 0, 1) + step * 7.3 * 3_600_000);
+    for (const [name, lat, lng] of SITES) {
+      const value = getLunarNorthRotation(date, { latitude: lat, longitude: lng });
+      assert.ok(
+        value > -180 && value <= 180,
+        `${name} ${date.toISOString()} produced ${value}`
+      );
+    }
+  }
+});
+
+test("without a location both rotations fall back to the upright almanac moon", () => {
+  // No coordinates means no tilt and no pole angle. Callers pass null for both,
+  // the photograph and the terminator stay coupled at 0°, and North is up.
+  assert.equal(getLitPathRotation(null, true), 0);
+  assert.equal(getLitPathRotation(null, false), 0);
+});
+
 test("waxing is never inferred from the phase bucket", () => {
+  // Kept from the coupled-rotation era and still load-bearing: this is not
+  // about the pole at all, it is about which SIDE is lit, and a bucket-derived
+  // direction flips that by 180 degrees whatever the photograph does.
   // 98.8% illuminated and WANING, but Math.round(phase * 8) % 8 === 4, the
   // "Full Moon" bucket. Anything reading direction off that index is 180° out.
   const when = new Date("2015-09-29T00:00:00Z");
@@ -303,8 +402,8 @@ test("waxing is never inferred from the phase bucket", () => {
     longitude: 0.0015,
     label: "Greenwich",
   });
-  const fromBucket = getMoonTextureRotation(tilt, bucket <= 4);
-  const fromTruth = getMoonTextureRotation(tilt, illumination.waxing);
+  const fromBucket = getLitPathRotation(tilt, bucket <= 4);
+  const fromTruth = getLitPathRotation(tilt, illumination.waxing);
 
   assert.ok(
     Math.abs(normalizeAngleDeg(fromBucket - fromTruth)) > 179,

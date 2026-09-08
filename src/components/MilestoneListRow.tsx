@@ -11,7 +11,10 @@ import {
 } from "@/constants/theme";
 import { MoonPhaseGlyph } from "./MoonPhaseGlyph";
 import { getMoonPhase, formatIllumination, describePhase } from "@/lib/astronomy/moonPhase";
-import { getBrightLimbAngle } from "@/lib/astronomy/brightLimb";
+import {
+  getBrightLimbAngle,
+  getLunarNorthRotation,
+} from "@/lib/astronomy/brightLimb";
 import { toLocalNight, toLocalDayStart } from "@/lib/astronomy/dateUtils";
 import type { Milestone } from "@/types";
 
@@ -46,14 +49,16 @@ interface Props {
 export function MilestoneListRow({ milestone, isLast }: Props) {
   const tz = milestone.location?.timezoneOffsetMin;
 
-  const { phase, tilt } = useMemo(() => {
+  const { phase, tilt, north } = useMemo(() => {
     const night = toLocalNight(milestone.date, tz);
+    const place =
+      milestone.location && milestone.location.latitude !== 0
+        ? milestone.location
+        : null;
     return {
       phase: getMoonPhase(night, toLocalDayStart(milestone.date, tz)),
-      tilt:
-        milestone.location && milestone.location.latitude !== 0
-          ? getBrightLimbAngle(night, milestone.location)
-          : null,
+      tilt: place ? getBrightLimbAngle(night, place) : null,
+      north: place ? getLunarNorthRotation(night, place) : null,
     };
   }, [milestone, tz]);
 
@@ -87,6 +92,7 @@ export function MilestoneListRow({ milestone, isLast }: Props) {
         waxing={phase.waxing}
         size={36}
         brightLimbAngleDeg={tilt}
+        northAngleDeg={north}
         platePadding={7}
         round
       />

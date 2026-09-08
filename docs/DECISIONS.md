@@ -113,6 +113,9 @@ right, which is +90 degrees from the zenith, creating a 90 degree datum offset. 
 Unified into `getMoonLimbRotation` and `getMoonTextureRotation`, with no mirroring anywhere. The
 texture is never flipped with `scaleX: -1`, because that moves Mare Crisium to the wrong limb.
 
+`getMoonTextureRotation` has since become `getLitPathRotation` and no longer drives the photograph.
+See entry 18.
+
 ### 13. Waxing was inferred from the phase bucket
 
 `MoonPhaseGlyph` and `ExportCardCanvas` both computed `isWaxing = phaseIndex <= 4`. Buckets 0 and 4
@@ -121,8 +124,9 @@ bucket is waxing. The lunar photograph rendered upside down for those.
 
 Measured against lunar north pole position angles from `astronomy-engine`: a 98.8% waning moon over
 Greenwich on 2015-09-28 was 171.6 degrees wrong, and a 0.01% waning moon over Reykjavik was 119.8
-degrees wrong. Correct cases sit at 2.9 to 8.4 degrees, which is the libration floor of rotating the
-texture and the terminator as one body.
+degrees wrong. Correct cases sat at 2.9 to 8.4 degrees, which I called the libration floor of
+rotating the texture and the terminator as one body. That figure came from six samples and was too
+optimistic: the real ceiling is 66 degrees. See entry 18.
 
 `waxing` now comes from `MoonSnapshot`, which takes it from SunCalc. This is the second time the
 same class of bug shipped (see 2), and both times the cause was treating an 8-way bucket as a
@@ -163,6 +167,38 @@ in priority order: solar system, named stars, deep sky, constellation names.
 hemisphere was drawn. Once the view rendered the full sphere it became a bug: on 2004-10-27 over
 Lahore, Saturn was the only planet above the horizon, and the other four silently vanished instead
 of appearing below the horizon where they belong.
+
+### 18. The lunar photograph and the terminator do not share a rotation
+
+One angle derived from the bright limb drove both. That silently assumes the Moon's north pole sits
+exactly 90 degrees from the bright limb in position angle. Two things break it:
+
+1. The sub-solar latitude, up to 1.54 degrees, because the Moon's equator is tilted to the ecliptic,
+   so the terminator plane is not quite pole to pole.
+2. Optical libration, up to about 8 degrees, which tilts the pole in and out of the plane of sky.
+   The projections of two perpendicular directions in 3D are not themselves perpendicular. This one
+   dominates.
+
+Measured over 2,000 site and date samples against `astronomy-engine`'s `RotationAxis`, the coupled
+approximation is off by a median 1.3 degrees at the quarters, about 7 degrees at 5 to 10 percent
+illumination, and **up to 66 degrees at 97 to 99 percent**. That last band is the most visible case
+of all, because a nearly-full moon shows its whole face.
+
+Near syzygy the bright limb is ill-conditioned: at full moon the Sun is almost directly behind the
+observer, so its projected direction on the disc is a vanishing vector pointing anywhere. The old
+code fed that noise straight into the photograph. The pole has no such degeneracy; it is a real
+direction in space at every phase.
+
+Split into `getLitPathRotation`, which follows the Sun, and `getLunarNorthRotation`, which follows
+the pole. `MoonPhaseGlyph` and `ExportCardCanvas` rotate the mask geometry in one frame and
+counter-rotate the photograph inside it, so the photograph carries the difference and composes back
+to the pole angle.
+
+**The lesson is not about the Moon.** An earlier revision of this file put the coupled error at 2.9
+to 8.4 degrees, measured across six hand-picked sites and phases. The ceiling is eight times that,
+and the six samples missed it because none of them landed in the band where the approximation breaks.
+Sampling an error surface at a handful of convenient points tells you the error is small there, and
+nothing else.
 
 ## Decisions
 

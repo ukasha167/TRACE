@@ -14,7 +14,10 @@ import { useMilestonesStore } from "@/store/useMilestonesStore";
 import { getMoonPhase } from "@/lib/astronomy/moonPhase";
 import { getMoonReturns } from "@/lib/astronomy/moonReturn";
 import { getRarityStat } from "@/lib/astronomy/rarity";
-import { getBrightLimbAngle } from "@/lib/astronomy/brightLimb";
+import {
+  getBrightLimbAngle,
+  getLunarNorthRotation,
+} from "@/lib/astronomy/brightLimb";
 import { toLocalNight, toLocalDayStart } from "@/lib/astronomy/dateUtils";
 import { useApod } from "@/hooks/useApod";
 import { Arrive } from "@/components/Arrive";
@@ -64,6 +67,12 @@ export default function MilestoneDetailScreen() {
     const night = toLocalNight(milestone.date, tzOffsetMin);
     const phase = getMoonPhase(night, toLocalDayStart(milestone.date, tzOffsetMin));
 
+    // A place stored without coordinates is not a place — spec §10.
+    const place =
+      milestone.location && milestone.location.latitude !== 0
+        ? milestone.location
+        : null;
+
     const allReturns = getMoonReturns(milestone.date, { tzOffsetMin });
     const returns =
       milestone.type === "birthday"
@@ -83,10 +92,8 @@ export default function MilestoneDetailScreen() {
         threshold !== undefined
           ? getRarityStat(milestone.date, threshold, { tzOffsetMin })
           : null,
-      brightLimbAngleDeg:
-        milestone.location && milestone.location.latitude !== 0
-          ? getBrightLimbAngle(night, milestone.location)
-          : null,
+      brightLimbAngleDeg: place ? getBrightLimbAngle(night, place) : null,
+      northAngleDeg: place ? getLunarNorthRotation(night, place) : null,
     };
   }, [milestone, tzOffsetMin]);
 
@@ -155,6 +162,7 @@ export default function MilestoneDetailScreen() {
             milestoneId={milestone.id}
             phase={computed.phase}
             brightLimbAngleDeg={computed.brightLimbAngleDeg}
+            northAngleDeg={computed.northAngleDeg}
             location={milestone.location}
           />
         </Arrive>

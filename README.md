@@ -99,7 +99,7 @@ The full module map is in `docs/ARCHITECTURE.md`, the domain maths in `docs/ASTR
 
 ## Problems worth knowing about
 
-Fifteen bugs shipped during construction and were fixed. Each has a comment at the site and, where it is testable, a regression test. All of them are written up in `docs/DECISIONS.md`.
+Eighteen bugs shipped during construction and were fixed. Each has a comment at the site and, where it is testable, a regression test. All of them are written up in `docs/DECISIONS.md`.
 
 **SunCalc v2 returns degrees, not radians.** The spec this was built from asserted radians, which was true for v1. The code multiplied an already-degrees value by 180/pi, inflating it 57 times. It did not crash. Normalisation into (-180, 180] turned it into a plausible looking but wrong angle, so the moon simply rendered at the wrong tilt forever. Check the installed type definitions before trusting any angle.
 

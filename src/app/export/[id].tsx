@@ -27,7 +27,10 @@ import {
   formatIllumination,
   describePhase,
 } from "@/lib/astronomy/moonPhase";
-import { getBrightLimbAngle } from "@/lib/astronomy/brightLimb";
+import {
+  getBrightLimbAngle,
+  getLunarNorthRotation,
+} from "@/lib/astronomy/brightLimb";
 import { getMoonReturns } from "@/lib/astronomy/moonReturn";
 import { toLocalNight, toLocalDayStart } from "@/lib/astronomy/dateUtils";
 import { ExportCardCanvas, CARD_SIZES, type CardFormat } from "@/components/ExportCardCanvas";
@@ -42,18 +45,26 @@ export default function ExportScreen() {
   const [format, setFormat] = useState<CardFormat>("story");
   const [exporting, setExporting] = useState(false);
 
-  const { moonPhase, moonReturns, brightLimbAngleDeg } = useMemo(() => {
+  const { moonPhase, moonReturns, brightLimbAngleDeg, northAngleDeg } = useMemo(() => {
     if (!milestone)
-      return { moonPhase: null, moonReturns: null, brightLimbAngleDeg: null };
+      return {
+        moonPhase: null,
+        moonReturns: null,
+        brightLimbAngleDeg: null,
+        northAngleDeg: null,
+      };
     const tz = milestone.location?.timezoneOffsetMin;
     const all = getMoonReturns(milestone.date, { tzOffsetMin: tz });
     const night = toLocalNight(milestone.date, tz);
+    // A place stored without coordinates is not a place — spec §10.
+    const place =
+      milestone.location && milestone.location.latitude !== 0
+        ? milestone.location
+        : null;
     return {
       moonPhase: getMoonPhase(night, toLocalDayStart(milestone.date, tz)),
-      brightLimbAngleDeg:
-        milestone.location && milestone.location.latitude !== 0
-          ? getBrightLimbAngle(night, milestone.location)
-          : null,
+      brightLimbAngleDeg: place ? getBrightLimbAngle(night, place) : null,
+      northAngleDeg: place ? getLunarNorthRotation(night, place) : null,
       moonReturns:
         milestone.type === "birthday" ? all.filter((r) => r.age > 0) : all,
     };
@@ -168,6 +179,7 @@ export default function ExportScreen() {
               moonPhaseName={describePhase(moonPhase)}
               moonPhaseIllumination={formatIllumination(moonPhase.phaseFraction)}
               brightLimbAngleDeg={brightLimbAngleDeg}
+              northAngleDeg={northAngleDeg}
               moonReturns={moonReturns}
               placeLabel={milestone.location?.label ?? null}
               format={format}

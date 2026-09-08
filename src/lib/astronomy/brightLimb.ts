@@ -1,4 +1,5 @@
 import * as SunCalc from "suncalc";
+import * as Astronomy from "astronomy-engine";
 import type { MilestoneLocation } from "@/types";
 
 /**
@@ -91,48 +92,37 @@ export function getMoonLimbRotation(
 }
 
 /**
- * Computes the clockwise rotation (degrees) to apply to the lunar body
- * (texture and terminator path together).
+ * Computes the clockwise rotation (degrees) to apply to the LIT REGION path
+ * (`litMoonPath`) — the illuminated limb and the terminator ellipse.
+ *
+ * NAMING, because the old name was a trap: this used to be
+ * `getMoonTextureRotation` and drove the lunar photograph as well as the
+ * terminator. It no longer does, and it must not — see
+ * `getLunarNorthRotation` below for why the two rotations are independent.
  *
  * In the unrotated lunar body frame:
  * - North is at the top (0°)
  * - Waxing crescent is lit on the RIGHT (+90°, Mare Crisium side)
  * - Waning crescent is lit on the LEFT (-90°, Oceanus Procellarum side)
  *
- * ACCURACY, MEASURED, NOT ASSUMED.
+ * The terminator is the great circle on the Moon whose plane is perpendicular
+ * to the Moon->Sun direction. Its projection onto the disc is an ellipse whose
+ * MINOR axis lies exactly along the projected Sun direction, i.e. along the
+ * bright limb. That relation is exact — no libration correction applies to it,
+ * because it is fixed by the Sun's direction alone and says nothing about where
+ * the Moon's poles are.
  *
- * Rotating texture and terminator together assumes the bright limb sits exactly
- * 90° from the lunar pole in position angle. That holds to the sub-solar
- * latitude (1.54°, because the lunar equator is barely inclined to the ecliptic
- * so the terminator runs almost pole to pole) and is then shifted by optical
- * libration of up to 8°.
- *
- * Cross-checked against lunar north pole position angles from astronomy-engine's
- * RotationAxis across six sites and phases, the disagreement runs 2.9° to 8.4°.
- * An earlier revision of this comment claimed "under 1.6 degrees" and called
- * libration negligible; that was the sub-solar term quoted as if it were the
- * whole error. See __tests__/brightLimbRotation.test.ts.
- *
- * Below about 1% illumination the relation collapses entirely (60° out at an
- * elongation of 1.3°, where topocentric parallax alone moves the bright-limb
- * angle by 29°). It does not matter: there is no lit surface to orient.
- *
- * To remove the approximation, rotate the texture by the pole angle and the
- * terminator path by the bright-limb angle as two independent transforms.
- *
- * In the observer's sky, the bright limb points at angle psi = -brightLimbAngleDeg
- * (clockwise from Zenith).
- *
- * Therefore:
+ * In the observer's sky the bright limb points at psi = -brightLimbAngleDeg
+ * (clockwise from Zenith), so:
  * - Waxing:  rotation = psi - 90° = -brightLimbAngleDeg - 90°
- * - Waning:  rotation = psi - (-90°) = -brightLimbAngleDeg + 90°
- * - Null tilt (no location): rotation = 0° (standard upright almanac orientation, North up)
+ * - Waning:  rotation = psi + 90° = -brightLimbAngleDeg + 90°
+ * - Null tilt (no location): rotation = 0° (upright almanac orientation, North up)
  *
  * @param isWaxing MUST come from SunCalc via MoonSnapshot.waxing. Deriving it
  *        as `phaseIndex <= 4` is a 180° error for every waning moon in the
  *        primary buckets, and it shipped.
  */
-export function getMoonTextureRotation(
+export function getLitPathRotation(
   brightLimbAngleDeg: number | null,
   isWaxing: boolean = true
 ): number {
@@ -143,4 +133,130 @@ export function getMoonTextureRotation(
   return normalizeAngleDeg(isWaxing ? psi - 90 : psi + 90);
 }
 
+/**
+ * Computes the clockwise rotation (degrees) to apply to the LUNAR PHOTOGRAPH —
+ * the NASA LRO near-side disc, which is drawn with the Moon's north pole up.
+ *
+ * WHY THIS IS NOT `getLitPathRotation`, and why the app used to be wrong:
+ *
+ * The old code rotated photograph and terminator together by one angle derived
+ * from the bright limb. That silently assumes the Moon's north pole sits exactly
+ * 90° from the bright limb in position angle. It does not. Two effects break it:
+ *
+ *   1. The sub-solar latitude (up to 1.54°, the Moon's equator tilt to the
+ *      ecliptic) means the terminator plane is not quite pole-to-pole.
+ *   2. Optical libration (up to ~8°) tilts the pole in and out of the plane of
+ *      sky, and the projections of two perpendicular 3D directions onto a plane
+ *      are not themselves perpendicular. This one dominates.
+ *
+ * Measured over 2,000+ site/date samples against this function, the coupled
+ * approximation is off by a median 1.3° at the quarters, ~7° at 5-10%
+ * illumination, and it collapses entirely near syzygy — up to 66° at 97-99%
+ * illumination, which is the most visible case of all, since a nearly-full moon
+ * shows its whole face. The bright-limb direction becomes ill-conditioned there
+ * (at full moon the Sun is almost directly behind the observer, so its projected
+ * direction on the disc is a vanishing vector pointing anywhere), and the old
+ * code fed that noise straight into the photograph.
+ *
+ * The pole has no such degeneracy: it is a real direction in space at every
+ * phase. So the photograph now follows the pole and the terminator follows the
+ * Sun, which is what each of them is physically tied to.
+ *
+ * MATH: -(P - q), where
+ *   P = position angle of the Moon's north pole from celestial north, measured
+ *       eastward (counter-clockwise on sky), from astronomy-engine's
+ *       RotationAxis; and
+ *   q = the parallactic angle, which re-references P from celestial north to
+ *       the observer's zenith.
+ * Negated because screen transforms rotate clockwise while position angles run
+ * counter-clockwise — the same datum flip documented in `getMoonLimbRotation`.
+ *
+ * `q` comes from SunCalc, exactly as it does in `getBrightLimbAngle`, so both
+ * rotations are referenced to the same zenith. That matters more than the
+ * absolute accuracy of `q`: a shared error cancels between them, and their
+ * relative orientation is what a reader sees.
+ *
+ * Topocentric, because the Moon's ~1° diurnal parallax moves it enough on the
+ * sky to shift the pole's bearing by a comparable amount.
+ *
+ * @returns Clockwise degrees in (-180, 180]. Callers pass null instead of
+ *          calling this when the record has no coordinates.
+ */
+export function getLunarNorthRotation(
+  date: Date,
+  location: Pick<MilestoneLocation, "latitude" | "longitude">
+): number {
+  const observer = new Astronomy.Observer(
+    location.latitude,
+    location.longitude,
+    0
+  );
 
+  // ofdate = false -> J2000, matching RotationAxis, which reports the pole in
+  // EQJ. Both directions must live in one frame or the bearing between them is
+  // meaningless. aberration = true, as in skyBodies.
+  const eq = Astronomy.Equator(Astronomy.Body.Moon, date, observer, false, true);
+  const axis = Astronomy.RotationAxis(Astronomy.Body.Moon, date);
+
+  const poleAngle = positionAngleDeg(
+    [eq.vec.x, eq.vec.y, eq.vec.z],
+    [axis.north.x, axis.north.y, axis.north.z]
+  );
+
+  const parallactic = SunCalc.getMoonPosition(
+    date,
+    location.latitude,
+    location.longitude
+  ).parallacticAngle;
+
+  return normalizeAngleDeg(-(poleAngle - parallactic));
+}
+
+/**
+ * Position angle of direction `target` as seen at sky point `at`, measured from
+ * celestial north through east, in degrees.
+ *
+ * Both arguments are equatorial vectors in the SAME frame; neither needs to be
+ * normalised. The sky-plane basis at `at` is built by projecting out the radial
+ * component, so this is plain vector geometry with no trigonometric identities
+ * to get backwards.
+ */
+function positionAngleDeg(
+  at: [number, number, number],
+  target: [number, number, number]
+): number {
+  const m = normalizeVector(at);
+  const dotM = (v: [number, number, number]) =>
+    v[0] * m[0] + v[1] * m[1] + v[2] * m[2];
+
+  // North in the plane of sky: the celestial pole (0,0,1) with its radial part removed.
+  const polar: [number, number, number] = [0, 0, 1];
+  const north = normalizeVector([
+    polar[0] - m[0] * dotM(polar),
+    polar[1] - m[1] * dotM(polar),
+    polar[2] - m[2] * dotM(polar),
+  ]);
+  // East completes the frame: north x m, looking outward along m.
+  const east: [number, number, number] = [
+    north[1] * m[2] - north[2] * m[1],
+    north[2] * m[0] - north[0] * m[2],
+    north[0] * m[1] - north[1] * m[0],
+  ];
+
+  const projected: [number, number, number] = [
+    target[0] - m[0] * dotM(target),
+    target[1] - m[1] * dotM(target),
+    target[2] - m[2] * dotM(target),
+  ];
+  const along = (b: [number, number, number]) =>
+    projected[0] * b[0] + projected[1] * b[1] + projected[2] * b[2];
+
+  return (Math.atan2(along(east), along(north)) * 180) / Math.PI;
+}
+
+function normalizeVector(
+  v: [number, number, number]
+): [number, number, number] {
+  const length = Math.hypot(v[0], v[1], v[2]);
+  return [v[0] / length, v[1] / length, v[2] / length];
+}

@@ -11,7 +11,7 @@ import {
   useImage,
 } from "@shopify/react-native-skia";
 import { Colors, Radius } from "@/constants/theme";
-import { getMoonTextureRotation } from "@/lib/astronomy/brightLimb";
+import { getLitPathRotation } from "@/lib/astronomy/brightLimb";
 import { litMoonPath, moonDiscPath } from "@/components/moon/moonPath";
 
 interface MoonPhaseGlyphProps {
@@ -31,6 +31,15 @@ interface MoonPhaseGlyphProps {
   size?: number;
   /** Bright-limb tilt in degrees (getBrightLimbAngle). Null = no tilt correction. */
   brightLimbAngleDeg?: number | null;
+  /**
+   * Screen rotation of the Moon's north pole (getLunarNorthRotation), which
+   * orients the photograph. Null or absent falls back to rotating the
+   * photograph with the terminator, which is the old coupled behaviour and is
+   * off by up to tens of degrees near full — see getLunarNorthRotation. Records
+   * without coordinates have no pole angle, and there is nothing to fall back
+   * from: with no tilt at all both rotations are 0.
+   */
+  northAngleDeg?: number | null;
   /**
    * "plate" sets the moon into a dark square, the way a figure is tipped into a
    * printed page — the default on paper surfaces.
@@ -78,6 +87,7 @@ export function MoonPhaseGlyph({
   waxing,
   size = 40,
   brightLimbAngleDeg = null,
+  northAngleDeg = null,
   variant = "plate",
   platePadding = 10,
   round = false,
@@ -108,8 +118,23 @@ export function MoonPhaseGlyph({
     [cx, cy, r]
   );
 
-  const rotDeg = getMoonTextureRotation(brightLimbAngleDeg, waxing);
-  const rotRad = (rotDeg * Math.PI) / 180;
+  // TWO INDEPENDENT ROTATIONS. The lit path follows the Sun; the photograph
+  // follows the Moon's north pole. They differ by libration and the sub-solar
+  // latitude — a couple of degrees at the quarters, tens of degrees near full.
+  const pathRotDeg = getLitPathRotation(brightLimbAngleDeg, waxing);
+  const pathRotRad = (pathRotDeg * Math.PI) / 180;
+
+  // The photograph is drawn inside the path's frame (it is masked and clipped
+  // by it), so it carries the DIFFERENCE, which composes back to northAngleDeg.
+  const textureRotDeg = northAngleDeg ?? pathRotDeg;
+  const textureDeltaRad = ((textureRotDeg - pathRotDeg) * Math.PI) / 180;
+  const textureTransform = [
+    { translateX: cx },
+    { translateY: cy },
+    { rotate: textureDeltaRad },
+    { translateX: -cx },
+    { translateY: -cy },
+  ];
 
   const canvas = (
     <Canvas
@@ -123,7 +148,7 @@ export function MoonPhaseGlyph({
         transform={[
           { translateX: cx },
           { translateY: cy },
-          { rotate: rotRad },
+          { rotate: pathRotRad },
           { translateX: -cx },
           { translateY: -cy },
         ]}
@@ -151,14 +176,16 @@ export function MoonPhaseGlyph({
           <Group clip={discPath}>
             {/* Faint earthshine texture on unlit disc (6% opacity) */}
             <Group clip={path} invertClip>
-              <SkiaImage
-                image={moonImage}
-                x={cx - r}
-                y={cy - r}
-                width={size}
-                height={size}
-                opacity={0.06}
-              />
+              <Group transform={textureTransform}>
+                <SkiaImage
+                  image={moonImage}
+                  x={cx - r}
+                  y={cy - r}
+                  width={size}
+                  height={size}
+                  opacity={0.06}
+                />
+              </Group>
             </Group>
             {/* Lit lunar surface with softly diffused terminator transition */}
             <Mask
@@ -171,14 +198,16 @@ export function MoonPhaseGlyph({
                 </Group>
               }
             >
-              <SkiaImage
-                image={moonImage}
-                x={cx - r}
-                y={cy - r}
-                width={size}
-                height={size}
-                opacity={1.0}
-              />
+              <Group transform={textureTransform}>
+                <SkiaImage
+                  image={moonImage}
+                  x={cx - r}
+                  y={cy - r}
+                  width={size}
+                  height={size}
+                  opacity={1.0}
+                />
+              </Group>
             </Mask>
           </Group>
         ) : (
