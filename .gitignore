@@ -47,3 +47,6 @@ example
 .env.local
 .claude/
 CLAUDE.md
+
+# Build-script download cache (constellation artwork)
+.cache/
