@@ -84,7 +84,7 @@ export function MilestoneListRow({ milestone, isLast }: Props) {
 
       <MoonPhaseGlyph
         phaseFraction={phase.phaseFraction}
-        phaseIndex={phase.phaseIndex}
+        waxing={phase.waxing}
         size={36}
         brightLimbAngleDeg={tilt}
         platePadding={7}
