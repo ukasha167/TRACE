@@ -200,7 +200,7 @@ export function TonightHero({ milestones, location, topInset }: TonightHeroProps
 
 const styles = StyleSheet.create({
   plate: {
-    backgroundColor: Colors.plate,
+    backgroundColor: Colors.space,
     borderBottomLeftRadius: Radius.hero,
     borderBottomRightRadius: Radius.hero,
     paddingHorizontal: Spacing.page,
