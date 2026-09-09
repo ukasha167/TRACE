@@ -86,11 +86,36 @@ export const Colors = {
   plateMuted: "#78849C",
   /** The moon itself, drawn on a plate. Warm, because moonlight is. */
   moonlight: "#F5F2E6",
-  /** Unlit disc (earthshine), a whisper above the plate ground. */
-  earthshine: "#0D1526",
+  /**
+   * The unlit side of the moon, at full strength.
+   *
+   * Earthlight is blue because the Earth is, and the hue is the whole reason
+   * the ash-grey disc inside a thin crescent reads as cold. The level here is
+   * the PEAK, for a moon hanging under a nearly-full Earth; the shader scales it
+   * down by the Earth's own phase (see earthshineGain), so a gibbous moon gets a
+   * quarter of it and no more.
+   *
+   * Was #0D1526, chosen to sit a whisper above the Prussian plate. On black that
+   * choice inverted: it is the ground that changed, so the value that used to
+   * mean "just visible" now had to be measured against space instead.
+   */
+  earthshine: "#0B121F",
   /** Hairlines and outlined buttons ON a plate. The dark counterpart to `rule`. */
   plateRule: "#1E2A40",
-  /** Pitch black. The immersive sky and the full-screen image viewer only. */
+  /**
+   * Pitch black. The immersive sky, the full-screen image viewer, and the ground
+   * under every moon.
+   *
+   * THE MOON GROUND USED TO BE `plate`, and that was wrong for one reason worth
+   * keeping: a moon has a dark side. On Prussian blue the unlit hemisphere and
+   * the surface behind it were within a hair of each other, so the silhouette
+   * dissolved and what was left read as a lit crescent lying on a rectangle
+   * rather than as a sphere half in shadow. Black is the only ground a night
+   * side can be measured against.
+   *
+   * It also buys the mineral colour back. A dark blue ground drags the disc's
+   * own blues toward it and costs roughly a fifth of the apparent saturation.
+   */
   space: "#000000",
 
   /**
