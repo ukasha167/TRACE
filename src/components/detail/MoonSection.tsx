@@ -131,7 +131,9 @@ export function MoonSection({
 const styles = StyleSheet.create({
   section: { marginBottom: Spacing.xl },
   plate: {
-    backgroundColor: Colors.plate,
+    // Black. The moon's own night side has to be measurable against the ground
+    // it sits on, and on the Prussian plate it was not. See Colors.space.
+    backgroundColor: Colors.space,
     // Escapes the screen's page padding so the plate runs edge to edge. Square
     // corners are right here and only here: a full-bleed block has no visible
     // side corners, so rounding would only cut two odd notches out of the top
