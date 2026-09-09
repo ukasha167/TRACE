@@ -50,3 +50,10 @@ CLAUDE.md
 
 # Build-script download cache (constellation artwork)
 .cache/
+
+# Lunar source maps. Tens of megabytes, NASA public domain, and rebuildable
+# from the URLs in sources/README.md. The DERIVED maps in assets/ are committed;
+# these are not.
+sources/*.jpg
+sources/*.jpeg
+sources/*.tif
