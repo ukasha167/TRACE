@@ -72,7 +72,7 @@ pulls back toward that shape is a regression.
 | Immersive sky | `/sky/[id]` | Full-screen time-shifted planetarium. `/sky/tonight` synthesises a record for now. |
 | Life ledger | `/ledger/[id]` | One row per year: age, moon glyph at true phase and tilt, APOD thumbnail. |
 | Export preview | `/export/[id]` | Skia card, Story or Square, native share. |
-| Settings | `/settings` | NASA key override, about, credits. |
+| Settings | `/settings` | What the app is, what stays on the phone, credits, and the NASA key folded away. |
 
 ## Framing rules
 
@@ -114,5 +114,6 @@ Open work, roughly in order of value.
 - **Notification when a return approaches.** The tonight surface already knows; nothing tells the
   user when the app is closed.
 - **Real timezone data.** Offsets are approximated from longitude today. See ASTRONOMY.md for the
-  size of the error and why it is tolerable.
-- **`react-native-view-shot` removal.** Superseded by Skia snapshotting, still in `package.json`.
+  size of the error and why it is tolerable. This is the largest correctness gap left: a place whose
+  civil offset does not match its longitude gets the wrong night, and the fix needs a timezone
+  boundary lookup bundled offline, not another approximation.
