@@ -31,7 +31,7 @@ tsconfig paths and runs the suite in under a second. Revisit only if component t
 ```bash
 npm install
 npx expo start          # then i for iOS simulator, a for Android
-npm test                # 105 tests, tsx + node:test
+npm test                # 150 tests, tsx + node:test
 npx tsc --noEmit
 ```
 
@@ -188,7 +188,8 @@ All location data stays on the device. There is no backend to send it to.
 | `src/data/constellations.json` | 89 constellations, 150 line segments | d3-celestial (BSD-3) |
 | `src/data/messier.json` | 110 deep-sky objects, 40 of them galaxies | d3-celestial (BSD-3) |
 | `src/data/constellationNames.ts` | 88 IAU abbreviations to full names | IAU designations |
-| `assets/moon_disc.png` | 397x397 orthographic near-side moon disc with an alpha limb | NASA LRO / CGI Moon Kit (public domain) |
+| `assets/moon_disc.png` | 1024x1024 orthographic near-side albedo, exposure graded, opaque to the corners | NASA LROC WAC / CGI Moon Kit (public domain) |
+| `assets/moon_normal.png` | 512x512 surface normals for the same projection, y down | NASA LOLA LDEM / CGI Moon Kit (public domain) |
 | `assets/constellations/figures.png` | 2048x2048 sheet, 15 figure illustrations at 512pt | Stellarium, Johan Meuris (**Free Art License 1.3**) |
 | `src/data/constellationArt.json` | Three sky anchors per figure, resolved from HIP through VizieR | Stellarium (CC BY-SA 4.0) |
 
@@ -199,7 +200,12 @@ copyleft: the images keep it, the app's own source stays MIT, and the attributio
 ```bash
 node scripts/build-star-catalog.mjs <bsc5.dat>
 node scripts/build-sky-data.mjs <constellations.lines.json> <IAU-CSN.txt> <messier.json>
-node scripts/build-moon-texture.mjs [assets/2k_moon.jpg] [assets/moon_disc.png]
+node --max-old-space-size=4096 scripts/build-moon-maps.mjs [grade]
+# Builds moon_disc.png and moon_normal.png together, from one projection, so the
+# normals cannot drift out of register with the albedo. Reads the two large
+# equirectangular maps from sources/, which are gitignored: sources/README.md
+# says where they came from and how to verify a replacement. --list prints the
+# grades; `photograph` is the ungraded map.
 node scripts/build-constellation-art.mjs          # downloads; caches under .cache/
 ```
 
