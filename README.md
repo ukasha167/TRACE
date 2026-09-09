@@ -46,7 +46,7 @@ npx expo start
 Then open it in Expo Go, or press `i` for the iOS simulator and `a` for an Android emulator. Everything works in Expo Go. No custom native modules, no development build required.
 
 ```bash
-npm test          # 105 tests
+npm test          # 145 tests
 npx tsc --noEmit
 ```
 
@@ -73,7 +73,7 @@ You can also paste a key into Settings at runtime, which overrides the environme
 
 ### Layers
 
-`src/lib/astronomy/` holds pure functions. No network, no React Native imports, no side effects. This is the highest risk code in the app and the cheapest to test, so all 105 tests point at it.
+`src/lib/astronomy/` holds pure functions. No network, no React Native imports, no side effects. This is the highest risk code in the app and the cheapest to test, so all 145 tests point at it.
 
 `src/lib/apod/` is the only code that touches the network. Response shapes are mapped into the app's own types at the fetch boundary, so no raw API shape reaches a component.
 
