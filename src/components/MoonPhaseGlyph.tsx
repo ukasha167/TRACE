@@ -1,18 +1,32 @@
 import React, { useMemo } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, PixelRatio } from "react-native";
 import {
   Canvas,
   Circle,
+  Fill,
   Group,
-  Image as SkiaImage,
-  Path,
-  Mask,
-  BlurMask,
+  ImageShader,
+  Shader,
   useImage,
 } from "@shopify/react-native-skia";
 import { Colors, Radius } from "@/constants/theme";
 import { getLitPathRotation } from "@/lib/astronomy/brightLimb";
-import { litMoonPath, moonDiscPath } from "@/components/moon/moonPath";
+import {
+  lunarLambertL,
+  sunDirection,
+  earthshineGain,
+  EARTHSHINE_WRAP,
+} from "@/lib/astronomy/moonLighting";
+import {
+  moonEffect,
+  MINERAL_SATURATION,
+  PRINT_CONTRAST,
+  ALBEDO_MID,
+  printExposure,
+  RELIEF_STRENGTH,
+  ALBEDO_WHITE,
+  unitRgb,
+} from "@/components/moon/moonShader";
 
 interface MoonPhaseGlyphProps {
   phaseFraction: number; // 0.0–1.0 illuminated fraction
@@ -57,30 +71,48 @@ interface MoonPhaseGlyphProps {
    * How far the moonlight carries into the dark around the disc.
    *
    * "tight" is the thumbnail treatment: enough bloom that the limb is not a cut
-   * edge, and no more. "hero" adds a second, much wider and fainter pass so the
-   * moon sits IN the plate rather than on it. At hero scale the tight bloom
-   * alone reads as a sticker on a black rectangle, which is most of why the
-   * large moons did not feel like the subject of their screens.
+   * edge, and no more. "hero" carries much further, so the moon sits IN the
+   * plate rather than on it. At hero scale the tight bloom alone reads as a
+   * sticker on a black rectangle.
    */
   glow?: "tight" | "hero";
 }
 
-// Statically required asset so it bundles reliably with Metro
+// Statically required assets so they bundle reliably with Metro
 const MOON_ASSET = require("../../assets/moon_disc.png");
+const MOON_NORMAL_ASSET = require("../../assets/moon_normal.png");
+
+const MOONLIGHT = unitRgb(Colors.moonlight);
+const EARTHSHINE = unitRgb(Colors.earthshine);
+const DEG = Math.PI / 180;
 
 /**
- * MOON PHASE GLYPH (§17.1)
+ * MOON PHASE GLYPH.
  *
- * Renders the real lunar photograph (NASA LRO 397x397 orthographic near-side projection),
- * lit by the exact 2-arc terminator geometry (circular limb + semi-elliptical terminator).
+ * The NASA LRO near-side photograph, lit as a sphere by a fragment shader. See
+ * `moon/moonShader.ts` for the lighting model and `lib/astronomy/moonLighting.ts`
+ * for the geometry it rests on.
  *
- * Visual fidelity enhancements:
- * - Anti-clipping gutter: canvas includes a safety margin so anti-aliased subpixels
- *   and rotated limb features never clip flat at the canvas boundary.
- * - Soft terminator: lit region uses an alpha mask with a subtle 1.5px blur,
- *   softening the lunar day/night boundary while preserving crisp outer limb geometry.
- * - Atmospheric bloom: glowing moonlight halo radiating softly from illuminated terrain.
- * - Deeper earthshine: dark side rests at deep night tone (#171712) with faint 6% texture.
+ * WHAT THIS USED TO BE, because the difference is the point. The photograph was
+ * clipped to a two-arc path — circular limb plus semi-elliptical terminator —
+ * with two blurred copies of that path stacked underneath as glow, a hard
+ * `Circle` of earthshine behind it, and a 6% ghost of the texture on the dark
+ * side. Everything about that was flat. The disc had no centre-to-limb
+ * behaviour because a cutout has no normals, the "glow" ringed the whole disc
+ * including the unlit half because a blurred silhouette does not know where the
+ * Sun is, and the terminator's softness was one 1.5px blur, which is why it
+ * read as an edge rather than as a curve turning away from the light.
+ *
+ * The shader draws the disc AND its halo in one pass, so the halo is a function
+ * of the same sun direction that lights the surface and can only appear on the
+ * illuminated side. Nothing here is composited from separate exposures, which
+ * is what removes the banding.
+ *
+ * THE TWO ROTATIONS SURVIVE UNCHANGED. `getLitPathRotation` still aims the
+ * light and `getLunarNorthRotation` still aims the photograph, and they are
+ * still independent — decision 18. In the shader that separation is cheaper
+ * than it was: the sun is a vector, the pole is a texture lookup rotation, and
+ * neither can accidentally pick up the other's angle.
  */
 export function MoonPhaseGlyph({
   phaseFraction,
@@ -94,47 +126,63 @@ export function MoonPhaseGlyph({
   glow = "tight",
 }: MoonPhaseGlyphProps) {
   const moonImage = useImage(MOON_ASSET);
+  const normalImage = useImage(MOON_NORMAL_ASSET);
   const hero = glow === "hero";
 
-  // Safety gutter prevents anti-aliased pixels and rotated geometry from
-  // clipping at the canvas boundary. The hero halo needs far more room: a blur
-  // wider than the gutter gets sliced off square, which looks worse than no
-  // halo at all. Negative margin below keeps the laid-out size at `size`.
+  // Room for the halo. The bloom falls off as exp(-(r-1)/width) in radii, so the
+  // gutter has to outrun the WIDER of the two terms or the glow gets sliced off
+  // square, which looks worse than no glow at all. On a black ground that cut is
+  // obvious in a way it never was on the Prussian plate, which is why the hero
+  // gutter went from 0.26 to 0.34 of the disc. Negative margin below keeps the
+  // laid-out size at `size`.
   const gutter = hero
-    ? Math.round(size * 0.26)
-    : Math.max(4, Math.round(size * 0.05));
+    ? Math.round(size * 0.34)
+    : Math.max(4, Math.round(size * 0.12));
   const canvasSize = size + gutter * 2;
   const cx = canvasSize / 2;
   const cy = canvasSize / 2;
   const r = size / 2;
 
-  const path = useMemo(
-    () => litMoonPath(cx, cy, r, phaseFraction, waxing),
-    [cx, cy, r, phaseFraction, waxing]
-  );
+  const uniforms = useMemo(() => {
+    // The light. `getLitPathRotation` is the same number the old path was
+    // rotated by, so the phase lands exactly where it always did.
+    const litRotationDeg = getLitPathRotation(brightLimbAngleDeg, waxing);
+    const sun = sunDirection(phaseFraction, litRotationDeg);
 
-  const discPath = useMemo(
-    () => moonDiscPath(cx, cy, r),
-    [cx, cy, r]
-  );
+    // The photograph. Independent of the light — decision 18.
+    const texRotDeg = northAngleDeg ?? litRotationDeg;
 
-  // TWO INDEPENDENT ROTATIONS. The lit path follows the Sun; the photograph
-  // follows the Moon's north pole. They differ by libration and the sub-solar
-  // latitude — a couple of degrees at the quarters, tens of degrees near full.
-  const pathRotDeg = getLitPathRotation(brightLimbAngleDeg, waxing);
-  const pathRotRad = (pathRotDeg * Math.PI) / 180;
-
-  // The photograph is drawn inside the path's frame (it is masked and clipped
-  // by it), so it carries the DIFFERENCE, which composes back to northAngleDeg.
-  const textureRotDeg = northAngleDeg ?? pathRotDeg;
-  const textureDeltaRad = ((textureRotDeg - pathRotDeg) * Math.PI) / 180;
-  const textureTransform = [
-    { translateX: cx },
-    { translateY: cy },
-    { rotate: textureDeltaRad },
-    { translateX: -cx },
-    { translateY: -cy },
-  ];
+    return {
+      uCenter: [cx, cy],
+      uRadius: r,
+      uSun: [sun.x, sun.y, sun.z],
+      uLambert: lunarLambertL(sun.phaseAngle),
+      uTexRot: texRotDeg * DEG,
+      uSaturation: MINERAL_SATURATION,
+      uWhite: ALBEDO_WHITE,
+      uContrast: PRINT_CONTRAST,
+      uMid: ALBEDO_MID,
+      // Stopped down as the disc fills: one exposure cannot serve both a
+      // crescent and a full moon. See printExposure.
+      uExposure: printExposure(phaseFraction),
+      uTint: MOONLIGHT,
+      uGlow: hero ? 0.16 : 0.1,
+      // A tight bright core at the limb plus a faint wide skirt. One wide term
+      // strong enough to see is fog, and fog flattens the disc it surrounds.
+      uHalo: hero ? 0.3 : 0.22,
+      uHaloWidth: hero ? 0.045 : 0.035,
+      uHaloFar: hero ? 0.09 : 0.06,
+      uHaloWide: hero ? 0.22 : 0.14,
+      uEarthshine: EARTHSHINE,
+      // The Earth's phase, which is the Moon's inverted. See earthshineGain.
+      uEarthGain: earthshineGain(phaseFraction),
+      uEarthWrap: EARTHSHINE_WRAP,
+      // One device pixel, expressed in radii. fragCoord is in points, so a
+      // constant here would be three times too soft on a 3x screen.
+      uAA: 1 / PixelRatio.get() / r,
+      uRelief: RELIEF_STRENGTH,
+    };
+  }, [cx, cy, r, phaseFraction, waxing, brightLimbAngleDeg, northAngleDeg, hero]);
 
   const canvas = (
     <Canvas
@@ -144,77 +192,35 @@ export function MoonPhaseGlyph({
         margin: -gutter, // Preserves exact layout size in parent flex containers
       }}
     >
-      <Group
-        transform={[
-          { translateX: cx },
-          { translateY: cy },
-          { rotate: pathRotRad },
-          { translateX: -cx },
-          { translateY: -cy },
-        ]}
-      >
-        {/* The wide halo, hero surfaces only: light carrying into the plate. */}
-        {hero && (
-          <Path path={path} color={Colors.moonlight} opacity={0.13}>
-            <BlurMask blur={r * 0.42} style="normal" />
-          </Path>
-        )}
-
-        {/* Soft atmospheric moonlight bloom radiating from the illuminated region */}
-        <Path
-          path={path}
-          color={Colors.moonlight}
-          opacity={0.3}
-        >
-          <BlurMask blur={Math.max(3, r * 0.08)} style="normal" />
-        </Path>
-
-        {/* Unlit base disc (deep earthshine tone) */}
-        <Circle cx={cx} cy={cy} r={r} color={Colors.earthshine} />
-
-        {moonImage ? (
-          <Group clip={discPath}>
-            {/* Faint earthshine texture on unlit disc (6% opacity) */}
-            <Group clip={path} invertClip>
-              <Group transform={textureTransform}>
-                <SkiaImage
-                  image={moonImage}
-                  x={cx - r}
-                  y={cy - r}
-                  width={size}
-                  height={size}
-                  opacity={0.06}
-                />
-              </Group>
-            </Group>
-            {/* Lit lunar surface with softly diffused terminator transition */}
-            <Mask
-              mode="alpha"
-              mask={
-                <Group>
-                  <Path path={path} color="white">
-                    <BlurMask blur={Math.max(1.5, r * 0.02)} style="normal" />
-                  </Path>
-                </Group>
-              }
-            >
-              <Group transform={textureTransform}>
-                <SkiaImage
-                  image={moonImage}
-                  x={cx - r}
-                  y={cy - r}
-                  width={size}
-                  height={size}
-                  opacity={1.0}
-                />
-              </Group>
-            </Mask>
-          </Group>
-        ) : (
-          /* Clean vector fallback while texture loads */
-          <Path path={path} color={Colors.moonlight} />
-        )}
-      </Group>
+      {moonEffect && moonImage && normalImage ? (
+        <Fill>
+          {/* Children bind to the `uniform shader` declarations in order:
+              albedo first, then normals. */}
+          <Shader source={moonEffect} uniforms={uniforms}>
+            <ImageShader
+              image={moonImage}
+              fit="fill"
+              rect={{ x: cx - r, y: cy - r, width: size, height: size }}
+              tx="clamp"
+              ty="clamp"
+            />
+            <ImageShader
+              image={normalImage}
+              fit="fill"
+              rect={{ x: cx - r, y: cy - r, width: size, height: size }}
+              tx="clamp"
+              ty="clamp"
+            />
+          </Shader>
+        </Fill>
+      ) : (
+        // The texture has not decoded yet, or this device would not compile the
+        // SkSL. Either way an unlit disc is the honest placeholder: obviously
+        // not the real thing, and it never shows a phase that isn't there.
+        <Group>
+          <Circle cx={cx} cy={cy} r={r} color={Colors.earthshine} />
+        </Group>
+      )}
     </Canvas>
   );
 
@@ -235,7 +241,11 @@ export function MoonPhaseGlyph({
 
 const styles = StyleSheet.create({
   plate: {
-    backgroundColor: Colors.plate,
+    // Black, not the Prussian plate. A lunar photograph on a blue-black ground
+    // loses its dark limb into the surface it sits on, so the disc stops being a
+    // sphere with a night side and starts being a lit crescent floating on a
+    // rectangle. See Colors.space.
+    backgroundColor: Colors.space,
     borderRadius: Radius.plate,
     alignItems: "center",
     justifyContent: "center",
