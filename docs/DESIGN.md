@@ -11,9 +11,16 @@ Two materials, and the contrast between them carries the whole app.
 named, generous leading, hairlines that guide rather than divide. The reference is a letterpress
 book of hours, not a lab printout.
 
-**Plate** is where the sky lives. A deep Prussian night, with the moon and the star field set into it
-the way figures were tipped into printed books. On Home the plate is the hero and takes the top of
-the page; everywhere else it is an inset.
+**Plate** is where the sky lives. A deep Prussian night, with the star field set into it the way
+figures were tipped into printed books. On Home the plate is the hero and takes the top of the page;
+everywhere else it is an inset.
+
+**The moon does not sit on the plate. It sits on black.** A moon has a dark side, and on Prussian
+blue the unlit hemisphere and the ground behind it were within 1.1:1 of each other, so the silhouette
+dissolved and what was left read as a lit crescent lying on a rectangle. Black is the only ground a
+night side can be measured against, and it buys back about a fifth of the disc's apparent saturation
+besides. Every surface carrying a moon uses `space`: the Home hero, the record's moon plate, the list
+thumbnails and the export card.
 
 **The accent is the plate, brought up onto the page.** Every date and every return year is printed in
 the colour of the sky it refers to. That is why it is not a decorative choice that could be swapped
@@ -52,8 +59,8 @@ and phase labels stay honest.
 | `plateMuted` | `#78849C` | Muted text on a plate. |
 | `plateRule` | `#1E2A40` | Hairlines and outlined buttons on a plate. |
 | `moonlight` | `#F5F2E6` | The moon itself. Warm, because moonlight is. |
-| `earthshine` | `#0D1526` | The unlit disc, a whisper above the plate ground. |
-| `space` | `#000000` | Pitch black. The immersive sky and the full-screen image viewer only. |
+| `earthshine` | `#0B121F` | The unlit disc at full strength, on black. Scaled down by the Earth's own phase. |
+| `space` | `#000000` | Pitch black. The immersive sky, the image viewer, and the ground under every moon. |
 | `signal` | `#2D4A7C` | The plate colour lifted onto the page. The single accent. |
 | `signalOnPlate` | `#93B4E8` | The accent lifted for dark grounds. Using the paper value on a plate is the most likely mistake here. |
 | `danger` | `#9B3B2A` | Destructive actions and validation errors only. |
@@ -153,6 +160,8 @@ grep -rnE '"#[0-9a-fA-F]{3,8}"' src/ --include="*.tsx"    # theme.ts only
 **Mono carries every number.** Data reads as data.
 
 **The palette is checked, not argued about.** `src/constants/__tests__/theme.test.ts` asserts every
-contrast pair, that hairlines stay visible, that earthshine sits above the plate without becoming a
-grey coin, that the accent is nowhere near `danger` in hue, and that planets do not borrow the
-accent. A colour swap is exactly the kind of change that gets made quickly and reviewed by eye.
+contrast pair, that hairlines stay visible, that earthshine sits above the ground it is actually
+drawn on without becoming a grey coin, that the accent is nowhere near `danger` in hue, and that
+planets do not borrow the accent. Earthshine is checked as luminance rather than as a contrast ratio:
+against pure black the WCAG ratio is `(L + 0.05) / 0.05`, so every usable night colour lands between
+1.0 and about 1.5 and the number stops telling you anything. A colour swap is exactly the kind of change that gets made quickly and reviewed by eye.
