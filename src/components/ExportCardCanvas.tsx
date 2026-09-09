@@ -8,11 +8,8 @@ import {
   Fill,
   Group,
   Text as SkiaText,
-  Path,
-  Circle,
-  Image as SkiaImage,
-  Mask,
-  BlurMask,
+  Shader,
+  ImageShader,
   useImage,
 } from "@shopify/react-native-skia";
 import {
@@ -27,7 +24,22 @@ import {
 import type { Milestone, MoonReturn } from "@/types";
 import { Colors } from "@/constants/theme";
 import { getLitPathRotation } from "@/lib/astronomy/brightLimb";
-import { litMoonPath, moonDiscPath } from "@/components/moon/moonPath";
+import {
+  lunarLambertL,
+  sunDirection,
+  earthshineGain,
+  EARTHSHINE_WRAP,
+} from "@/lib/astronomy/moonLighting";
+import {
+  moonEffect,
+  MINERAL_SATURATION,
+  PRINT_CONTRAST,
+  ALBEDO_MID,
+  printExposure,
+  RELIEF_STRENGTH,
+  ALBEDO_WHITE,
+  unitRgb,
+} from "@/components/moon/moonShader";
 
 export const CARD_SIZES = {
   story: { w: 1080, h: 1920 },
@@ -37,6 +49,7 @@ export const CARD_SIZES = {
 export type CardFormat = keyof typeof CARD_SIZES;
 
 const MOON_ASSET = require("../../assets/moon_disc.png");
+const MOON_NORMAL_ASSET = require("../../assets/moon_normal.png");
 
 
 interface ExportCardCanvasProps {
@@ -105,6 +118,7 @@ const ExportCardCanvas = React.forwardRef<
   const monoFont = useFont(JetBrainsMono_500Medium, 34);
   const monoSmall = useFont(JetBrainsMono_400Regular, 26);
   const moonImage = useImage(MOON_ASSET);
+  const moonNormal = useImage(MOON_NORMAL_ASSET);
 
   if (!titleFont || !monoFont || !bodyFont || !headFont || !monoSmall) {
     return (
@@ -142,22 +156,43 @@ const ExportCardCanvas = React.forwardRef<
   const footY = h - PAD - 12;
 
   const shownReturns = moonReturns.slice(0, isStory ? 4 : 2);
-  const path = litMoonPath(moonCX, moonCY, moonR, moonPhaseFraction, moonWaxing);
-  const discPath = moonDiscPath(moonCX, moonCY, moonR);
-  // TWO INDEPENDENT ROTATIONS, matching MoonPhaseGlyph. The lit path follows
-  // the Sun; the photograph follows the Moon's north pole.
-  const pathRotDeg = getLitPathRotation(brightLimbAngleDeg, moonWaxing);
-  const pathRotRad = (pathRotDeg * Math.PI) / 180;
 
-  // The photograph sits inside the path's frame, so it carries the difference.
-  const textureRotDeg = northAngleDeg ?? pathRotDeg;
-  const textureTransform = [
-    { translateX: moonCX },
-    { translateY: moonCY },
-    { rotate: ((textureRotDeg - pathRotDeg) * Math.PI) / 180 },
-    { translateX: -moonCX },
-    { translateY: -moonCY },
-  ];
+  // The exported moon is shaded by the same fragment shader the app draws, from
+  // the same uniforms. It used to be a second implementation of the two-arc
+  // cutout, and a card that does not match the screen it was exported from is
+  // the whole failure mode decision 13 is about.
+  //
+  // TWO INDEPENDENT ROTATIONS, as everywhere: the light follows the Sun, the
+  // photograph follows the Moon's north pole.
+  const litRotationDeg = getLitPathRotation(brightLimbAngleDeg, moonWaxing);
+  const sun = sunDirection(moonPhaseFraction, litRotationDeg);
+  const textureRotDeg = northAngleDeg ?? litRotationDeg;
+
+  const moonUniforms = {
+    uCenter: [moonCX, moonCY],
+    uRadius: moonR,
+    uSun: [sun.x, sun.y, sun.z],
+    uLambert: lunarLambertL(sun.phaseAngle),
+    uTexRot: (textureRotDeg * Math.PI) / 180,
+    uSaturation: MINERAL_SATURATION,
+    uWhite: ALBEDO_WHITE,
+    uContrast: PRINT_CONTRAST,
+    uMid: ALBEDO_MID,
+    uExposure: printExposure(moonPhaseFraction),
+    uTint: unitRgb(Colors.moonlight),
+    uGlow: 0.16,
+    uHalo: 0.3,
+    uHaloWidth: 0.045,
+    uHaloFar: 0.09,
+    uHaloWide: 0.22,
+    uEarthshine: unitRgb(Colors.earthshine),
+    uEarthGain: earthshineGain(moonPhaseFraction),
+    uEarthWrap: EARTHSHINE_WRAP,
+    // The card is authored at its output width, so one card unit is one
+    // exported pixel.
+    uAA: 1 / moonR,
+    uRelief: RELIEF_STRENGTH,
+  };
 
   return (
     <Canvas ref={ref as any} style={{ width: w * scale, height: h * scale }}>
@@ -199,72 +234,43 @@ const ExportCardCanvas = React.forwardRef<
           width={inner}
           height={plateH}
           r={36}
-          color={Colors.plate}
+          color={Colors.space}
         />
 
-        <Group
-          transform={[
-            { translateX: moonCX },
-            { translateY: moonCY },
-            { rotate: pathRotRad },
-            { translateX: -moonCX },
-            { translateY: -moonCY },
-          ]}
-        >
-          {/* Soft atmospheric moonlight bloom radiating from illuminated terrain */}
-          <Path
-            path={path}
-            color={Colors.moonlight}
-            opacity={0.3}
-          >
-            <BlurMask blur={Math.max(4, moonR * 0.08)} style="normal" />
-          </Path>
-
-          {/* Unlit base disc (deep earthshine tone) */}
-          <Circle cx={moonCX} cy={moonCY} r={moonR} color={Colors.earthshine} />
-
-          {moonImage ? (
-            <Group clip={discPath}>
-              {/* Faint earthshine texture on unlit disc (6% opacity) */}
-              <Group clip={path} invertClip>
-                <Group transform={textureTransform}>
-                  <SkiaImage
-                    image={moonImage}
-                    x={moonCX - moonR}
-                    y={moonCY - moonR}
-                    width={moonR * 2}
-                    height={moonR * 2}
-                    opacity={0.06}
-                  />
-                </Group>
-              </Group>
-              {/* Lit lunar surface with softly diffused terminator transition */}
-              <Mask
-                mode="alpha"
-                mask={
-                  <Group>
-                    <Path path={path} color="white">
-                      <BlurMask blur={Math.max(1.5, moonR * 0.02)} style="normal" />
-                    </Path>
-                  </Group>
-                }
-              >
-                <Group transform={textureTransform}>
-                  <SkiaImage
-                    image={moonImage}
-                    x={moonCX - moonR}
-                    y={moonCY - moonR}
-                    width={moonR * 2}
-                    height={moonR * 2}
-                    opacity={1.0}
-                  />
-                </Group>
-              </Mask>
-            </Group>
-          ) : (
-            <Path path={path} color={Colors.moonlight} />
-          )}
-        </Group>
+        {/* The moon, lit as a sphere. The shader paints the disc and its halo
+            in one pass over the plate, so the glow is a function of the same
+            sun direction that lights the surface and can only fall on the
+            illuminated limb. */}
+        {moonEffect && moonImage && moonNormal && (
+          <Rect x={PAD} y={plateY} width={inner} height={plateH}>
+            <Shader source={moonEffect} uniforms={moonUniforms}>
+              <ImageShader
+                image={moonImage}
+                fit="fill"
+                rect={{
+                  x: moonCX - moonR,
+                  y: moonCY - moonR,
+                  width: moonR * 2,
+                  height: moonR * 2,
+                }}
+                tx="clamp"
+                ty="clamp"
+              />
+              <ImageShader
+                image={moonNormal}
+                fit="fill"
+                rect={{
+                  x: moonCX - moonR,
+                  y: moonCY - moonR,
+                  width: moonR * 2,
+                  height: moonR * 2,
+                }}
+                tx="clamp"
+                ty="clamp"
+              />
+            </Shader>
+          </Rect>
+        )}
 
         {/* ---- Phase readout ---- */}
         <SkiaText x={PAD} y={phaseY} text={moonPhaseName} font={headFont} color={Colors.ink} />
