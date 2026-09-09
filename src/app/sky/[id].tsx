@@ -302,15 +302,15 @@ export default function ImmersiveSkyScreen() {
       const cv = rec.beginRecording();
 
       const poly = (pts: [number, number, number][], paint: any) => {
-        const path = Skia.Path.Make();
+        const b = Skia.PathBuilder.Make();
         let started = false;
         for (const v of pts) {
           const pt = projectVector(v, cam, width, height);
           if (!pt) { started = false; continue; }
-          if (!started) { path.moveTo(pt.x, pt.y); started = true; }
-          else path.lineTo(pt.x, pt.y);
+          if (!started) { b.moveTo(pt.x, pt.y); started = true; }
+          else b.lineTo(pt.x, pt.y);
         }
-        cv.drawPath(path, paint);
+        cv.drawPath(b.detach(), paint);
       };
       const ring = (altDeg: number): [number, number, number][] => {
         const out: [number, number, number][] = [];
@@ -342,7 +342,7 @@ export default function ImmersiveSkyScreen() {
       // fading get their own path and their own alpha, so the common case costs
       // exactly what it did before.
       const focusCos = Math.cos((f / 2) * FIGURE_FOCUS_CONE * DEG);
-      const restingFigures = Skia.Path.Make();
+      const restingFigures = Skia.PathBuilder.Make();
       const litFigures: { path: any; alpha: number }[] = [];
       const conNames: { x: number; y: number; text: string; alpha: number }[] = [];
 
@@ -357,7 +357,7 @@ export default function ImmersiveSkyScreen() {
         figureAlpha[ci] = alpha;
 
         const lit = alpha > FIGURE_BASE_ALPHA + 0.002;
-        const path = lit ? Skia.Path.Make() : restingFigures;
+        const path = lit ? Skia.PathBuilder.Make() : restingFigures;
         for (const pts of con.lines) {
           let started = false;
           for (let i = 0; i < pts.length; i += 3) {
@@ -374,7 +374,7 @@ export default function ImmersiveSkyScreen() {
         }
         if (!lit) continue;
 
-        litFigures.push({ path, alpha });
+        litFigures.push({ path: path.detach(), alpha });
         const shown =
           (alpha - FIGURE_BASE_ALPHA) / (FIGURE_FOCUS_ALPHA - FIGURE_BASE_ALPHA);
 
@@ -422,7 +422,7 @@ export default function ImmersiveSkyScreen() {
       }
 
       figurePaint.setAlphaf(FIGURE_BASE_ALPHA);
-      cv.drawPath(restingFigures, figurePaint);
+      cv.drawPath(restingFigures.detach(), figurePaint);
       for (const lf of litFigures) {
         figurePaint.setAlphaf(lf.alpha);
         cv.drawPath(lf.path, figurePaint);
@@ -433,8 +433,8 @@ export default function ImmersiveSkyScreen() {
       const limit = f > 70 ? 5.4 : f > 40 ? 6.0 : MAG_LIMIT;
       const n = projectSphere(sphere, cam, width, height, buf.current, limit);
       drawnRef.current = n;
-      const glow = Skia.Path.Make();
-      const cores = Skia.Path.Make();
+      const glow = Skia.PathBuilder.Make();
+      const cores = Skia.PathBuilder.Make();
       const b = buf.current;
       for (let i = 0; i < n; i++) {
         const o = i * 3;
@@ -442,8 +442,8 @@ export default function ImmersiveSkyScreen() {
         cores.addCircle(x, y, r);
         if (r > 1.5) glow.addCircle(x, y, r * 2.2);
       }
-      cv.drawPath(glow, glowPaint);
-      cv.drawPath(cores, starPaint);
+      cv.drawPath(glow.detach(), glowPaint);
+      cv.drawPath(cores.detach(), starPaint);
 
       // ---- Deep sky ----
       //
@@ -462,8 +462,9 @@ export default function ImmersiveSkyScreen() {
         switch (o.kind) {
           case "galaxy": {
             // Dashed oval inclined at 30°, a disc seen at an angle.
-            const ov = Skia.Path.Make();
-            ov.addOval(Skia.XYWHRect(pt.x - rr * 1.25, pt.y - rr * 0.65, rr * 2.5, rr * 1.3));
+            const ov = Skia.Path.Oval(
+              Skia.XYWHRect(pt.x - rr * 1.25, pt.y - rr * 0.65, rr * 2.5, rr * 1.3)
+            );
             cv.save();
             cv.rotate(30, pt.x, pt.y);
             cv.drawPath(ov, dsoDashedPaint);
@@ -474,20 +475,21 @@ export default function ImmersiveSkyScreen() {
           case "supernova remnant": {
             // Ring with external crosshair ticks, the standard planetary glyph.
             cv.drawCircle(pt.x, pt.y, rr, dsoPaint);
-            const ch = Skia.Path.Make();
+            const ch = Skia.PathBuilder.Make();
             const tick = Math.max(2.5, rr * 0.45);
             ch.moveTo(pt.x - rr - tick, pt.y); ch.lineTo(pt.x - rr, pt.y);
             ch.moveTo(pt.x + rr, pt.y); ch.lineTo(pt.x + rr + tick, pt.y);
             ch.moveTo(pt.x, pt.y - rr - tick); ch.lineTo(pt.x, pt.y - rr);
             ch.moveTo(pt.x, pt.y + rr); ch.lineTo(pt.x, pt.y + rr + tick);
-            cv.drawPath(ch, dsoPaint);
+            cv.drawPath(ch.detach(), dsoPaint);
             break;
           }
           case "nebula":
           default: {
             // Diffuse nebula: a dashed box framing the cloud.
-            const box = Skia.Path.Make();
-            box.addRect(Skia.XYWHRect(pt.x - rr, pt.y - rr, rr * 2, rr * 2));
+            const box = Skia.Path.Rect(
+              Skia.XYWHRect(pt.x - rr, pt.y - rr, rr * 2, rr * 2)
+            );
             cv.drawPath(box, dsoDashedPaint);
             break;
           }
