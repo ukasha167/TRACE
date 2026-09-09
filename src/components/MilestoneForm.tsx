@@ -13,8 +13,9 @@ import {
   Alert,
 } from "react-native";
 import DateTimePicker, {
-  DateTimePickerEvent,
+  DateTimePickerChangeEvent,
 } from "@react-native-community/datetimepicker";
+import { WheelDatePicker } from "./WheelDatePicker";
 import * as Location from "expo-location";
 import {
   MilestoneType,
@@ -87,7 +88,6 @@ export function MilestoneForm({
     toLocalNoon(initial?.date ?? toDateString(new Date()))
   );
   const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [showDatePicker, setShowDatePicker] = useState(Platform.OS === "ios");
   const [titleError, setTitleError] = useState(false);
 
   const [location, setLocation] = useState<MilestoneLocation | null>(
@@ -98,16 +98,13 @@ export function MilestoneForm({
   const [busy, setBusy] = useState<null | "gps" | "lookup">(null);
   const [lookupFailed, setLookupFailed] = useState(false);
 
-  const formattedDate = date.toLocaleDateString("en-GB", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
-  const handleDateChange = useCallback(
-    (_event: DateTimePickerEvent, selected?: Date) => {
-      if (Platform.OS === "android") setShowDatePicker(false);
-      if (selected) setDate(toLocalNoon(toDateString(selected)));
+  // `onValueChange` rather than the legacy `onChange`, which encoded selection
+  // and dismissal in `event.type`. The old prop still works and still warns on
+  // every mount. There is no dismissal to handle any more: both platforms draw
+  // the wheel inline, so nothing opens and nothing closes.
+  const handleDateSelected = useCallback(
+    (_event: DateTimePickerChangeEvent, selected: Date) => {
+      setDate(toLocalNoon(toDateString(selected)));
     },
     []
   );
@@ -258,28 +255,31 @@ export function MilestoneForm({
 
         {/* ---- Date ---- */}
         <Text style={[styles.label, styles.spaced]}>Date</Text>
-        {Platform.OS === "android" && (
-          <TouchableOpacity
-            onPress={() => setShowDatePicker(true)}
-            accessibilityRole="button"
-          >
-            <Text style={styles.dateValue}>{formattedDate}</Text>
-          </TouchableOpacity>
-        )}
-        {(showDatePicker || Platform.OS === "ios") && (
-          <View style={styles.pickerWrap}>
+        {/* iOS keeps UIDatePicker. Android used to open the Material calendar
+            dialog from the line above, which is a different interaction on a
+            screen that is otherwise one continuous scroll. See WheelDatePicker
+            for why that one is written rather than installed. */}
+        <View style={styles.pickerWrap}>
+          {Platform.OS === "ios" ? (
             <DateTimePicker
               value={date}
               mode="date"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              onChange={handleDateChange}
+              display="spinner"
+              onValueChange={handleDateSelected}
               maximumDate={new Date(2100, 11, 31)}
               minimumDate={new Date(1900, 0, 1)}
               themeVariant="light"
               accentColor={Colors.signal}
             />
-          </View>
-        )}
+          ) : (
+            <WheelDatePicker
+              value={date}
+              onChange={(next) => setDate(toLocalNoon(toDateString(next)))}
+              minimumYear={1900}
+              maximumYear={2100}
+            />
+          )}
+        </View>
 
         {/* ---- Notes ---- */}
         <Text style={[styles.label, styles.spaced]}>Notes, optional</Text>
@@ -432,14 +432,6 @@ const styles = StyleSheet.create({
   },
   chipTextOn: { color: Colors.paper },
 
-  dateValue: {
-    fontFamily: FontFamily.monoMedium,
-    fontSize: FontSize.lead,
-    color: Colors.ink,
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.rule,
-  },
   pickerWrap: { marginTop: Spacing.xs, alignItems: "center" },
 
   locationActions: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md },
