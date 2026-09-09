@@ -52,11 +52,7 @@ export function SkyCanvas({ date, location, size, magnitudeLimit = 4.6 }: Props)
   const cx = radius;
   const cy = radius;
 
-  const horizonRing = useMemo(() => {
-    const p = Skia.Path.Make();
-    p.addCircle(cx, cy, R);
-    return p;
-  }, [cx, cy, R]);
+  const horizonRing = useMemo(() => Skia.Path.Circle(cx, cy, R), [cx, cy, R]);
 
   /** Brighter stars are drawn larger and more opaque — magnitude is a log scale. */
   const starRadius = (mag: number) => {
