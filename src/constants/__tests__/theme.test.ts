@@ -71,11 +71,28 @@ test("hairlines are visible against the surface they divide", () => {
   assert.ok(contrast(Colors.plateRule, Colors.plate) >= 1.2);
 });
 
-test("earthshine sits above the plate without becoming a visible disc", () => {
-  // The unlit side of the moon. Below the plate it would punch a hole; far
-  // above it, a new moon reads as a grey coin.
-  const r = contrast(Colors.earthshine, Colors.plate);
-  assert.ok(r > 1.0 && r < 1.6, `earthshine is ${r.toFixed(2)}:1 against the plate`);
+test("earthshine sits above the ground it is actually drawn on", () => {
+  // The unlit side of the moon. It used to be measured against the Prussian
+  // plate, and passing that check was the problem rather than the proof: the two
+  // were within 1.1:1, so the moon's dark half dissolved into the surface behind
+  // it and the disc lost its silhouette. Moons are drawn on `space` now.
+  //
+  // The window is still two-sided. Too close to black and a gibbous moon reads
+  // as an egg; too far above it and a new moon is a grey coin hanging in the
+  // dark, which claims a brightness the night never had.
+  // MEASURED AS LUMINANCE, NOT AS A CONTRAST RATIO. Against pure black the WCAG
+  // ratio is (L + 0.05) / 0.05, so the whole usable range of night colours is
+  // squeezed between 1.0 and about 1.5 and the number stops discriminating.
+  // #0B121F and #1E2A40 are four times apart in light and 0.24 apart in ratio.
+  const L = luminance(Colors.earthshine);
+  assert.ok(
+    L > 0.003 && L < 0.012,
+    `earthshine luminance is ${L.toFixed(5)}, outside the night window`
+  );
+
+  // It must also stay under the hairline it shares a surface with, or the dark
+  // side of the moon prints brighter than the rules drawn on the same plate.
+  assert.ok(L < luminance(Colors.plateRule));
 });
 
 test("the accent is never red", () => {
