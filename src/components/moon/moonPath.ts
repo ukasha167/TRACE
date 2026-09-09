@@ -1,4 +1,5 @@
 import { Skia } from "@shopify/react-native-skia";
+import { terminatorSemiAxis } from "@/lib/astronomy/moonLighting";
 
 /**
  * Builds the lit region of the moon as a closed Skia Path.
@@ -31,13 +32,16 @@ export function litMoonPath(
   phaseFraction: number,
   isWaxing: boolean = true
 ) {
-  const b = r * Math.abs(2 * phaseFraction - 1);
+  // Shared with the shader rather than restated here. Both renderers draw the
+  // same terminator or one of them is wrong, and the failure mode is a moon
+  // whose phase depends on which screen you are looking at.
+  const b = r * terminatorSemiAxis(phaseFraction);
   const isGibbous = phaseFraction > 0.5;
-  const path = Skia.Path.Make();
+  const builder = Skia.PathBuilder.Make();
 
   if (isWaxing) {
     // Waxing: lit limb on the RIGHT
-    path.arcToOval(
+    builder.arcToOval(
       { x: cx - r, y: cy - r, width: r * 2, height: r * 2 },
       -90,
       180,
@@ -45,7 +49,7 @@ export function litMoonPath(
     );
     // Terminator: bottom -> top.
     // Through left (-b) if gibbous, right (+b) if crescent.
-    path.arcToOval(
+    builder.arcToOval(
       { x: cx - b, y: cy - r, width: b * 2, height: r * 2 },
       90,
       isGibbous ? 180 : -180,
@@ -53,7 +57,7 @@ export function litMoonPath(
     );
   } else {
     // Waning: lit limb on the LEFT
-    path.arcToOval(
+    builder.arcToOval(
       { x: cx - r, y: cy - r, width: r * 2, height: r * 2 },
       -90,
       -180,
@@ -61,7 +65,7 @@ export function litMoonPath(
     );
     // Terminator: bottom -> top.
     // Through right (+b) if gibbous, left (-b) if crescent.
-    path.arcToOval(
+    builder.arcToOval(
       { x: cx - b, y: cy - r, width: b * 2, height: r * 2 },
       90,
       isGibbous ? -180 : 180,
@@ -69,12 +73,12 @@ export function litMoonPath(
     );
   }
 
-  path.close();
-  return path;
+  // detach() rather than build(): the builder is finished with, and detaching
+  // hands over its buffers instead of copying them. This path is rebuilt on
+  // every phase change.
+  return builder.close().detach();
 }
 
 export function moonDiscPath(cx: number, cy: number, r: number) {
-  const path = Skia.Path.Make();
-  path.addCircle(cx, cy, r);
-  return path;
+  return Skia.Path.Circle(cx, cy, r);
 }
