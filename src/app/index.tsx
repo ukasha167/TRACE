@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -75,10 +75,26 @@ export default function HomeScreen() {
     ),
   }));
 
+  /**
+   * Whether the hero is still under the status bar, mirrored on the JS side.
+   *
+   * The focus effect below used to ask the shared value directly
+   * (`scrollY.value < crossover - 12`). That is a shared value read on the JS
+   * thread, and with the React Compiler enabled it lands inside a render pass:
+   * two Reanimated strict-mode warnings on every launch, bisected to that one
+   * line and confirmed by putting it back. The reaction underneath already
+   * evaluates the same predicate on the UI thread, so the answer is recorded
+   * here as it goes past rather than asked for after the fact.
+   *
+   * It starts true because the page starts at the top, which is over the plate.
+   */
+  const overPlate = useRef(true);
+
   const setBarLight = useCallback((light: boolean) => {
+    overPlate.current = light;
     StatusBar.setBarStyle(light ? "light-content" : "dark-content", true);
     if (Platform.OS === "android") {
-      StatusBar.setBackgroundColor(light ? Colors.plate : Colors.paper, true);
+      StatusBar.setBackgroundColor(light ? Colors.space : Colors.paper, true);
     }
   }, []);
 
@@ -98,14 +114,14 @@ export default function HomeScreen() {
   // on the paper screens above it.
   useFocusEffect(
     useCallback(() => {
-      setBarLight(scrollY.value < crossover - 12);
+      setBarLight(overPlate.current);
       return () => {
         StatusBar.setBarStyle("dark-content", true);
         if (Platform.OS === "android") {
           StatusBar.setBackgroundColor(Colors.paper, true);
         }
       };
-    }, [setBarLight, crossover, scrollY])
+    }, [setBarLight])
   );
 
   return (
@@ -202,7 +218,7 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: Colors.paper,
   },
-  scrimPlate: { backgroundColor: Colors.plate },
+  scrimPlate: { backgroundColor: Colors.space },
 
   listHead: {
     flexDirection: "row",
