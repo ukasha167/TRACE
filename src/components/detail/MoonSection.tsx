@@ -16,6 +16,7 @@ import {
   Radius,
 } from "@/constants/theme";
 import { MoonPhaseGlyph } from "../MoonPhaseGlyph";
+import { StarField } from "../moon/StarField";
 import {
   formatIllumination,
   describePhase,
@@ -77,6 +78,10 @@ export function MoonSection({
   return (
     <View style={styles.section}>
       <View style={[styles.plate, { height: plateHeight }]}>
+        {/* First child, so it paints under the moon — see moon/starGrain.ts for
+            why the field is the same one the home hero and the card draw. */}
+        <StarField />
+
         <MoonPhaseGlyph
           phaseFraction={phase.phaseFraction}
           waxing={phase.waxing}
