@@ -15,6 +15,7 @@ import {
   lunarLambertL,
   sunDirection,
   earthshineGain,
+  printExposure,
   EARTHSHINE_WRAP,
 } from "@/lib/astronomy/moonLighting";
 import {
@@ -22,7 +23,6 @@ import {
   MINERAL_SATURATION,
   PRINT_CONTRAST,
   ALBEDO_MID,
-  printExposure,
   RELIEF_STRENGTH,
   ALBEDO_WHITE,
   unitRgb,
@@ -162,8 +162,9 @@ export function MoonPhaseGlyph({
       uWhite: ALBEDO_WHITE,
       uContrast: PRINT_CONTRAST,
       uMid: ALBEDO_MID,
-      // Stopped down as the disc fills: one exposure cannot serve both a
-      // crescent and a full moon. See printExposure.
+      // Stopped down as the disc fills AND metered open when the crescent gets
+      // too thin to carry the ramp. The second half is coupled to uEarthGain
+      // below, so neither moves alone. See printExposure.
       uExposure: printExposure(phaseFraction),
       uTint: MOONLIGHT,
       uGlow: hero ? 0.16 : 0.1,
