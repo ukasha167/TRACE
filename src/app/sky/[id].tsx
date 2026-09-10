@@ -30,7 +30,7 @@ import {
   Radius,
   SkyColors,
 } from "@/constants/theme";
-import { useMilestonesStore } from "@/store/useMilestonesStore";
+import { useMilestone } from "@/store/useMilestonesStore";
 import {
   buildSkySphere,
   cameraBasisFromAxes,
@@ -114,7 +114,7 @@ const ART_SHEET = require("../../../assets/constellations/figures.png");
 export default function ImmersiveSkyScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const isTonight = id === "tonight";
-  const milestoneFromStore = useMilestonesStore((s) => s.getMilestone(id));
+  const milestoneFromStore = useMilestone(id);
   const { location: currentLocation } = useCurrentLocation();
 
   const milestone = useMemo<Milestone | null>(() => {
