@@ -3,6 +3,8 @@ import {
   Canvas,
   useCanvasRef,
   useFont,
+  BlurMask,
+  Circle,
   Rect,
   RoundedRect,
   Fill,
@@ -11,6 +13,8 @@ import {
   Shader,
   ImageShader,
   useImage,
+  rect,
+  rrect,
 } from "@shopify/react-native-skia";
 import {
   Newsreader_500Medium,
@@ -28,14 +32,22 @@ import {
   lunarLambertL,
   sunDirection,
   earthshineGain,
+  printExposure,
   EARTHSHINE_WRAP,
 } from "@/lib/astronomy/moonLighting";
+import {
+  CORE_BLUR,
+  GLOW_ALPHA,
+  GLOW_BLUR,
+  GLOW_RADIUS,
+  NOMINAL_WIDTH,
+  generateStarField,
+} from "@/components/moon/starGrain";
 import {
   moonEffect,
   MINERAL_SATURATION,
   PRINT_CONTRAST,
   ALBEDO_MID,
-  printExposure,
   RELIEF_STRENGTH,
   ALBEDO_WHITE,
   unitRgb,
@@ -140,6 +152,7 @@ const ExportCardCanvas = React.forwardRef<
 
   const plateY = dateY + (isStory ? 44 : 36);
   const plateH = isStory ? 760 : 330;
+  const plateR = 36;
   const moonR = Math.min(inner, plateH) * (isStory ? 0.32 : 0.36);
   const moonCX = w / 2;
   const moonCY = plateY + plateH / 2;
@@ -156,6 +169,20 @@ const ExportCardCanvas = React.forwardRef<
   const footY = h - PAD - 12;
 
   const shownReturns = moonReturns.slice(0, isStory ? 4 : 2);
+
+  // Decorative, and the same on every card ever exported — see moon/starGrain.ts
+  // for why a field that varied by record would be an astronomical claim.
+  //
+  // The blur scales with the field for the same reason the radii do: the card is
+  // authored at output pixels, so a sigma in points would be a third of the
+  // spread the screen shows. respectCTM then handles the preview transform on
+  // top of that, which is why it is left at its default.
+  const starScale = w / NOMINAL_WIDTH;
+  const stars = generateStarField({
+    width: inner,
+    height: plateH,
+    scale: starScale,
+  });
 
   // The exported moon is shaded by the same fragment shader the app draws, from
   // the same uniforms. It used to be a second implementation of the two-arc
@@ -233,9 +260,44 @@ const ExportCardCanvas = React.forwardRef<
           y={plateY}
           width={inner}
           height={plateH}
-          r={36}
+          r={plateR}
           color={Colors.space}
         />
+
+        {/* The same field the app's own plates draw, generated at the card's
+            scale so the density and the star sizes relative to the moon come
+            out identical. A card that does not match the screen it came from is
+            the failure decision 13 is about, and that applies to the ground the
+            moon sits on as much as to the moon. Clipped to the plate, because
+            the field is square and the plate's corners are not. */}
+        <Group clip={rrect(rect(PAD, plateY, inner, plateH), plateR, plateR)}>
+          <Group>
+            <BlurMask blur={GLOW_BLUR * starScale} style="normal" />
+            {stars.map((s, i) => (
+              <Circle
+                key={i}
+                cx={PAD + s.x}
+                cy={plateY + s.y}
+                r={s.r * GLOW_RADIUS}
+                color={s.color}
+                opacity={s.a * GLOW_ALPHA}
+              />
+            ))}
+          </Group>
+          <Group>
+            <BlurMask blur={CORE_BLUR * starScale} style="normal" />
+            {stars.map((s, i) => (
+              <Circle
+                key={i}
+                cx={PAD + s.x}
+                cy={plateY + s.y}
+                r={s.r}
+                color={s.color}
+                opacity={s.a}
+              />
+            ))}
+          </Group>
+        </Group>
 
         {/* The moon, lit as a sphere. The shader paints the disc and its halo
             in one pass over the plate, so the glow is a function of the same
