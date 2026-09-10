@@ -366,8 +366,171 @@ fraction of that. Any single exposure that opens a crescent up will blow the gib
 Photographers have always known this: full moon is the Looney 11 case and a crescent wants two or
 three stops more.
 
-`printExposure` stops down linearly with illumination. It holds p99 inside 0.46 to 0.76 across the
-whole cycle and moves the crescents by about 2%.
+`printExposure` stops down linearly with illumination. It holds p99 inside 0.46 to 0.76 **over the
+range it was measured on, 10% to 99.9%**, and moves the crescents by about 2%.
+
+That sentence originally said "across the whole cycle", which the measurement above does not support
+and which is false: below 10% the sunlit p99 falls off a cliff, to 0.275 at 2% and 0.153 at 0.5%,
+because the ramp only ever stops down and there is almost no sunlit surface left to stop down for.
+See entry 27, which found it. This is decision 18's lesson landing on decision 18's own author.
+
+### 25. A selector that returns an action subscribes to nothing
+
+Editing a record and saving it popped back to a detail screen still showing the old title, date and
+moon. Going home and opening the record again showed the change, which is what made it look like a
+navigation or a persistence problem. It was neither.
+
+```ts
+const getMilestone = useMilestonesStore((s) => s.getMilestone);
+const milestone = getMilestone(id);
+```
+
+Zustand re-renders a component when the value its selector returns changes. This selector returns the
+**action**, and an action's identity is fixed for the life of the store, so the comparison after every
+`set` was `Object.is(fn, fn)` and the screen was never told anything had happened. The record was read
+exactly once, at mount, and `router.back()` does not remount the screen underneath.
+
+Four screens had it: detail, ledger, export and the edit form itself. `app/sky/[id].tsx` was written
+as `useMilestonesStore((s) => s.getMilestone(id))` — the call **inside** the selector — and was
+correct by accident of where one bracket sat.
+
+`useMilestone(id)` now owns the read. `find` returns the same object identity while a record is
+untouched and `updateMilestone` spreads a new object for the one record it changes, so exactly the
+screens showing the moved record re-render.
+
+**The general shape is worth more than the fix.** A read that goes through a store and still returns
+stale data is a subscription bug, not a data bug, and the tell is that remounting fixes it. Anywhere
+a selector returns something whose identity does not track the state, it is a `getState()` with extra
+steps.
+
+### 26. The one decorative thing in the app, and the line it stands on
+
+There are faint stars behind the moon on the home hero, the record's plate and the export card. They
+have no catalogue behind them, no magnitudes, no positions, and nothing in the interface names one.
+
+That is allowed under rule 1 for exactly one reason: **the field is identical everywhere.** Same
+seed, same stars, on every record, every date, every place. A constant texture asserts nothing, the
+way paper grain does not claim to be paper. Seeding it per record — which is the obvious next idea,
+and the reason this entry exists — would make it say that this night's sky differed from that one,
+which is precisely the quiet class of lie rule 1 is written against.
+
+Two smaller things fell out of building it.
+
+**Stratified beats uniform at these counts.** Sampling 60 positions uniformly leaves clumps and bald
+patches, and at that density a bald patch reads as a rendering fault rather than as sky. One jittered
+star per grid cell with a quarter of the cells dropped covers evenly with no visible order.
+
+**The moon washes out its own neighbourhood for free.** The plan had been to fade stars near the
+disc, which needs the moon's position in the plate's coordinates and therefore a measuring pass on
+two screens that do not otherwise need one. The halo already does it: it is drawn over the field at
+0.3 alpha at the limb, falling off exponentially, so stars near the moon are dimmed by roughly the
+amount the real thing dims them. The cheapest correct answer was the one already on screen.
+
+**A hard disc is a dot on a surface, not a light at a distance.** The field shipped as flat white
+circles first and read as dust on the plate. The missing thing was falloff, and no radius fixes that.
+Each star is now drawn twice, a blurred halo and a core over it, with **one blur for every star
+rather than one scaled by brightness** — a point spread function belongs to the air and the lens, not
+to the star. That also makes the faint ones stay quiet for nothing: blur conserves energy, so a small
+dim disc pushed through the same kernel keeps almost none of its peak, while a bright one keeps
+enough to show a halo. Blurring the whole layer uniformly instead, which was the first idea, takes
+the cores with it and leaves a field of smudges.
+
+**The tints are blackbody, and that is the only reason they are allowed.** `SkyColors.starCool` and
+`starWarm` are real colours at about 10,000 K and 4,300 K, with `Colors.moonlight` sitting near 5,800
+K between them; the span is roughly Rigel to Aldebaran. The draw is `sign(u) * |u|^3`, so the mean
+shift is a quarter of the way to an endpoint and about one star in ten carries a tint you would name.
+The distribution is what keeps this honest as well as quiet: the field says stars have colours, which
+is true, and never that a particular one does.
+
+### 27. Two knobs pointing opposite ways, and nobody measured where they crossed
+
+A 2% waning crescent printed its dark side as a bright blue-grey sphere with a thin bright rim around
+it. It read as a lit planet, not as the ashen light.
+
+`earthshineGain` rises toward new, because earthshine follows the Earth's phase and a 2% moon hangs
+under a 98% Earth. `printExposure` also opens up toward new, because a crescent wants more exposure
+than a full moon. Both are individually right and both were argued for in this file. Neither was ever
+measured against the other, and what they multiply out to at the thin end is the bug.
+
+Sampling the whole shader over the disc, night-side p99 against sunlit p99:
+
+| illumination | 0.5% | 2% | 8% | 15% | 50% | 90% |
+|---|---|---|---|---|---|---|
+| night / lit | **0.667** | **0.354** | 0.186 | 0.132 | 0.043 | 0.007 |
+
+A single-exposure photograph of the ashen light sits around 0.10 to 0.20. At 2% this was double the
+top of that band and at 0.5% it was more than triple. The disc was not slightly hot, it was printing
+its night side at two thirds of its own crescent.
+
+**A tone curve cannot fix it, and knowing why saved building the wrong thing.** The obvious move is a
+toe on the exposure, since `1 - exp(-E·lum)` is all shoulder and no toe: it compresses highlights and
+leaves shadows multiplied by E, which is backwards from what a darkroom does. But the night side
+spans 20:1 from crescent to gibbous and needs to span about 8:1, and every toe compresses the bottom
+of a range harder than the top. Measured, a Reinhard toe strong enough to bring 2% into band took the
+90% silhouette from 0.0027 to 0.00016, which is decision 21's egg all over again. **A monotonic curve
+can compress a ratio; it cannot invert one.** The level was wrong, so the level moved.
+
+`EARTHSHINE_CEILING` is 0.42 rather than an implicit 1.0. Chosen by sweeping candidates against both
+constraints at once, not by arithmetic: it lands 2% at 0.154, inside the band, and takes the 90%
+unlit limb only from 0.0027 to 0.0022. `EARTHSHINE_FLOOR` did not move, because the gibbous end was
+never the problem, and the `1 - f` shape did not move either. What changed is the amplitude of a
+print, which is what that constant always was.
+
+**The lesson is not about the Moon, again.** Two constants were each measured, documented and correct
+in isolation. The failure was in the product of the two, and it was invisible because each had its
+own entry in this file and neither entry mentioned the other. When two knobs move with the same input
+in opposite directions, the thing to measure is the ratio, not either one.
+
+**A claim in this file was wrong too**, which is the part worth keeping. Decision 24 said the exposure
+ramp "holds p99 inside 0.46 to 0.76 across the whole cycle" on the strength of samples from 10% up.
+Below 10% it is 0.275 and 0.153. Entry 24 has been corrected to say what it measured. That is decision
+18's own lesson, applied to decision 18's own author, one entry later.
+
+### The other half: the crescent was underexposed, and fixing it re-broke the ratio
+
+The ramp only ever stops **down**. That is right at the top of the cycle, where a full moon reflects
+near 1.0 flat across the disc. At the bottom the problem is the opposite: the peak sunlit reflectance
+itself collapses, so a thin crescent needs opening **up** and the ramp does nothing.
+
+Solving numerically for the exposure each phase needs to place its sunlit p99 at 0.5, the product
+`E x peakIncidence` came out **1.09 to 1.14 from f = 0.002 to f = 0.5**. Three decades, and a
+constant. Everything else about the disc changes over that range and that product does not, which is
+what says the law is `E ∝ 1 / peak` rather than any of the curves that could have been fitted to the
+same points. That is metering: you divide by what the highlight reflects.
+
+The peak has a closed form. Past quadrature the sub-solar point has gone round the limb, so the
+brightest sunlit ground left **is** the limb, at incidence `sin g = 2 sqrt(f(1-f))`. Checked against a
+200,000-step numerical maximum over the visible hemisphere: agreement to 8e-12. `peakIncidence` and a
+test now carry it.
+
+**Then the fix re-broke the thing it was paired with**, which is the lesson landing a second time in
+the same entry. Metering opens the exposure roughly 4x at 0.5% illumination, earthshine rides on it
+linearly, and the freshly-lowered ceiling was not enough to hold it: a 0.5% moon came out with
+earthshine **38% brighter than the version this all started from**.
+
+So the meter is floored, and the floor is set by an invariant rather than by taste:
+
+> `printExposure(f) * earthshineGain(f) <= PRINT_EXPOSURE`, for every f.
+
+The night side sits deep in the linear part of `1 - exp(-E*L)`, so that product is what it receives,
+and `PRINT_EXPOSURE` is what the product was at new moon before any of this. **The meter may never
+print earthshine brighter than the un-metered exposure did.** `EXPOSURE_METER_FLOOR = 0.20` is the
+largest boost that clears it, worst case 0.994.
+
+It lands at 1% illumination. The night-to-lit ratio was independently leaving its band at 1%. Two
+constraints derived from different quantities picking the same place is the only reason to trust
+either of them, and neither was tuned to the other.
+
+Below 1% the crescent is allowed to fall out of band, to 0.26 at 0.2%. That is honest and it is also
+photography: there is not enough sunlit surface left to meter on, and opening up further only prints
+the earthshine. Above 9% the meter multiplies the exposure by exactly 1, so the half of the cycle
+that was never wrong is bit-identical, and a test holds it there.
+
+**`printExposure` now lives in `moonLighting.ts` next to `earthshineGain`.** It was in `moonShader.ts`,
+one file and one DECISIONS entry away from the constant it multiplies against, which is the entire
+reason nobody measured the product. Four tests hold them together, and a test cannot reach a file that
+imports Skia. **When two constants are coupled, the coupling needs somewhere to live, and separate
+files with separate write-ups is how you guarantee it lives nowhere.**
 
 ## Decisions
 
