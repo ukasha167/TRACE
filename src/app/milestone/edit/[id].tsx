@@ -5,14 +5,13 @@ import {
   MilestoneForm,
   type MilestoneFormValues,
 } from "@/components/MilestoneForm";
-import { useMilestonesStore } from "@/store/useMilestonesStore";
+import { useMilestone, useMilestonesStore } from "@/store/useMilestonesStore";
 import { Colors, Spacing, Type } from "@/constants/theme";
 
 export default function EditMilestoneScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const getMilestone = useMilestonesStore((s) => s.getMilestone);
   const updateMilestone = useMilestonesStore((s) => s.updateMilestone);
-  const milestone = getMilestone(id);
+  const milestone = useMilestone(id);
 
   const handleSubmit = useCallback(
     (values: MilestoneFormValues) => {
