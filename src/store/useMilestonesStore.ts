@@ -59,6 +59,11 @@ export const useMilestonesStore = create<MilestonesState & MilestonesActions>()(
         }));
       },
 
+      /**
+       * NOT a subscription. Reaching for this from a screen leaves that screen
+       * showing whatever the record was when it mounted — see `useMilestone`,
+       * which is what a screen wants.
+       */
       getMilestone: (id) => {
         return get().milestones.find((m) => m.id === id);
       },
@@ -69,3 +74,29 @@ export const useMilestonesStore = create<MilestonesState & MilestonesActions>()(
     }
   )
 );
+
+/**
+ * Subscribe to ONE record.
+ *
+ * WHY THIS EXISTS. Four screens did this:
+ *
+ *   const getMilestone = useMilestonesStore((s) => s.getMilestone);
+ *   const milestone = getMilestone(id);
+ *
+ * which reads correctly and subscribes to nothing. The selector returns the
+ * ACTION, and an action's identity never changes, so the store notifying its
+ * listeners could never re-render those screens. Saving an edit popped back to
+ * a detail screen still showing the old title, date and moon; going home and
+ * opening the record again remounted it and "fixed" it, which is what made the
+ * bug look like a navigation problem rather than a subscription one.
+ *
+ * The selector has to touch the state the screen depends on. `find` returns the
+ * same object identity while the record is untouched, and `updateMilestone`
+ * spreads a new object for the one record it changes, so this re-renders
+ * exactly the screens showing the record that moved and none of the others.
+ */
+export function useMilestone(id: string | undefined): Milestone | undefined {
+  return useMilestonesStore((s) =>
+    id === undefined ? undefined : s.milestones.find((m) => m.id === id)
+  );
+}
