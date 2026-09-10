@@ -187,6 +187,23 @@ export const SkyColors = {
    * them are the colour of a coordinate line.
    */
   planet: "#D9A15C",
+
+  /**
+   * The two ends of the star tint range, for the decorative field behind the
+   * moon (`components/moon/starGrain.ts`). `Colors.moonlight` is the neutral
+   * they are mixed against.
+   *
+   * These are not invented. All three are real blackbody colours: cool is about
+   * 10,000 K, moonlight lands near 5,800 K, and warm is about 4,300 K, which is
+   * roughly the naked-eye range from Rigel to Aldebaran. What the field does not
+   * claim is that any PARTICULAR star has one, which is why the tint is drawn
+   * from a distribution weighted hard toward neutral rather than assigned.
+   *
+   * They live here rather than in `Colors` because they answer to temperature
+   * rather than to the design direction, which is the line SkyColors draws.
+   */
+  starCool: "#CBD8FF",
+  starWarm: "#FFD9B0",
 } as const;
 
 // ---- Typography ----
