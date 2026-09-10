@@ -20,6 +20,7 @@ import {
   Motion,
 } from "@/constants/theme";
 import { MoonPhaseGlyph } from "./MoonPhaseGlyph";
+import { StarField } from "./moon/StarField";
 import { getMoonPhase, describePhase, formatIllumination } from "@/lib/astronomy/moonPhase";
 import {
   getBrightLimbAngle,
@@ -131,6 +132,10 @@ export function TonightHero({ milestones, location, topInset }: TonightHeroProps
           : `Tonight's moon: ${describePhase(tonightMoon.phase)}, ${formatIllumination(tonightMoon.phase.phaseFraction)} illuminated`
       }
     >
+      {/* First child, so it paints under the moon and the type. Decorative and
+          identical on every screen in the app — see moon/starGrain.ts. */}
+      <StarField />
+
       <View style={styles.kickerRow}>
         <Text style={activeReturn ? styles.kickerReturn : styles.kicker}>
           {activeReturn ? "Returns tonight" : "Trace"}
@@ -203,6 +208,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.space,
     borderBottomLeftRadius: Radius.hero,
     borderBottomRightRadius: Radius.hero,
+    // The star layer fills the plate's whole rect, corners included, so without
+    // this a star landing in a bottom corner prints on the paper below the
+    // radius. The moon's halo is comfortably inside the plate at every size the
+    // hero takes, so nothing else is clipped by it.
+    overflow: "hidden",
     paddingHorizontal: Spacing.page,
     paddingBottom: Spacing.lg,
     alignItems: "stretch",
