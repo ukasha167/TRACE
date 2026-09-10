@@ -11,6 +11,10 @@ import {
   surfaceBrightness,
   EARTHSHINE_WRAP,
   EARTHSHINE_FLOOR,
+  EARTHSHINE_CEILING,
+  peakIncidence,
+  printExposure,
+  PRINT_EXPOSURE,
 } from "../moonLighting";
 import { getLitPathRotation } from "../brightLimb";
 
@@ -224,12 +228,31 @@ test("earthshine follows the Earth's phase, which is the Moon's inverted", () =>
   // gibbous, and it is why this is a function of phase rather than a constant.
   assert.ok(earthshineGain(0.02) > earthshineGain(0.5));
   assert.ok(earthshineGain(0.5) > earthshineGain(0.98));
-  assert.equal(earthshineGain(0), 1);
+  assert.equal(earthshineGain(0), EARTHSHINE_CEILING);
 
   // Floored, so a gibbous moon's night side never reaches the ground and the
   // disc keeps its silhouette against black. The one print decision here.
   assert.equal(earthshineGain(1), EARTHSHINE_FLOOR);
   assert.ok(earthshineGain(0.81) >= EARTHSHINE_FLOOR);
+});
+
+test("the ceiling keeps a thin crescent's dark side under its own crescent", () => {
+  // The regression this exists for: the ceiling was 1.0, and a 2% moon printed
+  // its night side at 0.354 of the brightness of its own sunlit crescent. That
+  // is not ashen light, it is a lit sphere with a rim, and it shipped.
+  //
+  // The gain cannot be checked against a ratio here, because the ratio comes out
+  // of the whole shader — albedo, Lunar-Lambert, exposure. What CAN be held is
+  // the property that produced the bug: the gain at new moon must stay near the
+  // level the rest of the cycle uses rather than running away to full strength.
+  // Measured, 0.42 lands the ratio at 0.154 and 1.0 landed it at 0.354.
+  assert.ok(
+    EARTHSHINE_CEILING < 0.5,
+    "a ceiling this high prints a crescent's night side as a lit disc"
+  );
+
+  // And it still has somewhere to go, or the phase dependence is decorative.
+  assert.ok(EARTHSHINE_CEILING > EARTHSHINE_FLOOR * 1.4);
 });
 
 test("the sunlit side is never dimmed by the earthshine term", () => {
@@ -242,4 +265,85 @@ test("the sunlit side is never dimmed by the earthshine term", () => {
   const sunOnly = lunarLambertReflectance(0.9, 0.9, L);
   const both = surfaceBrightness(0.9, 0.9, L, level, f);
   assert.equal(both, sunOnly, "earthshine leaks onto full sunlight");
+});
+
+/**
+ * THE EXPOSURE AND THE EARTHSHINE GAIN ARE ONE THING, and these tests exist
+ * because for a while they were two. Decision 27: both open up as the moon
+ * thins, they lived in separate files, and nothing measured their product.
+ */
+
+test("peakIncidence matches a numerical maximum over the visible disc", () => {
+  // Cross-validation, not self-assertion. The closed form says the brightest
+  // sunlit ground on a crescent is the limb, at incidence sin g = 2*sqrt(f(1-f)).
+  // This searches the actual hemisphere for it instead of believing that.
+  //
+  // By symmetry the maximum lies on the great circle through the sub-solar and
+  // sub-Earth points, so the search is one-dimensional.
+  const numerical = (f: number) => {
+    const g = Math.acos(Math.min(Math.max(2 * f - 1, -1), 1));
+    let best = 0;
+    const STEPS = 200_000;
+    for (let i = 0; i <= STEPS; i++) {
+      const th = -Math.PI / 2 + (Math.PI * i) / STEPS;
+      if (Math.cos(th) < 0) continue; // facing away from the observer
+      best = Math.max(best, Math.cos(th - g));
+    }
+    return best;
+  };
+
+  for (const f of [0.001, 0.005, 0.02, 0.05, 0.1, 0.2, 0.35, 0.49, 0.5, 0.7, 0.95]) {
+    assert.ok(
+      Math.abs(peakIncidence(f) - numerical(f)) < 1e-9,
+      `peakIncidence(${f}) = ${peakIncidence(f)}, search found ${numerical(f)}`
+    );
+  }
+});
+
+test("the exposure meter does nothing above its knee", () => {
+  // Everything from roughly 9% illumination up must be bit-identical to the
+  // ramp decision 24 shipped, because that half of the cycle was never the
+  // problem and a fix that moves it is a fix that has to be re-reviewed.
+  const ramp = (f: number) => PRINT_EXPOSURE * (1 - 0.22 * f);
+  for (const f of [0.1, 0.2, 0.35, 0.5, 0.7, 0.9, 1]) {
+    assert.ok(
+      Math.abs(printExposure(f) - ramp(f)) < 1e-12,
+      `the meter moved the exposure at f=${f}`
+    );
+  }
+  // And it does something below it, or it is not there at all.
+  assert.ok(printExposure(0.02) > ramp(0.02) * 1.5);
+});
+
+test("the meter can never print earthshine brighter than an unmetered new moon", () => {
+  // THE INVARIANT THAT SETS EXPOSURE_METER_FLOOR. Opening up for a vanishing
+  // crescent lifts the earthshine filling the rest of the disc by the same
+  // amount. Un-floored, a 0.5% moon came out 38% brighter on its night side
+  // than the version this was all meant to fix.
+  //
+  // The night side is deep in the linear part of 1 - exp(-E*L), so what it
+  // receives is the product below. PRINT_EXPOSURE is what that product was at
+  // new moon before any of this, when the gain ceiling was an implicit 1.
+  for (let f = 0; f <= 1.0001; f += 0.002) {
+    const product = printExposure(f) * earthshineGain(f);
+    assert.ok(
+      product <= PRINT_EXPOSURE,
+      `f=${f.toFixed(3)} prints earthshine at ${product.toFixed(4)}, over ${PRINT_EXPOSURE}`
+    );
+  }
+});
+
+test("earthshine only ever gets dimmer as the moon fills", () => {
+  // The shape the two knobs are supposed to have between them. A meter floor
+  // set too low, or a ceiling raised without re-measuring, breaks this before
+  // it breaks anything a person would notice.
+  let previous = Infinity;
+  for (let f = 0; f <= 1.0001; f += 0.002) {
+    const product = printExposure(f) * earthshineGain(f);
+    assert.ok(
+      product <= previous + 1e-9,
+      `earthshine brightens between f=${(f - 0.002).toFixed(3)} and f=${f.toFixed(3)}`
+    );
+    previous = product;
+  }
 });
