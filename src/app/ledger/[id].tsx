@@ -9,7 +9,7 @@ import {
   FontSize,
   Radius,
 } from "@/constants/theme";
-import { useMilestonesStore } from "@/store/useMilestonesStore";
+import { useMilestone } from "@/store/useMilestonesStore";
 import { getLifeLedger, type LedgerYear } from "@/lib/astronomy/lifeLedger";
 import { LedgerRow } from "@/components/LedgerRow";
 import { ImageViewerModal } from "@/components/ImageViewerModal";
@@ -27,8 +27,7 @@ import type { ApodCacheEntry } from "@/types";
 export default function LedgerScreen() {
   const [activeApod, setActiveApod] = useState<ApodCacheEntry | null>(null);
   const { id } = useLocalSearchParams<{ id: string }>();
-  const getMilestone = useMilestonesStore((s) => s.getMilestone);
-  const milestone = getMilestone(id);
+  const milestone = useMilestone(id);
 
   const rows = useMemo<LedgerYear[]>(
     () =>
