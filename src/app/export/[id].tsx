@@ -21,7 +21,7 @@ import {
   Radius,
   Type,
 } from "@/constants/theme";
-import { useMilestonesStore } from "@/store/useMilestonesStore";
+import { useMilestone } from "@/store/useMilestonesStore";
 import {
   getMoonPhase,
   formatIllumination,
@@ -38,8 +38,7 @@ import { ExportCardCanvas, CARD_SIZES, type CardFormat } from "@/components/Expo
 export default function ExportScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const getMilestone = useMilestonesStore((s) => s.getMilestone);
-  const milestone = getMilestone(id);
+  const milestone = useMilestone(id);
 
   const canvasRef = useCanvasRef();
   const [format, setFormat] = useState<CardFormat>("story");
