@@ -316,45 +316,19 @@ export const PRINT_CONTRAST = 1.5;
 export const ALBEDO_MID = 0.6227;
 
 /**
- * Print exposure. `1 - exp(-E * L)` on luminance, so it cannot clip.
+ * PRINT EXPOSURE LIVES IN `lib/astronomy/moonLighting.ts` NOW, next to
+ * `earthshineGain`, and that move is the whole content of decision 27.
  *
- * Reflectance is not a print: an unexposed Lunar-Lambert disc peaks around 0.4
- * of white at quarter phase and reads as grey felt. Photographs of the Moon are
- * exposed for the sunlit side. 1.9 puts a lit gibbous surface near three
- * quarters of white with the shoulder still well clear of the limb's peak, so
- * the sunward edge stays bright without printing a white wire along it.
+ * The two are coupled: one opens up as the moon thins and the other brightens
+ * as the moon thins, so what they multiply out to at a thin crescent is a
+ * quantity neither of them owns. They were in separate files with separate
+ * entries in DECISIONS.md, neither entry mentioned the other, and a 2% moon
+ * shipped printing its night side at a third of the brightness of its own
+ * crescent. Two invariants hold them together now, and a test cannot reach a
+ * file that imports Skia.
  *
- * This is the exposure at NEW. See `printExposure` for why it cannot be flat.
- */
-export const PRINT_EXPOSURE = 1.9;
-
-/**
- * How much the exposure stops down as the disc fills, 0 to 1 of PRINT_EXPOSURE.
- */
-const EXPOSURE_STOP_DOWN = 0.22;
-
-/**
- * Print exposure for a moon of this illuminated fraction.
- *
- * ONE EXPOSURE CANNOT SERVE EVERY PHASE, which is not a rendering compromise but
- * the reason a full moon is the hardest thing in the sky to photograph. Under
- * Lunar-Lambert a full moon reflects at nearly 1.0 across the entire disc, flat
- * to its edge, while a crescent's lit sliver averages a fraction of that. An
- * exposure that opens a crescent up therefore blows the full moon out.
- *
- * Measured on the bundled map at a flat 1.9, over the sunlit surface only: the
- * 99th-percentile luminance ran 0.466 at 10% illumination to 0.841 at 99.9%, and
- * the mean 0.193 to 0.642. The gibbous end was printing hot, and it looked it.
- * Stopping down linearly with illumination holds p99 inside 0.46 to 0.76 across
- * the whole cycle and moves the crescents by about 2%, which is nothing.
- *
- * Photographers do exactly this. Full moon is the Looney 11 case and a crescent
- * wants two or three stops more.
- */
-export function printExposure(phaseFraction: number): number {
-  const f = phaseFraction < 0 ? 0 : phaseFraction > 1 ? 1 : phaseFraction;
-  return PRINT_EXPOSURE * (1 - EXPOSURE_STOP_DOWN * f);
-}
+ * The rest of the darkroom is still here, because the rest of it is not coupled
+ * to anything.
 
 /**
  * The bundled albedo map's mean chromaticity, normalised to luminance 1.
