@@ -141,18 +141,154 @@ export const EARTHSHINE_WRAP = 0.35;
 export const EARTHSHINE_FLOOR = 0.25;
 
 /**
+ * The ceiling over `earthshineGain`, which is the print level at new moon.
+ *
+ * WAS 1.0, AND THAT WAS MEASURABLY TOO HOT. The gain rises toward new while the
+ * sunlit crescent shrinks toward nothing, so the two run in opposite directions
+ * and nobody had measured where they cross. Sampling the disc through the whole
+ * shader, the night side's 99th-percentile luminance against the sunlit side's
+ * ran **0.354 at 2% illumination and 0.667 at 0.5%**. A 2% moon was printing its
+ * dark side at a third of the brightness of its own crescent, which does not
+ * read as ashen light. It reads as a lit sphere with a bright rim, and that is
+ * what it looked like.
+ *
+ * A tone curve cannot fix this, and it is worth knowing why before reaching for
+ * one. The night side spans 20:1 from crescent to gibbous and needs to span
+ * about 8:1; any toe compresses the bottom of that range harder than the top, so
+ * it takes the gibbous silhouette out before it brings the crescent into line.
+ * The level is the thing that is wrong, so the level is what moves.
+ *
+ * 0.36 puts the ratio at 0.151 at 2% illumination, inside the 0.10 to 0.20 band
+ * a single-exposure photograph of the ashen light actually sits in, and costs
+ * the gibbous silhouette almost nothing: the unlit limb at 90% illumination goes
+ * from 0.0027 to 0.0022, against 0.0050 for the whole night side.
+ *
+ * It was briefly 0.42, which was right while the exposure was un-metered. Adding
+ * the meter below roughly doubles the exposure at 2% and earthshine rides on it,
+ * so the two had to be re-measured together. That is the point of them sharing a
+ * file.
+ *
+ * THE SHAPE IS UNTOUCHED. This is the range of a print, not the physics of one.
+ * Earthshine still follows the Earth's phase and is still brightest at new; the
+ * amplitude it does that over is smaller.
+ */
+export const EARTHSHINE_CEILING = 0.36;
+
+/**
  * How strongly earthshine prints on a moon of this illuminated fraction.
  *
  * Earthshine is sunlight that went Sun -> Earth -> Moon -> eye, so it follows
  * the EARTH's phase, and the two phases are complementary: a 2% moon hangs
  * under a 98% Earth. That is why the ash-grey disc inside a thin crescent is
  * something anyone can see on a clear evening and a gibbous moon's dark side is
- * not. Hence `1 - f`, floored for the reason above.
+ * not. Hence `1 - f`, between the floor and the ceiling above, both of which are
+ * print decisions and are documented as such.
  */
 export function earthshineGain(phaseFraction: number): number {
   return (
-    EARTHSHINE_FLOOR + (1 - EARTHSHINE_FLOOR) * (1 - clamp01(phaseFraction))
+    EARTHSHINE_FLOOR +
+    (EARTHSHINE_CEILING - EARTHSHINE_FLOOR) * (1 - clamp01(phaseFraction))
   );
+}
+
+/**
+ * The incidence cosine at the brightest sunlit point on the visible disc.
+ *
+ * For g <= 90 degrees the sub-solar point is on the near side, so somewhere on
+ * the disc faces the Sun square and the answer is 1. Past that the sub-solar
+ * point has gone round the limb, the brightest ground left is the limb itself,
+ * and its incidence cosine is sin g. Since cos g = 2f - 1, that is 2 sqrt(f(1-f)).
+ *
+ * Checked against a 200,000-step numerical maximum of the full Lunar-Lambert
+ * expression over the visible hemisphere: agreement to 8e-12, which is floating
+ * point. A test holds it, because this is the kind of identity that is obvious
+ * until the day it is off by a factor.
+ *
+ * This is what the exposure meters on.
+ */
+export function peakIncidence(phaseFraction: number): number {
+  const f = clamp01(phaseFraction);
+  return f >= 0.5 ? 1 : 2 * Math.sqrt(f * (1 - f));
+}
+
+/**
+ * Print exposure at new moon. `1 - exp(-E * L)` on luminance, so it cannot clip.
+ *
+ * Reflectance is not a print: an unexposed Lunar-Lambert disc peaks around 0.4
+ * of white at quarter phase and reads as grey felt. Photographs of the Moon are
+ * exposed for the sunlit side.
+ */
+export const PRINT_EXPOSURE = 1.9;
+
+/** How much the exposure stops down as the disc fills, 0 to 1 of PRINT_EXPOSURE. */
+const EXPOSURE_STOP_DOWN = 0.22;
+
+/**
+ * The peak incidence at which the ramp alone stops holding the sunlit side up,
+ * and the meter starts working.
+ *
+ * Not chosen. Measured: the sunlit 99th percentile falls out of decision 24's
+ * 0.46 to 0.76 band at 8% illumination, and peakIncidence(0.08) is 0.543. The
+ * knee is where the band breaks, which is why it is 0.55 and not a round number
+ * someone liked. Above it this whole function is the ramp decision 24 shipped,
+ * multiplied by exactly 1.
+ */
+const EXPOSURE_METER_KNEE = 0.55;
+
+/**
+ * Where the meter stops opening up, and the reason it has to stop.
+ *
+ * THE METER AND THE EARTHSHINE CEILING PULL AGAINST EACH OTHER. Opening up for a
+ * vanishing crescent lifts the earthshine filling the rest of the disc by the
+ * same amount, and past a point that undoes the ceiling above. Un-floored, a
+ * 0.5% moon came out with earthshine 38% BRIGHTER than the version this was
+ * meant to fix.
+ *
+ * So the floor is set by an invariant rather than by taste: **the meter may
+ * never print earthshine brighter than the un-metered exposure did.** That is
+ * `printExposure(f) * earthshineGain(f) <= PRINT_EXPOSURE` for every f, and two
+ * tests hold it. 0.20 is the largest boost that clears it, and it lands at 1%
+ * illumination, which is also where the night-to-lit ratio was leaving its band
+ * anyway. Two independent constraints picking the same place is the only reason
+ * to trust either.
+ *
+ * Below 1% the crescent is allowed to fall out of band, down to 0.26 at 0.2%.
+ * That is honest and it is also photography: there is not enough sunlit surface
+ * left to meter on, and opening up further only prints the earthshine.
+ */
+const EXPOSURE_METER_FLOOR = 0.2;
+
+/**
+ * Print exposure for a moon of this illuminated fraction.
+ *
+ * TWO PARTS. The ramp is decision 24: one exposure cannot serve every phase,
+ * because a full moon reflects near 1.0 flat across the disc while a crescent's
+ * lit sliver averages a fraction of that, so it stops down linearly as the disc
+ * fills. Full moon is the Looney 11 case and a crescent wants two or three stops
+ * more.
+ *
+ * The meter is decision 27, and it is what the ramp was missing. Stopping DOWN
+ * with f is right at the top of the cycle and does nothing at the bottom, where
+ * the problem is the opposite: the peak sunlit reflectance itself collapses, so
+ * a thin crescent needs to be opened UP, not merely left alone. Measured, the
+ * sunlit p99 ran 0.275 at 2% and 0.153 at 0.5%, against a 0.46 floor.
+ *
+ * Dividing by the peak incidence is what a light meter does. The evidence that
+ * it is the right law rather than a convenient one: solving numerically for the
+ * exposure each phase needs to place its sunlit p99 at 0.5, the product
+ * `E * peakIncidence` came out 1.09 to 1.14 across three decades of f, from
+ * 0.2% to 50%. A constant. Everything else about the disc changes over that
+ * range and that product does not.
+ */
+export function printExposure(phaseFraction: number): number {
+  const f = clamp01(phaseFraction);
+  const ramp = PRINT_EXPOSURE * (1 - EXPOSURE_STOP_DOWN * f);
+  const peak = clamp(
+    peakIncidence(f),
+    EXPOSURE_METER_FLOOR,
+    EXPOSURE_METER_KNEE
+  );
+  return ramp * (EXPOSURE_METER_KNEE / peak);
 }
 
 /**
