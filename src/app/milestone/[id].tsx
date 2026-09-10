@@ -10,7 +10,7 @@ import {
   Radius,
   formatLongDate,
 } from "@/constants/theme";
-import { useMilestonesStore } from "@/store/useMilestonesStore";
+import { useMilestone, useMilestonesStore } from "@/store/useMilestonesStore";
 import { getMoonPhase } from "@/lib/astronomy/moonPhase";
 import { getMoonReturns } from "@/lib/astronomy/moonReturn";
 import { getRarityStat } from "@/lib/astronomy/rarity";
@@ -52,9 +52,11 @@ const RARITY_THRESHOLDS = [99.5, 99, 97, 95, 90];
  */
 export default function MilestoneDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const getMilestone = useMilestonesStore((s) => s.getMilestone);
   const deleteMilestone = useMilestonesStore((s) => s.deleteMilestone);
-  const milestone = getMilestone(id);
+  // Subscribed, not read once. See useMilestone: pulling the getter out of the
+  // store and calling it left this screen showing the pre-edit record until it
+  // was popped and pushed again.
+  const milestone = useMilestone(id);
 
   const tzOffsetMin = milestone?.location?.timezoneOffsetMin;
 
