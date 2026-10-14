@@ -1,4 +1,4 @@
-# TRACE — architecture
+# TRACE: architecture
 
 ## Stack
 
@@ -13,11 +13,14 @@
 | Sensors | `expo-sensors` | Accelerometer, Magnetometer, Gyroscope. Expo Go compatible. |
 | Rendering | `@shopify/react-native-skia` | Sky render, moon glyph, export card. |
 | Location | `expo-location` | Coordinates and magnetic declination. |
-| Dates | `date-fns` | No hand-rolled date arithmetic. |
+| Dates | `lib/astronomy/dateUtils.ts` | Four helpers own every conversion between a calendar date and an instant. See ASTRONOMY.md. |
 | Tests | `tsx` + `node:test` | See below. |
 | Fonts | Newsreader / Figtree / JetBrains Mono | See DESIGN.md. |
-| Sharing | `expo-sharing` + `expo-file-system` | |
-| Icons | `lucide-react-native` | |
+| Sharing | `expo-sharing` + `expo-file-system` | The card, and the records backup. |
+| Restore | `expo-document-picker` | Picks a backup file. Expo Go compatible. |
+| Reminders | `expo-notifications` | Local notifications only. Nothing remote, no push token. |
+| Haptics | `expo-haptics` | Save, the reveal's landing, the bell, scrubber hours, the details fold. |
+| Icons | `lucide-react-native` | A few: share, edit, close, bell, compass, hand, chevrons. |
 
 ### Why not Jest
 
@@ -31,7 +34,7 @@ tsconfig paths and runs the suite in under a second. Revisit only if component t
 ```bash
 npm install
 npx expo start          # then i for iOS simulator, a for Android
-npm test                # 150 tests, tsx + node:test
+npm test                # 215 tests, tsx + node:test
 npx tsc --noEmit
 ```
 
@@ -45,7 +48,9 @@ src/
 ├── store/          Zustand + AsyncStorage persistence.
 ├── lib/
 │   ├── astronomy/  Pure functions. No network, no React Native imports, no side effects.
-│   └── apod/       The only code that touches the network.
+│   ├── reminders/  The reminder plan and its words. Pure.
+│   ├── backup/     Writing and reading the records file. Pure.
+│   └── apod/       NASA's pictures: the API, the archive pages, the cache.
 ├── data/           Bundled catalogues, all rebuildable from scripts/.
 ├── constants/      theme.ts, the design system.
 └── types/          Shared shapes. Nothing else defines a domain type.
@@ -74,7 +79,13 @@ into it.
 | `skyTransform` | RA/Dec to altitude/azimuth. Cross-validated to 24 arcseconds. |
 | `skySphere` | The precomputed sphere and the allocation-free projection. |
 | `skyBodies` | Planets, moon, sun. |
+| `skyNight` | The night as a span: the scrubber's sidereal camera turn, sunset to sunrise, the Earth's shadow on the moon, where an instant sits in the night. |
 | `attitude` | Device orientation, sensor fusion, camera frames. |
+| `anniversary` | When a date next comes round and the moon it brings. `anniversaryDate` is the cheap half Home sorts by. |
+| `nightFacts` | That night in words: rise and set against sunset and sunrise, highest point, constellation, planets up, any lunar eclipse. Never a clock time. |
+| `revealLines` | The four lines the reveal speaks. |
+| `tonight` | The next full and new moon, and tonight's rise and set, for the phone's own place and clock. |
+| `planetReturns` | When Jupiter and Saturn stand in front of the same stars again, geocentric. |
 
 ### `hooks/`
 
@@ -83,12 +94,17 @@ into it.
 | `useSkyOrientation` | The sensor stack. Three raw sensors at 60 Hz, complementary filter, roll extraction. The single most bug-prone file in the app. Read DECISIONS.md before touching it. |
 | `useApod` | One date's APOD, cache first. |
 | `useApodBatch` | The ledger's 20 to 40 requests, bounded and progressive. |
-| `useCurrentLocation` | Foreground permission, coordinates, reverse-geocoded label. |
+| `useCurrentLocation` | The phone's place, from `store/useLocationStore`: remembered across launches, refreshed quietly once a session, and never the reason a permission dialog opens. `request()` does that, from a tap. |
+| `useReminders` | Keeps pending notifications in step with the records and bells, opens a record from a tapped reminder, and sends the test one. |
+| `useBackup` | Saves the records file through the share sheet and restores one. |
 
 ### `lib/apod/`
 
-`apodClient` fetches and maps. `apodCache` reads and writes AsyncStorage. `apodClassify` sorts a
-response into photograph, illustrative, or video. `apodBatch` runs the ledger's fan-out.
+`apodClient` fetches and maps. Dates more than 14 days old go to `apodArchive` first, which reads
+the day's archive page; recent dates, and any page the archive cannot answer for, go to the JSON API.
+The API answers most past dates with NASA's logo now, and `isPlaceholderApod` keeps that out of the
+cache (decision 38). `apodCache` reads and writes AsyncStorage. `apodClassify` sorts an entry into
+photograph, illustrative, or video. `apodBatch` runs the ledger's fan-out.
 
 `fetchApodBatch` takes injectable `fetcher` / `cacheReader` / `cacheWriter` seams. That is
 deliberate: the concurrency bound and the 429 circuit breaker are the only genuinely interesting
@@ -144,11 +160,24 @@ write as a single blob.
 invalidates, because the picture NASA featured on a past date does not change. Always check the
 cache before any request. This is also the rate-limit strategy: a date viewed once is free forever.
 
+**APOD misses.** Key `apod-missing:{YYYY-MM-DD}`, for dates NASA answered "no picture" for, so a
+gap day in the archive is asked about once. Only dates at least two days old are recorded, because
+NASA also refuses dates it has not reached yet. Dates before 16 June 1995 are never asked at all.
+
+**Reminders.** Key `reminders`: only the ids of records with the bell on. The words and dates are
+rebuilt from the records on every sync, so an edit can never leave a stale notification behind.
+
+**The phone's place.** Key `current-place`: the last place the phone was found, so Home names it on
+the first frame.
+
+**Moon textures.** Decoded once per run in `components/moon/moonTextures.ts` and shared by every
+glyph. Calling `useImage` per glyph decoded both 1024px maps again for every moon on screen.
+
 **Sky and moon data is never cached.** It is pure computation from bundled data, and recomputing is
 cheaper than storing.
 
-**Offline-first.** The detail screen renders completely with no network. Only APOD touches the
-network and it is cached.
+**Offline-first.** The detail screen renders completely with no network. APOD and the place lookups
+are the only network use, and APOD is cached.
 
 ## NASA API key
 
@@ -176,7 +205,13 @@ Captured per record, always optional.
 5. Denied or skipped saves `location: null`. The sky render and the tilt are unavailable; phase,
    fraction, returns, and rarity all still work.
 
-All location data stays on the device. There is no backend to send it to.
+Records stay on the device; there is no backend to send them to. Two lookups leave it, each because
+the person asked: a typed place goes to the phone's geocoder (Apple on iOS, Google on Android), and
+a GPS fix goes to the same service for its name. Settings says so in those words.
+
+Saving with a place typed but not looked up runs the lookup before saving. If it finds nothing, the
+form asks rather than saving without a place (decision 42). A place taken from the phone stores the
+phone's own offset on the record's date; a typed place stores the longitude estimate.
 
 ## Bundled data
 
@@ -189,7 +224,8 @@ All location data stays on the device. There is no backend to send it to.
 | `src/data/messier.json` | 110 deep-sky objects, 40 of them galaxies | d3-celestial (BSD-3) |
 | `src/data/constellationNames.ts` | 88 IAU abbreviations to full names | IAU designations |
 | `assets/moon_disc.png` | 1024x1024 orthographic near-side albedo, exposure graded, opaque to the corners | NASA LROC WAC / CGI Moon Kit (public domain) |
-| `assets/moon_normal.png` | 512x512 surface normals for the same projection, y down | NASA LOLA LDEM / CGI Moon Kit (public domain) |
+| `assets/moon_normal.png` | 1024x1024 surface normals for the same projection, y down | NASA LOLA LDEM / CGI Moon Kit (public domain) |
+| `assets/moon_disc_256.png`, `assets/moon_normal_256.png` | The same pair box-filtered to 256px, for moons drawn small | `scripts/build-moon-thumbs.mjs` |
 | `assets/constellations/figures.png` | 2048x2048 sheet, 15 figure illustrations at 512pt | Stellarium, Johan Meuris (**Free Art License 1.3**) |
 | `src/data/constellationArt.json` | Three sky anchors per figure, resolved from HIP through VizieR | Stellarium (CC BY-SA 4.0) |
 
@@ -201,6 +237,7 @@ copyleft: the images keep it, the app's own source stays MIT, and the attributio
 node scripts/build-star-catalog.mjs <bsc5.dat>
 node scripts/build-sky-data.mjs <constellations.lines.json> <IAU-CSN.txt> <messier.json>
 node --max-old-space-size=4096 scripts/build-moon-maps.mjs [grade]
+node scripts/build-moon-thumbs.mjs   # the 256px pair only; build-moon-maps runs it too
 # Builds moon_disc.png and moon_normal.png together, from one projection, so the
 # normals cannot drift out of register with the albedo. Reads the two large
 # equirectangular maps from sources/, which are gitignored: sources/README.md
@@ -220,7 +257,8 @@ auditable. Four stars with independently known J2000 positions are asserted in t
 - Offline and uncached: an explicit message, not an infinite spinner.
 - Location denied: saves with `location: null`, sky render unavailable, everything else intact.
 - Magnetometer low accuracy: fall back to drag-to-pan and say why.
-- Date before APOD's start: handled by the response, never a hardcoded cutoff.
+- Date before APOD's start (16 June 1995): not requested. It used to be left to the response, and on
+  the shared key the "no" answers for a 1970 birthday spent the hourly quota before any real year.
 - Ledger partially fetched: rows render immediately from local moon data, thumbnails fill in.
 - `phaseName === "Full Moon"` with `isTruePhase === false`: must not read as a full moon.
 
@@ -229,7 +267,9 @@ auditable. Four stars with independently known J2000 positions are asserted in t
 **Performance.** `hdurl` only in the export render and the single active full-screen viewer. List
 screens never block on network. The immersive view targets 60 fps.
 
-**Privacy.** No telemetry, no analytics, no accounts. Location never leaves the device.
+**Privacy.** No telemetry, no analytics, no accounts. Records never leave the device except as a
+backup file the person sends themselves. Place lookups go to the phone's geocoder, and dates go to
+NASA for pictures.
 
 **Accessibility.** Support OS dynamic type where React Native and Skia allow. Verify contrast with a
 real checker.

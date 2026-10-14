@@ -1,4 +1,4 @@
-# TRACE — design system
+# TRACE: design system
 
 Direction: **Atlas**. Defined in `src/constants/theme.ts`, which is the only file allowed to contain
 a colour literal, and checked by `src/constants/__tests__/theme.test.ts`.
@@ -116,7 +116,7 @@ Scale: `micro 10 / label 11 / small 13 / body 15 / lead 18 / heading 22 / title 
 mega 56`. Even steps, because a keepsake wants continuity rather than tension. Leading runs about
 15% more open than the Swiss scale it replaced; air is most of the softness.
 
-Dates read as prose ("27 October 2004"), set in the serif or the UI face. Mono is for a figure being
+Dates read as prose ("20 January 2000"), set in the serif or the UI face. Mono is for a figure being
 compared against other figures, not for a date being read as a word. Use `formatLongDate` and
 `formatShortDate`.
 
@@ -130,12 +130,19 @@ all sharing one value: `sm 8`, `plate 14` (moon thumbnails, APOD images, small d
 
 ## Motion
 
-Two gestures, used everywhere, and nothing else. Things arrive by rising a little and fading in, and
-the moon settles. Scattered one-off animations are what make an interface feel busy rather than
-alive.
+Two gestures carry the everyday screens: things arrive by rising a little and fading in, and the
+moon settles. Scattered one-off animations are what make an interface feel busy rather than alive.
 
 `duration 420` standard arrival, `durationSlow 620` for the hero moon, `stagger 55` per list item,
 `rise 10` points.
+
+One sequence is allowed to be more than that, because it is the moment the app exists for: the
+reveal after a save. One clock drives it, a tap skips it to the last frame, and reduced motion or a
+screen reader starts there. Outside it, motion follows a hand: the tonight dial, the strip of
+nights, and the sky scrubber.
+
+Haptics mark something landing or changing state, never decoration: a save, the reveal's moon
+arriving, the reminder bell, the details fold, and each hour the scrubber crosses.
 
 The one piece of scroll-linked motion is the Home status-bar scrim, which keeps the clock legible as
 the dark hero scrolls under it.

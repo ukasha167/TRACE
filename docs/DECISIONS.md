@@ -1,4 +1,4 @@
-# TRACE — decisions and bugs that shipped
+# TRACE: decisions and bugs that shipped
 
 Every entry here is a real bug that reached the running app, or a decision that looks wrong until you
 know why. Each has a comment at the site and, where it is testable, a regression test. **Do not undo
@@ -13,8 +13,9 @@ faithfully implemented that, multiplying an already-degrees value by `180/Math.P
 about 57 times.
 
 It did not crash. The result was normalised into (-180, 180], so it produced a plausible-looking but
-wrong tilt. The moon simply rendered at the wrong angle forever. Verified example, Lahore
-2004-10-27: the buggy path returned 137.5 degrees; the correct value is -129.5.
+wrong tilt. The moon simply rendered at the wrong angle forever. Verified example, Lisbon at local
+midnight on 20 January 2000, the eve of that year's total lunar eclipse: the buggy path returned
+-48.3 degrees; the correct value is -70.0.
 
 The installed `suncalc@2.0.1` states it in its own `index.d.ts`: "All angles are in degrees." Note
 that `@types/suncalc` does **not** say this and does not declare `waxing` either, so the bundled
@@ -164,9 +165,9 @@ in priority order: solar system, named stars, deep sky, constellation names.
 ### 17. Do not cull at the data layer what the projection should cull
 
 `getSolarSystemSky` filtered bodies to `altitude > 0`, which was correct when only the visible
-hemisphere was drawn. Once the view rendered the full sphere it became a bug: on 2004-10-27 over
-Lahore, Saturn was the only planet above the horizon, and the other four silently vanished instead
-of appearing below the horizon where they belong.
+hemisphere was drawn. Once the view rendered the full sphere it became a bug: at midnight on 20
+January 2000 over Lisbon, Jupiter and Saturn were above the horizon, and Mercury, Venus and Mars
+silently vanished instead of appearing below the horizon where they belong.
 
 ### 18. The lunar photograph and the terminator do not share a rotation
 
@@ -391,7 +392,7 @@ Zustand re-renders a component when the value its selector returns changes. This
 exactly once, at mount, and `router.back()` does not remount the screen underneath.
 
 Four screens had it: detail, ledger, export and the edit form itself. `app/sky/[id].tsx` was written
-as `useMilestonesStore((s) => s.getMilestone(id))` — the call **inside** the selector — and was
+as `useMilestonesStore((s) => s.getMilestone(id))`, with the call **inside** the selector, and was
 correct by accident of where one bracket sat.
 
 `useMilestone(id)` now owns the read. `find` returns the same object identity while a record is
@@ -410,8 +411,8 @@ have no catalogue behind them, no magnitudes, no positions, and nothing in the i
 
 That is allowed under rule 1 for exactly one reason: **the field is identical everywhere.** Same
 seed, same stars, on every record, every date, every place. A constant texture asserts nothing, the
-way paper grain does not claim to be paper. Seeding it per record — which is the obvious next idea,
-and the reason this entry exists — would make it say that this night's sky differed from that one,
+way paper grain does not claim to be paper. Seeding it per record, which is the obvious next idea
+and the reason this entry exists, would make it say that this night's sky differed from that one,
 which is precisely the quiet class of lie rule 1 is written against.
 
 Two smaller things fell out of building it.
@@ -429,7 +430,7 @@ amount the real thing dims them. The cheapest correct answer was the one already
 **A hard disc is a dot on a surface, not a light at a distance.** The field shipped as flat white
 circles first and read as dust on the plate. The missing thing was falloff, and no radius fixes that.
 Each star is now drawn twice, a blurred halo and a core over it, with **one blur for every star
-rather than one scaled by brightness** — a point spread function belongs to the air and the lens, not
+rather than one scaled by brightness**, because a point spread function belongs to the air and the lens, not
 to the star. That also makes the faint ones stay quiet for nothing: blur conserves energy, so a small
 dim disc pushed through the same kernel keeps almost none of its peak, while a bright one keeps
 enough to show a halo. Blurring the whole layer uniformly instead, which was the first idea, takes
@@ -532,6 +533,178 @@ reason nobody measured the product. Four tests hold them together, and a test ca
 imports Skia. **When two constants are coupled, the coupling needs somewhere to live, and separate
 files with separate write-ups is how you guarantee it lives nowhere.**
 
+### 28. Every moon decoded its own copy of the Moon
+
+`MoonPhaseGlyph` called `useImage` twice, and Skia's `useImage` keeps no cache: each call fetches the
+file and decodes it. Home with ten records decoded 22 maps at 1024px, about 8 MB of pixels per moon,
+and the ledger decoded them again whenever a row scrolled back into its window. That is why moons
+arrived after the rows around them.
+
+`components/moon/moonTextures.ts` decodes each map once per run and hands every glyph the same
+`SkImage`. Moons drawn at 384 device pixels or less sample a 256px pair box-filtered from the full
+maps by `scripts/build-moon-thumbs.mjs`, which is sharper there as well as cheaper: a 1024px map
+squeezed into a 36pt disc through a filter with no mipmaps reads one texel in ten and shimmers.
+
+**A hook that loads a file is a cache decision, whether or not anyone made one.**
+
+### 29. A chart of the sky was a map of the ground
+
+`projectToDisc` put east on the right with north up, and its test asserted exactly that. A chart of
+the sky is read looking up, and looking up with north at the top puts east on the left, which is why
+every planisphere is drawn that way. The old projection mirrored every constellation. Nothing drew
+with it until the record's star map was planned, which is the only reason it never showed.
+
+The test that enshrined the mirror is the part worth keeping. It checked the code against the code's
+own convention, so it passed for as long as the convention was wrong.
+
+### 30. One decimal still rounded a moon up to full
+
+`formatIllumination` keeps a decimal above 95% so that 96% and 99.9% never both read "100%". It still
+printed a 99.96% moon as "100.0%", and the rarity chips did the same through their own `toFixed(1)`
+on a value `rarity.ts` had already rounded. "100.0%" reads as the exact instant of full, which is
+rule 1's territory. Where one decimal would round to 100 the figure now takes a second decimal, cut
+rather than rounded, so it can reach 99.99 and never 100.
+
+### 31. Tonight's sky drew London, and called midnight live
+
+With no location, `/sky/tonight` fell back to London's coordinates under the label "Current
+Location", and it drew local midnight under the words "Live celestial sphere". Both were claims the
+data did not support, on the home screen's only button. Without a place the view now asks for one;
+with one it draws the moment it opened, and the caption names the phone's own clock time, which for
+here and now is exact.
+
+### 32. Saving a record showed nothing of it
+
+Saving called `router.back()` and dropped the person on the list they came from. The phase, the
+tilt, the eclipse search and the rarity walk all ran, and none of it was shown. Saving now plays the
+reveal: black, the moon of that night rising at its real phase and tilt, and four lines.
+
+The first version was a `Modal` inside the record screen, and it never appeared. Saving closes the
+form's modal and opens the record in the same moment, and iOS will not present a second modal while
+the first is still leaving. It is now an absolute overlay mounted after the navigation stack
+(`RevealHost`), driven by `useRevealStore`, so it needs no presentation and is simply there when the
+form slides away. One consequence to know: a native modal still on screen covers it.
+
+### 33. That night in words, and never a clock time
+
+The record page described the night with a limb tilt in degrees and an offset like ±0.61d.
+`nightFacts` says what the moon did instead: when it rose and set, how high it climbed and in which
+direction, what it sat in front of, which planets were up, and any lunar eclipse within a day.
+
+Every time is said against sunset or sunrise at that place ("rose 14 min after sunset"), because the
+record's offset is estimated from its longitude and ASTRONOMY.md forbids printing a clock time from
+an estimate. Sunset and sunrise depend only on the coordinates, so the sentence is exact.
+
+**Tonight's tools are the one exception, and it is not a loophole.** The full and new moon tiles and
+moonrise and moonset print clock times, on the phone's own clock, for the phone's own place. Nothing
+there is estimated.
+
+Above the Arctic Circle a night can have no sunset or no sunrise, and the first version said "the sun
+did not set" for both. In Tromso in December the sun never rose. The sentence now checks which.
+
+### 34. The scrubber turns the camera, not the sky
+
+A night is hours long, and the view showed one instant. Recomputing six thousand star vectors per
+scrub step would undo the reason the sphere is precomputed. Between two instants the starry sky turns
+rigidly about the celestial pole by the change in sidereal time, so the camera turns the other way
+instead: three vectors, not six thousand. The ground, the horizon, the compass points and the bodies
+of the solar system use the unturned camera, because they are recomputed at the scrubbed instant.
+
+The sign is the trap. Worked through, the camera takes Rot(p, +ΔLST) about the pole p = (0, cos φ,
+sin φ); the other sign runs the sky backwards and looks entirely plausible. A test checks the turned
+projection against `equatorialToHorizontal` at Greenwich and Sydney.
+
+### 35. An eclipse night drew a bright full moon
+
+Scrubbing through 28 September 2015 showed a full white moon at the hour the real one was copper.
+`skyNight.eclipseShadow` places the Earth's shadow physically: the anti-solar point at the moon's own
+distance, seen from the observer, with umbra and penumbra radii widened 2% for the atmosphere. The
+view multiplies the two discs over the moon at the same scale as the disc, so a partial eclipse
+shows its bite on the correct side. On the 2015 eclipse it falls on the south limb, as the eclipse's
+negative gamma says it should.
+
+### 36. Reminders are written ahead, and the sync waits for both stores
+
+A scheduled local notification cannot run code when it fires, so each year's words are written when
+it is scheduled, and iOS keeps at most 64 pending. The plan covers three years per record, capped at
+60, and is rebuilt on launch and on every change to a record or a bell.
+
+The sync first ran when the records had loaded and the bells had not. It read no bells, cancelled
+every reminder on the phone, and scheduled them all again a moment later when the bells arrived, on
+every launch. It now waits for both stores.
+
+A tap on a reminder opens its record. It used to open Home.
+
+### 37. A count and its sentence described different sets
+
+The rarity section says "1 in 25 days carry a moon at least 99.5% illuminated" and then "3 of the 12
+birthdays so far have had one". The count also took any year within one point of the record's own
+moon, so a 98.9% year counted under a 99.5% heading. The count now uses the threshold alone. "So far"
+also counted this year's date before it had arrived; it now stops at today.
+
+The reveal had the same problem in one line: "1 in 25 days has a moon this full" named the record's
+figure while the frequency was measured at the threshold. It names the threshold now.
+
+**A number and the words around it are one claim.** Checking the number is not enough.
+
+### 38. NASA's API began answering with its logo
+
+APOD moved to science.nasa.gov, and `api.nasa.gov/planetary/apod` kept answering 200 for past dates
+with the same object every time: title "NASA Science", a stock blurb, the NASA logo as the image. The
+app cached it permanently, because a past date's picture never changes, and every record showed the
+logo under "NASA's picture for that day".
+
+The archive URLs still work. `apod.nasa.gov/apod/apYYMMDD.html` redirects to the day's page, which
+carries the title, the image, the explanation and the credit. `apodArchive` reads them. Two wrong
+answers have to be caught: a date the new site has not filed redirects to the front page, which shows
+another day, so the page's own date must match; and some old pages have only a stock thumbnail, so
+the image must be one of APOD's own. A video day has the thumbnail and an embedded player, and is
+recorded as a video. The cache treats the stored logo as a miss, so phones that cached it heal on
+their next visit.
+
+**A 200 is not an answer.** The cache trusted the status code, and the status code was never wrong.
+
+### 39. The share card was the size of its preview
+
+The card is authored at 1080 by 1920, and the PNG came out about 730 pixels wide on an iPhone 17
+Pro. A
+canvas snapshot is the canvas's own pixels, and the canvas was laid out at preview size. It is now
+laid out at exactly 1080 device pixels and scaled down as a view for the preview, so the snapshot is
+the full card on every screen density.
+
+### 40. Settings said dates and places never left the phone
+
+They do, each for one purpose the person asked for: a typed place goes to the phone's geocoder, a
+GPS fix goes there for its name, and a record's date goes to NASA for that day's picture. The row now
+says each of those in those words. A privacy line that is false is worse than none.
+
+### 41. "Returns tonight" was checked against the phone's night
+
+The hero's return check used the phone's offset ahead of the record's, so a Tokyo record viewed in
+London was tested against a London night. It also always said "the same as then", and a return is
+within a day of the phase, which can sit either side of a name. The check now uses the record's own
+place and time, and "the same as then" appears only when the two names match.
+
+### 42. A typed place was dropped on save
+
+Typing in the place field clears the resolved place until "Find place" runs. Save sent whatever was
+resolved, so typing "Lisbon" and tapping Save stored no place at all, which removed the tilt, the
+night facts and the sky view with nothing on screen to say so. Save now finishes the lookup itself,
+and if it finds nothing it asks: change the text, or save without a place.
+
+### 43. A VoiceOver user could not leave the reveal
+
+The reveal was one large "skip" button, and a button's children are not separate accessibility
+elements, so the four lines and "Open the record" were unreachable. With the overlay marked modal,
+that left nowhere to go. The root is no longer an accessibility element, and a running screen reader
+gets the finished frame, as reduced motion does.
+
+### 44. Years before 1995 spent the picture quota
+
+NASA's archive begins on 16 June 1995. The ledger asked for every anniversary anyway, and on the
+shared key's thirty requests an hour a 1970 birthday spent twenty-five of them on dates that cannot
+have a picture. Dates before the archive, and dates still ahead, are never requested now.
+
 ## Decisions
 
 **The mineral colour is real, and that is the only reason it is allowed.**
@@ -582,7 +755,7 @@ underneath as glow. It could not look like a sphere, because a cutout has no nor
 lights the disc per pixel and draws the halo in the same pass.
 
 **The terminator did not move.** For a sphere lit from L it is N·L = 0, which projects to an ellipse
-of semi-axis |cos g|, and cos g = 2f - 1 — the same |2f - 1| the old path used for `b`. The two agree
+of semi-axis |cos g|, and cos g = 2f - 1, the same |2f - 1| the old path used for `b`. The two agree
 by derivation, `moonLighting.ts` is the single definition both read, and `moonLighting.test.ts` holds
 them to it. `getLitPathRotation` still aims the light and `getLunarNorthRotation` still aims the
 photograph, still independently, so decision 18 survives intact.
@@ -614,12 +787,31 @@ shipped grade takes the maria-to-highland spread from 101 levels to 80.
 **This does not violate rule 1.** Nothing measured moves. The projection, the centring, the crater
 positions, the terminator, the bright-limb angle and the pole rotation are all exactly what they
 were, and no feature is painted in or removed. What changed is exposure, which was never a
-measurement — the raw map is itself a processed product with an arbitrary stretch, so "unedited" was
+measurement: the raw map is itself a processed product with an arbitrary stretch, so "unedited" was
 never one of the app's claims. The line to hold is that the app must not state a false astronomical
 claim, and a print that is easier to look at states none.
 
 `--list` prints the available grades and `photograph` reproduces exactly what shipped before, so the
 change is always A/B-able.
+
+**Three written rules were reversed on purpose.** "Two gestures
+and nothing else" for motion gave way to the reveal, the tonight dial and the scrubber; "no icons"
+gave way to a handful of lucide glyphs where a word alone was ambiguous (bell, share, edit, close,
+compass, hand); and the tonight surface grew tools that print clock times (decision 33). Each was
+picked by clicking a prototype, not argued in prose. Rules 1 to 4 did not move.
+
+**The night card leads, and paper stays one tap away.** It was picked from four in the prototype.
+It is black to the edges with the same star grain every plate draws, and every line is a paragraph
+that wraps; the optional fact, returns line and dedication are dropped whole, never cut, when the
+square format runs out of room.
+
+**A backup adds and never overwrites.** A restore takes only the records whose ids are not already on
+the phone, because the copy on the phone may have been edited since the file was made. Every field
+in the file is checked before anything reaches the store, and a record that fails is counted and
+left out rather than guessed at.
+
+**The icon is drawn by the moon's own maths.** `scripts/build-icon.ts` renders the crescent with the
+shader's lighting model, so the app icon and the moons inside the app are the same object.
 
 **Zustand over Redux.** About 1 KB, no provider, and the entire persisted state is one array of
 records.

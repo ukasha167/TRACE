@@ -1,4 +1,4 @@
-# TRACE — astronomy spec
+# TRACE: astronomy spec
 
 Everything under `src/lib/astronomy/` is a pure function: no side effects, no network, no React
 Native imports. It is the highest-risk-of-silent-wrongness code in the app and the easiest to test.
@@ -26,7 +26,7 @@ near the quarters, so noon and night can differ by more than a percentage point,
 terminator the phase name can flip outright.
 
 A record with a location is evaluated in **that place's** local time, not the device's. A birthday
-in Lahore is a Lahore night, and `MilestoneLocation.timezoneOffsetMin` is what lets someone viewing
+in Tokyo is a Tokyo night, and `MilestoneLocation.timezoneOffsetMin` is what lets someone viewing
 from another country still see the right sky. With `location: null`, fall back to device local time
 and say so in the UI.
 
@@ -37,7 +37,15 @@ Real timezone boundaries are political, and resolving them properly needs a date
 "that night", so an hour of error moves the illuminated fraction by well under a percent.
 
 Correct to the hour for most of the world. About 30 minutes out for India, up to 2 hours out for
-western China. It is never used for displaying clock times, where that error would matter.
+western China, and 1 to 2 hours out for Portugal, Spain and France, which keep central European
+time west of its meridian. It is never used for displaying clock times, where that error would
+matter: a record's night is said against sunset and sunrise instead (`nightFacts`). The one word
+that still leans on the estimate is "midnight", in the star map caption, the constellation and
+planets "at midnight", and the sky scrubber's labels.
+
+A place taken from the phone ("Use current") stores the phone's own offset on the record's date,
+which is exact. Only typed places carry the estimate. A bundled town list with each town's own zone
+is the fix for those, and it is the top item in PRD.md's backlog.
 
 ## Moon phase, and the labelling rule
 
@@ -80,9 +88,15 @@ For each year y in [sourceYear - 60, sourceYear + 60]:
 Return the nearest past hit, the next future hit, and the full list.
 ```
 
-Verified output for 2004-10-27 in Lahore: returns at +11y (0.75d off), +19y (0.83d), +30y (0.75d),
-+38y (0.88d), +49y (0.82d). Exactly the 8/11/19 structure the thesis predicts, and a good
-end-to-end sanity check.
+Verified output, two dates that land on different chains:
+
+- 20 January 2000 over Lisbon, the eve of a total lunar eclipse: +19y (0.03d off), +38y (0.04d),
+  +57y (0.45d). The Metonic chain.
+- 8 June 2004 over Greenwich (UTC+1), the day of the Venus transit: +11y (0.14d), +30y (0.00d),
+  +49y (0.28d). The 11-year chain, with 30 = 11 + 19.
+
+Which chain a date sits on depends on where its anniversaries fall against the 11-year slip, and
+both are what the thesis predicts. It is a good end-to-end sanity check.
 
 Every hit is labelled with *why* it recurs (11-year, Metonic 19-year, 30 = 11 + 19). The explanation
 carries most of the emotional payload: it says the sky is on a schedule, not that a coincidence
