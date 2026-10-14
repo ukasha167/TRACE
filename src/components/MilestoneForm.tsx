@@ -17,6 +17,7 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 import { WheelDatePicker } from "./WheelDatePicker";
 import * as Location from "expo-location";
+import { useLocationStore } from "@/store/useLocationStore";
 import {
   MilestoneType,
   type Milestone,
@@ -64,6 +65,11 @@ export interface MilestoneFormValues {
 interface MilestoneFormProps {
   /** Present when editing; absent when creating. */
   initial?: Milestone;
+  /**
+   * A new record's starting type and date, from the first-run starts and from
+   * "Save this date" on the tonight dial. Ignored when editing.
+   */
+  preset?: { type?: MilestoneType; date?: string };
   submitLabel: string;
   onSubmit: (values: MilestoneFormValues) => void;
   onCancel: () => void;
@@ -73,19 +79,20 @@ const TYPES: Array<{ value: MilestoneType; label: string }> = [
   { value: "birthday", label: "Birthday" },
   { value: "anniversary", label: "Anniversary" },
   { value: "graduation", label: "Graduation" },
-  { value: "custom", label: "Record" },
+  { value: "custom", label: "A day to remember" },
 ];
 
 export function MilestoneForm({
   initial,
+  preset,
   submitLabel,
   onSubmit,
   onCancel,
 }: MilestoneFormProps) {
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [type, setType] = useState<MilestoneType>(initial?.type ?? "birthday");
+  const [type, setType] = useState<MilestoneType>(initial?.type ?? preset?.type ?? "birthday");
   const [date, setDate] = useState<Date>(
-    toLocalNoon(initial?.date ?? toDateString(new Date()))
+    toLocalNoon(initial?.date ?? preset?.date ?? toDateString(new Date()))
   );
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [titleError, setTitleError] = useState(false);
@@ -95,8 +102,11 @@ export function MilestoneForm({
   );
   // Seeded from the saved label so an edit doesn't look like the location was lost.
   const [placeQuery, setPlaceQuery] = useState(initial?.location?.label ?? "");
-  const [busy, setBusy] = useState<null | "gps" | "lookup">(null);
+  const [busy, setBusy] = useState<null | "gps" | "lookup" | "save">(null);
   const [lookupFailed, setLookupFailed] = useState(false);
+  // The place came from the phone, so the phone's own zone rules are the real
+  // offset there; a typed place only has its longitude to go on.
+  const [placeFromDevice, setPlaceFromDevice] = useState(false);
 
   // `onValueChange` rather than the legacy `onChange`, which encoded selection
   // and dismissal in `event.type`. The old prop still works and still warns on
@@ -112,48 +122,38 @@ export function MilestoneForm({
   const commitLocation = (
     latitude: number,
     longitude: number,
-    label: string
+    label: string,
+    fromDevice = false
   ) => {
     setLocation({
       latitude,
       longitude,
       label,
-      // Approximated from longitude — see approximateTimezoneOffsetMin.
+      // Approximated from longitude, see approximateTimezoneOffsetMin. A place
+      // from the phone is corrected to the phone's own offset on save.
       timezoneOffsetMin: approximateTimezoneOffsetMin(longitude),
     });
+    setPlaceFromDevice(fromDevice);
     setLookupFailed(false);
   };
 
+  // The same lookup Home and tonight's sky use, so a place found here is also
+  // the place Home names on its next launch.
   const handleUseGPS = useCallback(async () => {
     setBusy("gps");
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
+      const here = await useLocationStore.getState().refresh({ ask: true });
+      if (!here) {
         Alert.alert(
-          "Location permission denied",
+          useLocationStore.getState().permission === "denied"
+            ? "Location permission denied"
+            : "Could not read location",
           "You can type a place instead, or save without one. Everything except the sky view still works."
         );
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const { latitude, longitude } = pos.coords;
-
-      let label = `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
-      try {
-        const [geo] = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (geo) {
-          const parts = [geo.city, geo.region, geo.country].filter(Boolean);
-          if (parts.length) label = parts.join(", ");
-        }
-      } catch {
-        // Reverse geocoding is a nicety; coordinates are the payload.
-      }
-      commitLocation(latitude, longitude, label);
-      setPlaceQuery(label);
-    } catch {
-      Alert.alert("Could not read location", "Try typing the place instead.");
+      commitLocation(here.latitude, here.longitude, here.label, true);
+      setPlaceQuery(here.label);
     } finally {
       setBusy(null);
     }
@@ -164,7 +164,7 @@ export function MilestoneForm({
    *
    * This is what makes location useful for HISTORICAL dates, which is nearly
    * all of them. GPS only ever describes where you are standing now; a birthday
-   * from 2004 needs the place it happened. An earlier version stored typed
+   * from 1990 needs the place it happened. An earlier version stored typed
    * places with latitude/longitude 0, which silently disabled the sky render
    * and the moon tilt for exactly the records that most needed them.
    */
@@ -190,19 +190,74 @@ export function MilestoneForm({
     }
   }, [placeQuery]);
 
-  const handleSave = useCallback(() => {
+  /**
+   * A TYPED PLACE IS NEVER DROPPED. Typing clears the resolved place until
+   * "Find place" runs, and Save used to send whatever was resolved: type
+   * "Lisbon", tap Save, and the record went in with no place at all, so no
+   * tilt, no night facts and no sky, with nothing on screen to say so. Save
+   * now finishes the lookup itself, and if it fails it asks rather than
+   * guessing in either direction.
+   */
+  const handleSave = useCallback(async () => {
     if (!title.trim()) {
       setTitleError(true);
       return;
     }
-    onSubmit({
-      title: title.trim(),
-      type,
-      date: toDateString(date),
-      notes: notes.trim() || undefined,
-      location,
-    });
-  }, [title, type, date, notes, location, onSubmit]);
+    const submit = (place: MilestoneLocation | null) => {
+      const dateStr = toDateString(date);
+      const [y, m, d] = dateStr.split("-").map(Number);
+      onSubmit({
+        title: title.trim(),
+        type,
+        date: dateStr,
+        notes: notes.trim() || undefined,
+        // The phone's zone on the record's own date, so a winter birthday in a
+        // summer-time country is not read an hour out.
+        location:
+          place && placeFromDevice
+            ? { ...place, timezoneOffsetMin: -new Date(y, m - 1, d, 12).getTimezoneOffset() }
+            : place,
+      });
+    };
+
+    const q = placeQuery.trim();
+    if (location || !q) {
+      submit(location);
+      return;
+    }
+
+    setBusy("save");
+    let found: MilestoneLocation | null = null;
+    try {
+      const [hit] = await Location.geocodeAsync(q);
+      if (hit) {
+        found = {
+          latitude: hit.latitude,
+          longitude: hit.longitude,
+          label: q,
+          timezoneOffsetMin: approximateTimezoneOffsetMin(hit.longitude),
+        };
+      }
+    } catch {
+      // Offline, or the geocoder refused. Handled below as not found.
+    } finally {
+      setBusy(null);
+    }
+    if (found) {
+      setLocation(found);
+      submit(found);
+      return;
+    }
+    setLookupFailed(true);
+    Alert.alert(
+      `Couldn't find "${q}"`,
+      "Save without a place, or change what you typed. Without one the record has no tilt, no night facts and no sky view.",
+      [
+        { text: "Change it", style: "cancel" },
+        { text: "Save without a place", onPress: () => submit(null) },
+      ]
+    );
+  }, [title, type, date, notes, location, placeQuery, placeFromDevice, onSubmit]);
 
   return (
     <KeyboardAvoidingView
@@ -298,8 +353,8 @@ export function MilestoneForm({
         {/* ---- Location ---- */}
         <Text style={[styles.label, styles.spaced]}>Location, optional</Text>
         <Text style={styles.help}>
-          Needed for the sky view and the moon&apos;s tilt. Everything else works
-          without it.
+          Needed for the moon&apos;s tilt, what that night was like, and the sky
+          view. The rest works without it.
         </Text>
 
         <TextInput
@@ -308,6 +363,7 @@ export function MilestoneForm({
           onChangeText={(t) => {
             setPlaceQuery(t);
             setLocation(null);
+            setPlaceFromDevice(false);
             setLookupFailed(false);
           }}
           onSubmitEditing={handleLookupPlace}
@@ -375,9 +431,14 @@ export function MilestoneForm({
         <TouchableOpacity
           style={styles.save}
           onPress={handleSave}
+          disabled={busy !== null}
           accessibilityRole="button"
         >
-          <Text style={styles.saveText}>{submitLabel}</Text>
+          {busy === "save" ? (
+            <ActivityIndicator size="small" color={Colors.paper} />
+          ) : (
+            <Text style={styles.saveText}>{submitLabel}</Text>
+          )}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
