@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -15,6 +16,8 @@ interface MilestonesActions {
   }) => Milestone;
   updateMilestone: (id: string, updates: Partial<Omit<Milestone, "id" | "createdAt">>) => void;
   deleteMilestone: (id: string) => void;
+  /** Adds records read from a backup, as they are. See lib/backup. */
+  importMilestones: (incoming: Milestone[]) => void;
   getMilestone: (id: string) => Milestone | undefined;
 }
 
@@ -59,6 +62,10 @@ export const useMilestonesStore = create<MilestonesState & MilestonesActions>()(
         }));
       },
 
+      importMilestones: (incoming) => {
+        set((state) => ({ milestones: [...state.milestones, ...incoming] }));
+      },
+
       /**
        * NOT a subscription. Reaching for this from a screen leaves that screen
        * showing whatever the record was when it mounted — see `useMilestone`,
@@ -99,4 +106,26 @@ export function useMilestone(id: string | undefined): Milestone | undefined {
   return useMilestonesStore((s) =>
     id === undefined ? undefined : s.milestones.find((m) => m.id === id)
   );
+}
+
+/**
+ * Whether the saved records have loaded from AsyncStorage yet.
+ *
+ * The store starts every launch with an empty array and fills in when storage
+ * answers, so a screen that branches on `milestones.length` without this showed
+ * "Nothing recorded yet" to someone with ten records, for the moment it took
+ * the read to land.
+ */
+export function useMilestonesHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(() =>
+    useMilestonesStore.persist.hasHydrated()
+  );
+  useEffect(() => {
+    if (useMilestonesStore.persist.hasHydrated()) {
+      setHydrated(true);
+      return;
+    }
+    return useMilestonesStore.persist.onFinishHydration(() => setHydrated(true));
+  }, []);
+  return hydrated;
 }
