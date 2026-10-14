@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  TextInput,
+  PixelRatio,
   type LayoutChangeEvent,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
@@ -20,6 +22,7 @@ import {
   Spacing,
   Radius,
   Type,
+  formatLongDate,
 } from "@/constants/theme";
 import { useMilestone } from "@/store/useMilestonesStore";
 import {
@@ -32,8 +35,13 @@ import {
   getLunarNorthRotation,
 } from "@/lib/astronomy/brightLimb";
 import { getMoonReturns } from "@/lib/astronomy/moonReturn";
-import { toLocalNight, toLocalDayStart } from "@/lib/astronomy/dateUtils";
+import { toLocalNight, toLocalDayStart, todayDateString } from "@/lib/astronomy/dateUtils";
+import { getNightFacts, headlineSentences, shortPlace } from "@/lib/astronomy/nightFacts";
+import { daysBetween } from "@/lib/astronomy/anniversary";
 import { ExportCardCanvas, CARD_SIZES, type CardFormat } from "@/components/ExportCardCanvas";
+import { NightCardCanvas } from "@/components/NightCardCanvas";
+
+type CardStyle = "night" | "paper";
 
 export default function ExportScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -42,15 +50,19 @@ export default function ExportScreen() {
 
   const canvasRef = useCanvasRef();
   const [format, setFormat] = useState<CardFormat>("story");
+  // Night leads: it was the pick from the prototype. Paper stays one tap away.
+  const [style, setStyle] = useState<CardStyle>("night");
+  const [dedication, setDedication] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  const { moonPhase, moonReturns, brightLimbAngleDeg, northAngleDeg } = useMemo(() => {
+  const { moonPhase, moonReturns, brightLimbAngleDeg, northAngleDeg, fact } = useMemo(() => {
     if (!milestone)
       return {
         moonPhase: null,
         moonReturns: null,
         brightLimbAngleDeg: null,
         northAngleDeg: null,
+        fact: null,
       };
     const tz = milestone.location?.timezoneOffsetMin;
     const all = getMoonReturns(milestone.date, { tzOffsetMin: tz });
@@ -66,6 +78,7 @@ export default function ExportScreen() {
       northAngleDeg: place ? getLunarNorthRotation(night, place) : null,
       moonReturns:
         milestone.type === "birthday" ? all.filter((r) => r.age > 0) : all,
+      fact: place ? headlineSentences(getNightFacts(milestone.date, place, tz))[0] ?? null : null,
     };
   }, [milestone]);
 
@@ -91,12 +104,13 @@ export default function ExportScreen() {
 
     setExporting(true);
     try {
-      // Render the canvas at full resolution → PNG base64 directly via Skia C++
+      // The canvas is laid out at the card's pixel size (see nativeWidth), so
+      // its snapshot is the full 1080-wide card.
       const image = await canvasRef.current.makeImageSnapshotAsync();
       const base64Data = image.encodeToBase64(ImageFormat.PNG, 100);
 
       // Write to a temp file
-      const filename = `trace-${milestone?.title?.replace(/\s+/g, "-").toLowerCase() ?? id}-${format}.png`;
+      const filename = `trace-${milestone?.title?.replace(/\s+/g, "-").toLowerCase() ?? id}-${style}-${format}.png`;
       const fileUri = `${FileSystem.cacheDirectory}${filename}`;
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
         encoding: FileSystem.EncodingType.Base64,
@@ -116,7 +130,7 @@ export default function ExportScreen() {
     } finally {
       setExporting(false);
     }
-  }, [canvasRef, milestone, format, id]);
+  }, [canvasRef, milestone, format, style, id]);
 
   if (!milestone || !moonPhase || !moonReturns) {
     return (
@@ -127,14 +141,47 @@ export default function ExportScreen() {
   }
 
   const cardAspect = CARD_SIZES[format].h / CARD_SIZES[format].w;
+
+  // The night card's words.
+  const today = todayDateString();
+  const md = milestone.date.slice(4);
+  const ahead = moonReturns.filter((r) => daysBetween(`${r.year}${md}`, today) < 0).slice(0, 2);
+  const returnsLine =
+    ahead.length === 0
+      ? null
+      : `The moon comes back in ${ahead.map((r) => r.year).join(" and ")}.`;
+  const loc = milestone.location && milestone.location.latitude !== 0 ? milestone.location : null;
+  const coords = loc
+    ? `${Math.abs(loc.latitude).toFixed(2)}° ${loc.latitude >= 0 ? "N" : "S"}, ${Math.abs(loc.longitude).toFixed(2)}° ${loc.longitude >= 0 ? "E" : "W"}`
+    : null;
   const previewWidth = slot
     ? Math.floor(Math.min(slot.w, slot.h / cardAspect))
     : 0;
+  // The card's width in points that lays out to exactly its pixel width.
+  const nativeWidth = CARD_SIZES[format].w / PixelRatio.get();
 
   return (
     <View style={styles.root}>
-      {/* ---- Format selector ---- */}
+      {/* ---- Style and format ---- */}
       <View style={styles.formatRow}>
+        <Text style={styles.formatLabel}>Style</Text>
+        <View style={styles.formatChips}>
+          {(["night", "paper"] as CardStyle[]).map((st) => (
+            <TouchableOpacity
+              key={st}
+              style={[styles.formatChip, style === st && styles.formatChipSelected]}
+              onPress={() => setStyle(st)}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: style === st }}
+            >
+              <Text style={[styles.formatChipText, style === st && styles.formatChipTextSelected]}>
+                {st === "night" ? "Night" : "Paper"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+      <View style={[styles.formatRow, styles.formatRowTight]}>
         <Text style={styles.formatLabel}>Format</Text>
         <View style={styles.formatChips}>
           {(["story", "square"] as CardFormat[]).map((f) => (
@@ -170,6 +217,39 @@ export default function ExportScreen() {
               },
             ]}
           >
+            {/* THE CARD IS DRAWN AT ITS OWN SIZE and shrunk for the preview.
+                The snapshot is the canvas's own pixels, so a canvas laid out at
+                preview size exported a PNG about 730px wide on a 3x phone while
+                the card promised 1080. Laid out at 1080 device pixels and
+                scaled down as a view, it exports at 1080 on every screen. */}
+            <View
+              style={{
+                width: nativeWidth,
+                height: nativeWidth * cardAspect,
+                transform: [{ scale: previewWidth / nativeWidth }],
+                transformOrigin: "top left",
+              }}
+            >
+            {style === "night" ? (
+              <NightCardCanvas
+                ref={canvasRef}
+                title={milestone.title}
+                whenWhere={`${formatLongDate(milestone.date)}${milestone.location ? ` · ${shortPlace(milestone.location.label)}` : ""}`}
+                phaseLine={`${describePhase(moonPhase)}, ${formatIllumination(moonPhase.phaseFraction)} lit`}
+                fact={fact}
+                returns={returnsLine}
+                dedication={dedication.trim() || null}
+                coords={coords}
+                moon={{
+                  phaseFraction: moonPhase.phaseFraction,
+                  waxing: moonPhase.waxing,
+                  brightLimbAngleDeg,
+                  northAngleDeg,
+                }}
+                format={format}
+                previewWidth={nativeWidth}
+              />
+            ) : (
             <ExportCardCanvas
               ref={canvasRef}
               milestone={milestone}
@@ -182,11 +262,28 @@ export default function ExportScreen() {
               moonReturns={moonReturns}
               placeLabel={milestone.location?.label ?? null}
               format={format}
-              previewWidth={previewWidth}
+              previewWidth={nativeWidth}
             />
+            )}
+            </View>
           </View>
         )}
       </View>
+
+      {style === "night" && (
+        <View style={styles.dedicationRow}>
+          <TextInput
+            value={dedication}
+            onChangeText={setDedication}
+            placeholder="Add a line of your own, if you like"
+            placeholderTextColor={Colors.inkMuted}
+            style={styles.dedication}
+            maxLength={90}
+            multiline
+            accessibilityLabel="A line of your own for the card"
+          />
+        </View>
+      )}
 
       {/* ---- Export button ---- */}
       <View style={styles.footer}>
@@ -237,7 +334,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.md,
   },
-  formatLabel: { ...Type.label },
+  formatLabel: { ...Type.label, width: 52 },
+  formatRowTight: { paddingTop: 0 },
+  dedicationRow: { paddingHorizontal: Spacing.page },
+  dedication: {
+    fontFamily: FontFamily.serif,
+    fontSize: FontSize.body,
+    color: Colors.ink,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.rule,
+    paddingVertical: Spacing.sm,
+  },
   formatChips: {
     flexDirection: "row",
     gap: Spacing.sm,

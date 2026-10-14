@@ -3,18 +3,23 @@ import {
   Canvas,
   useCanvasRef,
   useFont,
+  useFonts,
   BlurMask,
   Circle,
   Rect,
   RoundedRect,
   Fill,
   Group,
+  Paragraph,
+  Skia,
+  FontWeight,
   Text as SkiaText,
   Shader,
   ImageShader,
-  useImage,
   rect,
   rrect,
+  type SkParagraph,
+  type SkTypefaceFontProvider,
 } from "@shopify/react-native-skia";
 import {
   Newsreader_500Medium,
@@ -27,14 +32,6 @@ import {
 } from "@expo-google-fonts/jetbrains-mono";
 import type { Milestone, MoonReturn } from "@/types";
 import { Colors } from "@/constants/theme";
-import { getLitPathRotation } from "@/lib/astronomy/brightLimb";
-import {
-  lunarLambertL,
-  sunDirection,
-  earthshineGain,
-  printExposure,
-  EARTHSHINE_WRAP,
-} from "@/lib/astronomy/moonLighting";
 import {
   CORE_BLUR,
   GLOW_ALPHA,
@@ -43,15 +40,9 @@ import {
   NOMINAL_WIDTH,
   generateStarField,
 } from "@/components/moon/starGrain";
-import {
-  moonEffect,
-  MINERAL_SATURATION,
-  PRINT_CONTRAST,
-  ALBEDO_MID,
-  RELIEF_STRENGTH,
-  ALBEDO_WHITE,
-  unitRgb,
-} from "@/components/moon/moonShader";
+import { moonEffect } from "@/components/moon/moonShader";
+import { moonUniforms as moonUniformsFor } from "@/components/moon/moonUniforms";
+import { useMoonTextures } from "@/components/moon/moonTextures";
 
 export const CARD_SIZES = {
   story: { w: 1080, h: 1920 },
@@ -60,9 +51,69 @@ export const CARD_SIZES = {
 
 export type CardFormat = keyof typeof CARD_SIZES;
 
-const MOON_ASSET = require("../../assets/moon_disc.png");
-const MOON_NORMAL_ASSET = require("../../assets/moon_normal.png");
+/**
+ * Title sizes to try, largest first. The first that sets the name in two lines
+ * wins; a name too long even for the last size takes as many lines as it needs.
+ */
+const TITLE_SIZES: Record<CardFormat, number[]> = {
+  story: [104, 92, 80, 70],
+  square: [84, 74, 64, 56],
+};
 
+/** A paragraph laid out at `width`, with the baselines the layout needs. */
+interface SetText {
+  paragraph: SkParagraph;
+  firstBaseline: number;
+  lastBaseline: number;
+}
+
+function setText(
+  text: string,
+  fonts: SkTypefaceFontProvider,
+  family: string,
+  size: number,
+  color: string,
+  width: number,
+  weight: FontWeight = FontWeight.Normal
+): SetText {
+  const paragraph = Skia.ParagraphBuilder.Make({}, fonts)
+    .pushStyle({
+      color: Skia.Color(color),
+      fontFamilies: [family],
+      fontSize: size,
+      fontStyle: { weight },
+      heightMultiplier: 1.08,
+    })
+    .addText(text)
+    .pop()
+    .build();
+  paragraph.layout(width);
+  const lines = paragraph.getLineMetrics();
+  return {
+    paragraph,
+    firstBaseline: lines[0]?.baseline ?? size,
+    lastBaseline: lines[lines.length - 1]?.baseline ?? size,
+  };
+}
+
+/**
+ * The name, set to wrap. It used to be one SkiaText line, so a long name ran
+ * off the right edge of the card and was cut by the canvas: truncation, on the
+ * one screen people send to someone else.
+ */
+function setTitle(
+  title: string,
+  fonts: SkTypefaceFontProvider,
+  format: CardFormat,
+  width: number
+): SetText {
+  let set: SetText | null = null;
+  for (const size of TITLE_SIZES[format]) {
+    set = setText(title, fonts, "Newsreader", size, Colors.ink, width, FontWeight.SemiBold);
+    if (set.paragraph.getLineMetrics().length <= 2) break;
+  }
+  return set!;
+}
 
 interface ExportCardCanvasProps {
   milestone: Milestone;
@@ -122,17 +173,25 @@ const ExportCardCanvas = React.forwardRef<
   const scale = previewWidth / w;
   const isStory = format === "story";
 
-  const titleFont = useFont(Newsreader_600SemiBold, isStory ? 104 : 84);
+  // The name and the place wrap, so they are set as paragraphs, which need the
+  // typefaces registered with a provider rather than loaded as single fonts.
+  const paragraphFonts = useFonts({
+    Newsreader: [Newsreader_600SemiBold],
+    Figtree: [Figtree_400Regular],
+  });
   // The phase name is a name, so it takes the serif like every other name in
   // the app. Cycle labels below stay in Figtree, since those are interface text.
   const headFont = useFont(Newsreader_500Medium, 46);
   const bodyFont = useFont(Figtree_400Regular, 32);
   const monoFont = useFont(JetBrainsMono_500Medium, 34);
   const monoSmall = useFont(JetBrainsMono_400Regular, 26);
-  const moonImage = useImage(MOON_ASSET);
-  const moonNormal = useImage(MOON_NORMAL_ASSET);
+  // The card is drawn at its full output width whatever the preview shows, so it
+  // always samples the full-size maps.
+  const textures = useMoonTextures(w);
+  const moonImage = textures?.albedo ?? null;
+  const moonNormal = textures?.normal ?? null;
 
-  if (!titleFont || !monoFont || !bodyFont || !headFont || !monoSmall) {
+  if (!paragraphFonts || !monoFont || !bodyFont || !headFont || !monoSmall) {
     return (
       <Canvas ref={ref as any} style={{ width: w * scale, height: h * scale }}>
         <Fill color={Colors.paper} />
@@ -147,11 +206,20 @@ const ExportCardCanvas = React.forwardRef<
   // ---- Vertical rhythm ----
   const wordmarkY = PAD + 30;
   const ruleY = wordmarkY + 26;
-  const titleY = ruleY + (isStory ? 136 : 100);
-  const dateY = titleY + (isStory ? 52 : 44);
+
+  // The title's first baseline sits where the single line always did. Any line
+  // past the first is paid for by the moon plate, so the phase, the place and
+  // the returns keep their positions and nothing is pushed into the foot.
+  const title = setTitle(milestone.title, paragraphFonts, format, inner);
+  const titleBaseline = ruleY + (isStory ? 136 : 100);
+  const titleTop = titleBaseline - title.firstBaseline;
+  const extraTitle = title.lastBaseline - title.firstBaseline;
+  // The gap clears a descender at the largest title size. At 52 a two-line name
+  // left its last line's "p" and "y" nearly touching the date.
+  const dateY = titleBaseline + extraTitle + (isStory ? 64 : 52);
 
   const plateY = dateY + (isStory ? 44 : 36);
-  const plateH = isStory ? 760 : 330;
+  const plateH = (isStory ? 760 : 330) - extraTitle;
   const plateR = 36;
   const moonR = Math.min(inner, plateH) * (isStory ? 0.32 : 0.36);
   const moonCX = w / 2;
@@ -160,15 +228,30 @@ const ExportCardCanvas = React.forwardRef<
   const phaseY = plateY + plateH + (isStory ? 66 : 52);
   const phaseRuleY = phaseY + (isStory ? 34 : 26);
 
+  // The place wraps too. A long place name used to run off the card as well.
+  const place = placeLabel
+    ? setText(`Seen from ${placeLabel}`, paragraphFonts, "Figtree", 32, Colors.inkMuted, inner)
+    : null;
   const placeY = phaseRuleY + (isStory ? 50 : 40);
-  const returnsLabelY = placeY + (isStory ? 84 : 58);
+  const extraPlace = place ? place.lastBaseline - place.firstBaseline : 0;
+  const returnsLabelY = placeY + extraPlace + (isStory ? 84 : 58);
   const returnsStartY = returnsLabelY + (isStory ? 52 : 44);
   const returnRowH = isStory ? 72 : 48;
 
   const footRuleY = h - PAD - (isStory ? 54 : 44);
   const footY = h - PAD - 12;
 
-  const shownReturns = moonReturns.slice(0, isStory ? 4 : 2);
+  // The last return before today, then the ones still to come. Taking the first
+  // few in date order showed an old record nothing but returns long gone.
+  const thisYear = new Date().getFullYear();
+  const pastReturns = moonReturns.filter((r) => r.year <= thisYear);
+  const shownReturns = [
+    ...pastReturns.slice(-1),
+    ...moonReturns.filter((r) => r.year > thisYear),
+  ]
+    .slice(0, isStory ? 4 : 2)
+    // Rows only go down while they clear the foot rule.
+    .filter((_, i) => returnsStartY + i * returnRowH + 18 < footRuleY - 24);
 
   // Decorative, and the same on every card ever exported — see moon/starGrain.ts
   // for why a field that varied by record would be an astronomical claim.
@@ -191,35 +274,20 @@ const ExportCardCanvas = React.forwardRef<
   //
   // TWO INDEPENDENT ROTATIONS, as everywhere: the light follows the Sun, the
   // photograph follows the Moon's north pole.
-  const litRotationDeg = getLitPathRotation(brightLimbAngleDeg, moonWaxing);
-  const sun = sunDirection(moonPhaseFraction, litRotationDeg);
-  const textureRotDeg = northAngleDeg ?? litRotationDeg;
-
-  const moonUniforms = {
-    uCenter: [moonCX, moonCY],
-    uRadius: moonR,
-    uSun: [sun.x, sun.y, sun.z],
-    uLambert: lunarLambertL(sun.phaseAngle),
-    uTexRot: (textureRotDeg * Math.PI) / 180,
-    uSaturation: MINERAL_SATURATION,
-    uWhite: ALBEDO_WHITE,
-    uContrast: PRINT_CONTRAST,
-    uMid: ALBEDO_MID,
-    uExposure: printExposure(moonPhaseFraction),
-    uTint: unitRgb(Colors.moonlight),
-    uGlow: 0.16,
-    uHalo: 0.3,
-    uHaloWidth: 0.045,
-    uHaloFar: 0.09,
-    uHaloWide: 0.22,
-    uEarthshine: unitRgb(Colors.earthshine),
-    uEarthGain: earthshineGain(moonPhaseFraction),
-    uEarthWrap: EARTHSHINE_WRAP,
-    // The card is authored at its output width, so one card unit is one
-    // exported pixel.
-    uAA: 1 / moonR,
-    uRelief: RELIEF_STRENGTH,
-  };
+  const moonUniforms = moonUniformsFor(
+    {
+      phaseFraction: moonPhaseFraction,
+      waxing: moonWaxing,
+      brightLimbAngleDeg,
+      northAngleDeg,
+    },
+    moonCX,
+    moonCY,
+    moonR,
+    "hero",
+    // The card is authored at its output width, so one card unit is one pixel.
+    1 / moonR
+  );
 
   return (
     <Canvas ref={ref as any} style={{ width: w * scale, height: h * scale }}>
@@ -229,7 +297,7 @@ const ExportCardCanvas = React.forwardRef<
         {/* ---- Masthead ---- */}
         <SkiaText x={PAD} y={wordmarkY} text="TRACE" font={monoSmall} color={Colors.ink} />
         <SkiaText
-          x={w - PAD - 120}
+          x={w - PAD - monoSmall.measureText(`${day}.${month}`).width}
           y={wordmarkY}
           text={`${day}.${month}`}
           font={monoSmall}
@@ -239,13 +307,7 @@ const ExportCardCanvas = React.forwardRef<
         <Rect x={PAD} y={ruleY} width={inner} height={2} color={Colors.rule} />
 
         {/* ---- Title ---- */}
-        <SkiaText
-          x={PAD}
-          y={titleY}
-          text={milestone.title}
-          font={titleFont}
-          color={Colors.ink}
-        />
+        <Paragraph paragraph={title.paragraph} x={PAD} y={titleTop} width={inner} />
         <SkiaText
           x={PAD}
           y={dateY}
@@ -346,13 +408,12 @@ const ExportCardCanvas = React.forwardRef<
         <Rect x={PAD} y={phaseRuleY} width={inner} height={1} color={Colors.rule} />
 
         {/* Where it was seen from. Absent records simply skip the line. */}
-        {placeLabel && (
-          <SkiaText
+        {place && (
+          <Paragraph
+            paragraph={place.paragraph}
             x={PAD}
-            y={placeY}
-            text={`Seen from ${placeLabel}`}
-            font={bodyFont}
-            color={Colors.inkMuted}
+            y={placeY - place.firstBaseline}
+            width={inner}
           />
         )}
 
