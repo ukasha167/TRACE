@@ -9,6 +9,7 @@ import {
   Radius,
 } from "@/constants/theme";
 import { SectionHeader } from "./SectionHeader";
+import { formatIllumination } from "@/lib/astronomy/moonPhase";
 import type { RarityStat } from "@/types";
 
 interface Props {
@@ -39,11 +40,16 @@ export function RaritySection({ rarity, unitLabel }: Props) {
       </Text>
 
       <View style={styles.personal}>
+        {/* "Of the", not "of your": a record is as often someone else's
+            birthday as the reader's own. */}
         <Text style={styles.personalLead}>
           <Text style={styles.personalCount}>{rarity.matchingYears.length}</Text>
-          <Text style={styles.personalOf}> of your </Text>
+          <Text style={styles.personalOf}> of the </Text>
           <Text style={styles.personalCount}>{rarity.totalYears}</Text>
-          <Text style={styles.personalOf}> {unitLabel} have had one</Text>
+          <Text style={styles.personalOf}>
+            {" "}
+            {unitLabel} so far {rarity.matchingYears.length === 1 ? "has" : "have"} had one
+          </Text>
         </Text>
         {rarity.matchingDetails && rarity.matchingDetails.length > 0 ? (
           <View style={styles.matchGrid}>
@@ -51,7 +57,7 @@ export function RaritySection({ rarity, unitLabel }: Props) {
               <View key={item.year} style={styles.matchRow}>
                 <Text style={styles.matchYear}>{item.year}</Text>
                 <Text style={styles.matchIllum}>
-                  {item.illuminationPct.toFixed(1)}%
+                  {formatIllumination(item.illuminationPct / 100)}
                 </Text>
               </View>
             ))}

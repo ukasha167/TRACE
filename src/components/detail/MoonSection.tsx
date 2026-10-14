@@ -1,19 +1,11 @@
 import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  useWindowDimensions,
-} from "react-native";
-import { router, type Href } from "expo-router";
+import { View, Text, StyleSheet, useWindowDimensions } from "react-native";
 import {
   Colors,
   Spacing,
   Type,
   FontFamily,
   FontSize,
-  Radius,
 } from "@/constants/theme";
 import { MoonPhaseGlyph } from "../MoonPhaseGlyph";
 import { StarField } from "../moon/StarField";
@@ -22,9 +14,7 @@ import {
   describePhase,
   describeSyzygyNote,
 } from "@/lib/astronomy/moonPhase";
-import type { MoonSnapshot, MilestoneLocation } from "@/types";
-
-const route = (path: string) => path as Href;
+import type { MoonSnapshot } from "@/types";
 
 type PhaseData = Pick<
   MoonSnapshot,
@@ -32,11 +22,9 @@ type PhaseData = Pick<
 >;
 
 interface Props {
-  milestoneId: string;
   phase: PhaseData;
   brightLimbAngleDeg: number | null;
   northAngleDeg: number | null;
-  location: MilestoneLocation | null;
 }
 
 /**
@@ -60,13 +48,7 @@ interface Props {
  * plate instead of stopping at the limb. Nothing else is on the plate. The
  * caption stays on paper below it, because reading surfaces are never dark.
  */
-export function MoonSection({
-  milestoneId,
-  phase,
-  brightLimbAngleDeg,
-  northAngleDeg,
-  location,
-}: Props) {
+export function MoonSection({ phase, brightLimbAngleDeg, northAngleDeg }: Props) {
   const { width } = useWindowDimensions();
   const note = describeSyzygyNote(phase);
 
@@ -102,33 +84,6 @@ export function MoonSection({
       </View>
 
       {note && <Text style={styles.note}>{note}</Text>}
-
-      <View style={styles.metaRow}>
-        <Text style={styles.metaKey}>Observed from</Text>
-        <Text style={styles.metaValue}>
-          {location ? location.label : "Not recorded"}
-        </Text>
-      </View>
-      <View style={styles.metaRow}>
-        <Text style={styles.metaKey}>Limb tilt</Text>
-        <Text style={styles.metaValue}>
-          {brightLimbAngleDeg != null
-            ? `${brightLimbAngleDeg.toFixed(1)}°`
-            : location
-            ? "No coordinates on this record"
-            : "Add a location to compute this"}
-        </Text>
-      </View>
-
-      <Pressable
-        style={({ pressed }) => [styles.immersiveLink, pressed && { opacity: 0.6 }]}
-        onPress={() => router.push(route(`/sky/${milestoneId}`))}
-        accessibilityRole="button"
-        accessibilityLabel="Open the full sky view"
-      >
-        <Text style={styles.immersiveText}>Stand under this sky</Text>
-        <Text style={styles.immersiveArrow}>→</Text>
-      </Pressable>
     </View>
   );
 }
@@ -166,48 +121,4 @@ const styles = StyleSheet.create({
     color: Colors.inkMuted,
   },
   note: { ...Type.small, marginTop: Spacing.sm },
-
-  metaRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: Spacing.md,
-    paddingTop: Spacing.sm,
-    marginTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.rule,
-  },
-  metaKey: {
-    fontFamily: FontFamily.regular,
-    fontSize: FontSize.small,
-    color: Colors.inkMuted,
-  },
-  metaValue: {
-    fontFamily: FontFamily.medium,
-    fontSize: FontSize.small,
-    color: Colors.ink,
-    flexShrink: 1,
-    textAlign: "right",
-  },
-
-  immersiveLink: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: Spacing.sm,
-    backgroundColor: Colors.paperDim,
-    borderRadius: Radius.pill,
-    paddingVertical: Spacing.md,
-    marginTop: Spacing.lg,
-  },
-  immersiveText: {
-    fontFamily: FontFamily.semibold,
-    fontSize: FontSize.body,
-    color: Colors.ink,
-  },
-  immersiveArrow: {
-    fontFamily: FontFamily.regular,
-    fontSize: FontSize.body,
-    color: Colors.signal,
-  },
 });
