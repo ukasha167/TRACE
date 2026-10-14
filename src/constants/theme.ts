@@ -204,6 +204,26 @@ export const SkyColors = {
    */
   starCool: "#CBD8FF",
   starWarm: "#FFD9B0",
+
+  /**
+   * The sky's own ground as the sun comes up through the scrubber: astronomical
+   * twilight, nautical, civil, and the sun on the horizon. Night is `Colors.space`.
+   * Chosen to read as the familiar deepening blue of a clear evening, and kept
+   * dark enough that the brightest stars and planets still show through the
+   * first two.
+   */
+  twilightAstro: "#030712",
+  twilightNautical: "#0B1733",
+  twilightCivil: "#1B3261",
+  daylight: "#3C5F95",
+
+  /**
+   * The Earth's shadow on the moon, applied by multiplying. The umbra is the
+   * copper of a totally eclipsed moon, which comes from sunlight bent through
+   * the Earth's atmosphere; the penumbra only greys the disc a little.
+   */
+  umbra: "#8A3A22",
+  penumbra: "#BDB8B0",
 } as const;
 
 // ---- Typography ----
@@ -218,23 +238,21 @@ export const SkyColors = {
  * Archivo is gone. A grotesque at Black weight was doing display duty, which is
  * what made the app read as a poster rather than a record.
  *
- * The `regular`/`medium`/`bold` keys are Figtree and carry the UI. Anything
+ * The `regular`/`medium`/`semibold` keys are Figtree and carry the UI. Anything
  * named `serif*` is Newsreader. Reach for serif when the string is a name.
+ *
+ * Only weights a screen actually sets live here, because the splash waits for
+ * every one of them to load. Add a weight when something draws with it.
  */
 export const FontFamily = {
   // Newsreader, the voice
-  serifLight: "Newsreader_300Light",
   serif: "Newsreader_400Regular",
   serifMedium: "Newsreader_500Medium",
-  serifSemibold: "Newsreader_600SemiBold",
 
   // Figtree, the interface
-  thin: "Figtree_300Light",
   regular: "Figtree_400Regular",
   medium: "Figtree_500Medium",
   semibold: "Figtree_600SemiBold",
-  bold: "Figtree_700Bold",
-  black: "Figtree_800ExtraBold",
 
   // JetBrains Mono, the figures
   mono: "JetBrainsMono_400Regular",
@@ -443,9 +461,9 @@ export const Type = {
 } as const;
 
 /**
- * Dates in prose: "27 October 2004".
+ * Dates in prose: "20 January 2000".
  *
- * The old system set every date as 27.10.2004 in mono. Mono is right for a
+ * The old system set every date as 20.01.2000 in mono. Mono is right for a
  * figure being compared against other figures, and wrong for a date that is
  * being read as a word. Numerals stay mono where they line up in a column.
  */
@@ -458,7 +476,7 @@ export function formatLongDate(dateStr: string): string {
   });
 }
 
-/** "27 Oct 2004", the same convention compressed for list rows. */
+/** "20 Jan 2000", the same convention compressed for list rows. */
 export function formatShortDate(dateStr: string): string {
   const [year, month, day] = dateStr.split("-").map(Number);
   return new Date(year, month - 1, day).toLocaleDateString("en-GB", {
