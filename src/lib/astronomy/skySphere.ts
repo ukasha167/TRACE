@@ -89,12 +89,12 @@ export interface SkySphere {
    * you are looking at, and neither is possible without the grouping.
    */
   figures: ConstellationFigure[];
-  /** Stars worth labelling: IAU proper names, brightest first. */
-  labels: { vec: [number, number, number]; name: string; mag: number }[];
+  /** Stars worth labelling: IAU proper names, brightest first. RA/Dec in degrees, J2000. */
+  labels: { vec: [number, number, number]; name: string; mag: number; ra: number; dec: number }[];
   /** Messier objects — galaxies, nebulae, clusters. */
   deepSky: {
     id: string; name: string; vec: [number, number, number];
-    mag: number; kind: string;
+    mag: number; kind: string; ra: number; dec: number;
   }[];
   /** Solar-system bodies, kept separate so they can be drawn differently. */
   bodies: {
@@ -269,6 +269,8 @@ export function buildSkySphere(
       vec: [vec[i * 3], vec[i * 3 + 1], vec[i * 3 + 2]],
       name: proper,
       mag: mag[i],
+      ra: kept[i].ra,
+      dec: kept[i].dec,
     });
   }
   labels.sort((a, b) => a.mag - b.mag);
@@ -313,6 +315,8 @@ export function buildSkySphere(
       vec: unitVector(h.altitudeDeg, h.azimuthDeg),
       mag: o.mag,
       kind: o.kind,
+      ra: o.ra,
+      dec: o.dec,
     });
   }
 
@@ -387,7 +391,14 @@ export function projectSphere(
   width: number,
   height: number,
   out: Float32Array,
-  magnitudeLimit: number
+  magnitudeLimit: number,
+  /**
+   * Straight up, in the sphere's own frame. When the time scrubber has turned
+   * the sky, "up" in the sphere is no longer (0, 0, 1). A star below it comes
+   * back with a NEGATIVE radius, so the caller can draw the ground's stars dim
+   * without a second pass.
+   */
+  zenith?: { x: number; y: number; z: number }
 ): number {
   const halfW = width / 2;
   const halfH = height / 2;
@@ -418,13 +429,41 @@ export function projectSphere(
     // dominant instead of the field turning into uniform mush.
     const t = Math.max(0, (magnitudeLimit - m) / (magnitudeLimit + 1.5));
     const o = n * 3;
+    const r = 0.45 + t * t * 4.0;
     out[o] = x;
     out[o + 1] = y;
-    out[o + 2] = 0.45 + t * t * 4.0;
+    out[o + 2] = zenith && e * zenith.x + nn * zenith.y + u * zenith.z < 0 ? -r : r;
     n++;
     if (o + 3 >= out.length) break;
   }
   return n;
+}
+
+/**
+ * projectVector without the allocation, for the per-frame line work.
+ *
+ * The grid, the horizon and the constellation figures project about two
+ * thousand vertices a frame between them. Returning a fresh `{ x, y }` for each
+ * one was the largest source of garbage in the immersive loop, so the hot paths
+ * write into a scratch object the caller owns and reuses.
+ *
+ * @returns false when the point is behind the camera, leaving `out` untouched
+ */
+export function projectInto(
+  e: number,
+  n: number,
+  u: number,
+  cam: CameraBasis,
+  width: number,
+  height: number,
+  out: { x: number; y: number }
+): boolean {
+  const z = e * cam.fx + n * cam.fy + u * cam.fz;
+  if (z <= 0.04) return false;
+  const inv = cam.focal / z;
+  out.x = width / 2 + (e * cam.rx + n * cam.ry + u * cam.rz) * inv;
+  out.y = height / 2 - (e * cam.ux + n * cam.uy + u * cam.uz) * inv;
+  return true;
 }
 
 /** Projects one unit vector. Used for the handful of solar-system bodies. */
