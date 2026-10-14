@@ -4,7 +4,7 @@ export type MilestoneType = "birthday" | "anniversary" | "graduation" | "custom"
 export interface MilestoneLocation {
   latitude: number;
   longitude: number;
-  label: string; // human-readable, e.g. "Lahore, Pakistan" — reverse-geocoded or manually entered
+  label: string; // human-readable, e.g. "Lisbon, Portugal" — reverse-geocoded or manually entered
   /**
    * Minutes from UTC at the milestone's own date (not today's offset).
    * Spec §6.1 — this is what lets a user viewing from another country still
@@ -116,4 +116,6 @@ export interface ApodCacheEntry {
 export interface AppSettings {
   nasaApiKey: string | null; // null = fall back to DEMO_KEY with an in-app rate-limit warning
   hasCompletedOnboarding: boolean;
+  /** The sky view's "hold your phone up" hint has been seen once. */
+  hasSeenPointHint: boolean;
 }
