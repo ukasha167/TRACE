@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { ApodCacheEntry } from "@/types";
 import { classifyApod } from "./apodClassify";
+import { isPlaceholderApod } from "./apodArchive";
 
 /**
  * Backfills `kind` on entries cached before the §8.3 classifier existed.
@@ -39,7 +40,11 @@ export async function getCachedApod(dateStr: string): Promise<ApodCacheEntry | n
   try {
     const raw = await AsyncStorage.getItem(cacheKey(dateStr));
     if (!raw) return null;
-    return hydrate(JSON.parse(raw) as ApodCacheEntry);
+    const entry = JSON.parse(raw) as ApodCacheEntry;
+    // NASA's logo, cached while the API was handing it out for every date.
+    // Read as a miss, so the next fetch finds the real picture and replaces it.
+    if (isPlaceholderApod(entry)) return null;
+    return hydrate(entry);
   } catch {
     // Corrupt cache entry — treat as miss
     return null;
@@ -56,6 +61,41 @@ export async function setCachedApod(entry: ApodCacheEntry): Promise<void> {
   } catch {
     // Non-fatal — device may be out of storage; next fetch will try again
   }
+}
+
+/**
+ * Dates NASA has answered "no picture" for, remembered so they are not asked
+ * again. APOD starts on 16 June 1995 and has gaps, so a ledger for anyone born
+ * before that re-requested every one of those years on every visit, spending the
+ * shared key's thirty an hour on answers that cannot change.
+ *
+ * Callers only record dates that are safely in the past. NASA also says "no" to
+ * dates it has not reached yet, and remembering one of those would hide a
+ * picture that turns up next week.
+ */
+const missingKey = (dateStr: string) => `apod-missing:${dateStr}`;
+
+export async function markApodMissing(dateStr: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(missingKey(dateStr), "1");
+  } catch {
+    // Non-fatal. The worst case is one more request next time.
+  }
+}
+
+/** Which of these dates are known to have no picture, in one round trip. */
+export async function getMissingApodBatch(dateStrs: string[]): Promise<Set<string>> {
+  const missing = new Set<string>();
+  if (dateStrs.length === 0) return missing;
+  try {
+    const pairs = await AsyncStorage.multiGet(dateStrs.map(missingKey));
+    pairs.forEach(([, value], i) => {
+      if (value) missing.add(dateStrs[i]);
+    });
+  } catch {
+    // Unreadable means unknown, and unknown dates simply get requested.
+  }
+  return missing;
 }
 
 /**
@@ -76,7 +116,8 @@ export async function getCachedApodBatch(
       if (!raw) continue;
       try {
         const entry = JSON.parse(raw) as ApodCacheEntry;
-        if (entry?.date) found.set(entry.date, hydrate(entry));
+        // See getCachedApod: the cached logo is a miss, not a picture.
+        if (entry?.date && !isPlaceholderApod(entry)) found.set(entry.date, hydrate(entry));
       } catch {
         // Corrupt entry — treat as a miss.
       }

@@ -89,15 +89,65 @@ test("individual failures are collected without failing the batch", async () => 
   const result = await fetchApodBatch(dates(6), {
     cacheReader: async () => new Map(),
     cacheWriter: async () => {},
+    missingReader: async () => new Set(),
+    missingWriter: async () => {},
     fetcher: async (d) =>
       d.endsWith("03")
-        ? { ok: false, error: { kind: "not_found", message: "gap" } }
-        : { ok: true, entry: entry(d) },
+        ? { ok: false, error: { kind: "server_error", status: 500, message: "down" } }
+        : d.endsWith("04")
+          ? { ok: false, error: { kind: "not_found", message: "gap" } }
+          : { ok: true, entry: entry(d) },
   });
 
   assert.deepEqual(result.failed, ["2020-01-03"]);
-  assert.equal(result.entries.size, 5);
+  // No picture is an answer, kept apart from a failure to get one.
+  assert.deepEqual(result.missing, ["2020-01-04"]);
+  assert.equal(result.entries.size, 4);
   assert.equal(result.rateLimited, false);
+});
+
+test("a date with no picture is remembered and never asked for again", async () => {
+  // The archive has gap days after it begins. A ledger that landed on one used
+  // to re-request it on every visit and get the same "no" each time. (Dates
+  // before the archive begins are never asked at all; see the test below.)
+  const remembered = new Set<string>();
+  const run = () => {
+    const requested: string[] = [];
+    return fetchApodBatch(["1995-06-18", "1999-05-01"], {
+      settledBefore: "2026-01-01",
+      cacheReader: async () => new Map(),
+      cacheWriter: async () => {},
+      missingReader: async (ds) => new Set(ds.filter((d) => remembered.has(d))),
+      missingWriter: async (d) => { remembered.add(d); },
+      fetcher: async (d) => {
+        requested.push(d);
+        return d === "1995-06-18"
+          ? { ok: false, error: { kind: "not_found", message: "a gap day" } }
+          : { ok: true, entry: entry(d) };
+      },
+    }).then((result) => ({ result, requested }));
+  };
+
+  const first = await run();
+  assert.deepEqual(first.requested.sort(), ["1995-06-18", "1999-05-01"]);
+  assert.ok(remembered.has("1995-06-18"));
+
+  const second = await run();
+  assert.deepEqual(second.requested, ["1999-05-01"], "the known gap is skipped");
+  assert.deepEqual(second.result.failed, [], "a known gap is not a failure");
+});
+
+test("a recent 'not found' is not remembered, because NASA may just be early", async () => {
+  const remembered: string[] = [];
+  await fetchApodBatch(["2025-12-31"], {
+    settledBefore: "2025-12-30",
+    cacheReader: async () => new Map(),
+    cacheWriter: async () => {},
+    missingReader: async () => new Set(),
+    missingWriter: async (d) => { remembered.push(d); },
+    fetcher: async () => ({ ok: false, error: { kind: "not_found", message: "future" } }),
+  });
+  assert.deepEqual(remembered, []);
 });
 
 test("an empty date list does no work", async () => {
@@ -128,4 +178,21 @@ test("the API key is threaded through to the fetcher", async () => {
     },
   });
   assert.equal(seen.length, 3);
+});
+
+test("dates before NASA's first picture, or still ahead, are never requested", async () => {
+  const requested: string[] = [];
+  const result = await fetchApodBatch(["1970-03-01", "1995-06-15", "1995-06-16", "2020-01-01", "2030-01-01"], {
+    today: "2026-10-14",
+    cacheReader: async () => new Map(),
+    cacheWriter: async () => {},
+    missingReader: async () => new Set(),
+    missingWriter: async () => {},
+    fetcher: async (d) => {
+      requested.push(d);
+      return { ok: true, entry: entry(d) };
+    },
+  });
+  assert.deepEqual(requested.sort(), ["1995-06-16", "2020-01-01"]);
+  assert.deepEqual(result.failed, []);
 });
