@@ -1,6 +1,6 @@
 import * as SunCalc from "suncalc";
 import type { RarityStat } from "@/types";
-import { parseDateString, toLocalNight } from "./dateUtils";
+import { parseDateString, toLocalNight, todayDateString } from "./dateUtils";
 
 /**
  * RARITY — measured, never asserted. Spec §6.4.
@@ -17,7 +17,36 @@ const MEASURE_START_YEAR = 1980;
 const MEASURE_END_YEAR = 2060;
 const DAY_MS = 86_400_000;
 
-const frequencyCache = new Map<number, number>();
+/** Days in the measurement window, 1980-01-01 to 2060-01-01. */
+export const MEASURED_DAYS = 29_220;
+
+/**
+ * THE WALK'S RESULTS, KEPT.
+ *
+ * `measureFrequency` walks all 29,220 days, and the record screen used to run
+ * that walk inside its first render: 136 ms per threshold under V8 on a laptop,
+ * and several times that under Hermes on a phone, spent before the page could
+ * paint. The answer is a property of the Moon, not of the record, so it is
+ * stored as the count of qualifying days the walk found.
+ *
+ * Still measured, never asserted: a test re-walks every threshold and fails if
+ * any count here drifts from what SunCalc produces. Thresholds not listed fall
+ * back to walking.
+ */
+export const MEASURED_DAY_COUNTS: Readonly<Record<number, number>> = {
+  90: 5_899,
+  95: 4_087,
+  97: 3_172,
+  99: 1_770,
+  99.5: 1_151,
+};
+
+const frequencyCache = new Map<number, number>(
+  Object.entries(MEASURED_DAY_COUNTS).map(([pct, days]) => [
+    Number(pct),
+    days / MEASURED_DAYS,
+  ])
+);
 
 /**
  * Fraction of all days whose moon is at least `thresholdPct` illuminated.
@@ -33,6 +62,18 @@ export function measureFrequency(thresholdPct: number): number {
   const cached = frequencyCache.get(thresholdPct);
   if (cached !== undefined) return cached;
 
+  const { matches, total } = walkDays(thresholdPct);
+  const frequency = matches / total;
+  frequencyCache.set(thresholdPct, frequency);
+  return frequency;
+}
+
+/**
+ * Counts the days in the window whose moon clears `thresholdPct`, every time it
+ * is called. MEASURED_DAY_COUNTS is this function's output, and the test calls
+ * it directly to prove the two still agree.
+ */
+export function walkDays(thresholdPct: number): { matches: number; total: number } {
   const threshold = thresholdPct / 100;
   let matches = 0;
   let total = 0;
@@ -45,16 +86,18 @@ export function measureFrequency(thresholdPct: number): number {
     if (SunCalc.getMoonIllumination(new Date(t)).fraction >= threshold) matches++;
     total++;
   }
-
-  const frequency = matches / total;
-  frequencyCache.set(thresholdPct, frequency);
-  return frequency;
+  return { matches, total };
 }
 
 export interface RarityOptions {
   /** How many anniversaries to check, starting from the source year. */
   throughYear?: number;
   tzOffsetMin?: number;
+  /**
+   * "YYYY-MM-DD" on the phone's calendar. Anniversaries after it have not
+   * happened, so they are not counted among the ones "so far".
+   */
+  today?: string;
 }
 
 /**
@@ -70,13 +113,10 @@ export function getRarityStat(
   options: RarityOptions = {}
 ): RarityStat {
   const { year: sourceYear, month, day } = parseDateString(dateString);
-  const throughYear = options.throughYear ?? new Date().getFullYear();
+  const today = options.today ?? todayDateString();
+  const throughYear = options.throughYear ?? parseDateString(today).year;
   const pad = (n: number) => String(n).padStart(2, "0");
   const threshold = thresholdPct / 100;
-
-  // Illumination on the milestone night itself
-  const sourceNight = toLocalNight(dateString, options.tzOffsetMin);
-  const baseFraction = SunCalc.getMoonIllumination(sourceNight).fraction;
 
   const matchingYears: number[] = [];
   const matchingDetails: { year: number; illuminationPct: number }[] = [];
@@ -84,22 +124,25 @@ export function getRarityStat(
 
   for (let year = sourceYear; year <= throughYear; year++) {
     if (month === 2 && day === 29 && !isLeapYear(year)) continue;
-    totalYears++;
     const target = `${year}-${pad(month)}-${pad(day)}`;
+    // This year's date may still be ahead, and "so far" means so far.
+    if (target > today) break;
+    totalYears++;
     const fraction = SunCalc.getMoonIllumination(
       toLocalNight(target, options.tzOffsetMin)
     ).fraction;
 
-    // A year matches if it clears the threshold OR lands within ±1.0%
-    // of the milestone date's illumination (bare-eye indistinguishable).
-    const isWithinTolerance = Math.abs(fraction - baseFraction) <= 0.010001;
-    const meetsThreshold = fraction >= threshold;
-
-    if (meetsThreshold || isWithinTolerance) {
+    // THE THRESHOLD ALONE. Years within a point of the record's own moon used
+    // to count too, so a 98.9% year went into "3 of the 12 birthdays so far
+    // have had one" under a heading of 99.5% or more. The sentence and the
+    // count have to describe the same set.
+    if (fraction >= threshold) {
       matchingYears.push(year);
       matchingDetails.push({
         year,
-        illuminationPct: Math.round(fraction * 1000) / 10,
+        // Unrounded. Rounding here to one decimal turned a 99.96% moon into a
+        // stored 100, which the screen then printed as a full moon.
+        illuminationPct: fraction * 100,
       });
     }
   }

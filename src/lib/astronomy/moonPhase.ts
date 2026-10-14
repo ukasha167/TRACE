@@ -109,10 +109,19 @@ export function getMoonPhase(
  * Formats illuminated fraction as a percentage string.
  * Uses one decimal above 95% — at that end the difference between 96% and 99.9%
  * is the entire point, and rounding both to "100%" would be a false claim.
+ *
+ * NEVER ROUNDS UP TO 100. One decimal still did: a 99.96% moon printed as
+ * "100.0%", which reads as the exact instant of full and is not. Where one
+ * decimal would round to 100, the figure takes a second decimal, cut rather
+ * than rounded, so it can reach 99.99 and never 100.
  */
 export function formatIllumination(fraction: number): string {
   const pct = fraction * 100;
-  if (pct >= 95 && pct < 100) return `${pct.toFixed(1)}%`;
+  if (pct >= 95 && pct < 100) {
+    const oneDecimal = pct.toFixed(1);
+    if (oneDecimal !== "100.0") return `${oneDecimal}%`;
+    return `${(Math.floor(pct * 100) / 100).toFixed(2)}%`;
+  }
   return `${Math.round(pct)}%`;
 }
 

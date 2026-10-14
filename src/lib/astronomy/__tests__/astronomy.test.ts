@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { getMoonPhase, formatIllumination, describePhase, describeSyzygyNote, phaseDistanceDays } from "@/lib/astronomy/moonPhase";
 import { getBrightLimbAngle } from "@/lib/astronomy/brightLimb";
 import { getMoonReturns, describeCycle } from "@/lib/astronomy/moonReturn";
-import { measureFrequency, getRarityStat } from "@/lib/astronomy/rarity";
+import {
+  measureFrequency,
+  getRarityStat,
+  walkDays,
+  MEASURED_DAY_COUNTS,
+  MEASURED_DAYS,
+} from "@/lib/astronomy/rarity";
 import {
   toLocalNoon,
   toLocalNight,
@@ -83,6 +89,14 @@ test("formatIllumination keeps a decimal in the range where it matters", () => {
   assert.equal(formatIllumination(0.5), "50%");
 });
 
+test("formatIllumination never rounds a moon up to 100%", () => {
+  // One decimal used to print 99.96% as "100.0%", a claim of the exact full.
+  assert.equal(formatIllumination(0.99962), "99.96%");
+  assert.equal(formatIllumination(0.999999), "99.99%");
+  assert.equal(formatIllumination(0.9994), "99.9%");
+  assert.equal(formatIllumination(1), "100%");
+});
+
 // ---- Moon Return ----
 
 test("describeCycle names the classic intervals", () => {
@@ -123,6 +137,18 @@ test("rarity thresholds are monotonic", () => {
   assert.ok(measureFrequency(99) > measureFrequency(99.5));
 });
 
+test("the stored day counts are what walking the days still finds", () => {
+  // The record screen reads MEASURED_DAY_COUNTS instead of walking 29,220 days
+  // during its first render. This is what keeps that table a measurement: if
+  // SunCalc or the sampling convention ever moves, the walk disagrees here.
+  for (const [pct, days] of Object.entries(MEASURED_DAY_COUNTS)) {
+    const walked = walkDays(Number(pct));
+    assert.equal(walked.total, MEASURED_DAYS, "window length");
+    assert.equal(walked.matches, days, `>=${pct}%`);
+    assert.equal(measureFrequency(Number(pct)), walked.matches / walked.total);
+  }
+});
+
 test("personal rarity counts only real anniversaries", () => {
   const stat = getRarityStat("2015-09-28", 99, { throughYear: 2025, tzOffsetMin: 0 });
   assert.equal(stat.totalYears, 11);
@@ -131,13 +157,21 @@ test("personal rarity counts only real anniversaries", () => {
   assert.ok(stat.matchingDetails.every((m) => typeof m.illuminationPct === "number"));
 });
 
-test("personal rarity includes years within ±1.0% of milestone moon", () => {
+test("personal rarity counts exactly the years that clear the threshold", () => {
   const stat = getRarityStat("2015-09-28", 99.5, { throughYear: 2025, tzOffsetMin: 0 });
-  // 2015 moon was 98.8%. With threshold 99.5%, it is included via the ±1.0% tolerance
-  assert.ok(stat.matchingYears.includes(2015));
-  assert.ok(stat.matchingDetails!.some((m) => m.year === 2015 && m.illuminationPct >= 98.0));
-  // 2023 cleared the 99.5% threshold directly (99.7%)
+  // The 2015 moon itself was 98.8%. "N of the M so far have had one" sits under
+  // "at least 99.5%", so a 98.8% year is not one of them, however close.
+  assert.ok(!stat.matchingYears.includes(2015));
+  assert.ok(stat.matchingDetails!.every((m) => m.illuminationPct >= 99.5));
+  // 2023 clears 99.5% (99.7%).
   assert.ok(stat.matchingYears.includes(2023));
+});
+
+test("an anniversary still ahead this year is not counted as one so far", () => {
+  const before = getRarityStat("2015-09-28", 90, { tzOffsetMin: 0, today: "2025-09-27" });
+  const after = getRarityStat("2015-09-28", 90, { tzOffsetMin: 0, today: "2025-09-28" });
+  assert.equal(before.totalYears, 10);
+  assert.equal(after.totalYears, 11);
 });
 
 // ---- Date handling ----
@@ -150,9 +184,9 @@ test("toLocalNoon does not slip a day", () => {
 });
 
 test("toLocalNight is midnight at the END of the date, in the given zone", () => {
-  // UTC+5: local midnight ending 2004-10-27 is 19:00 UTC on 2004-10-27.
-  const d = toLocalNight("2004-10-27", 300);
-  assert.equal(d.toISOString(), "2004-10-27T19:00:00.000Z");
+  // UTC+9: local midnight ending 2015-09-27 is 15:00 UTC on 2015-09-27.
+  const d = toLocalNight("2015-09-27", 540);
+  assert.equal(d.toISOString(), "2015-09-27T15:00:00.000Z");
 });
 
 test("toLocalNight handles month rollover", () => {
@@ -197,8 +231,8 @@ test("MoonReturn.direction is relative to the SOURCE, not to today", () => {
 });
 
 test("longitude-based timezone approximation lands on the right hour", () => {
-  // Lahore 74.34E -> UTC+5, which is Pakistan's actual offset.
-  assert.equal(approximateTimezoneOffsetMin(74.3436), 300);
+  // Tokyo 139.65E -> UTC+9, which is Japan's actual offset.
+  assert.equal(approximateTimezoneOffsetMin(139.6503), 540);
   // Greenwich -> UTC+0.
   assert.equal(approximateTimezoneOffsetMin(0), 0);
   // Sydney 151.2E -> UTC+10 (AEST).
