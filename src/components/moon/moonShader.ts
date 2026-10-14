@@ -17,8 +17,9 @@ import { Skia } from "@shopify/react-native-skia";
  * THE TERMINATOR IS THE SAME CURVE IT ALWAYS WAS, which is the thing to check
  * before trusting any of this. See `lib/astronomy/moonLighting.ts` for the
  * derivation; the short version is that a sphere lit from L has its terminator
- * project to an ellipse of semi-axis |cos g| = |2f - 1|, which is exactly `b`
- * in `litMoonPath`. The two agree by derivation, and a test holds them to it.
+ * project to an ellipse of semi-axis |cos g| = |2f - 1|, which is exactly the
+ * `b` the old two-arc cutout drew. The two agree by derivation, and a test holds
+ * them to it.
  *
  * PHOTOMETRY. The Moon is not Lambertian, and rendering it that way is the
  * commonest way to produce a fake-looking moon: a Lambert sphere is brightest
