@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ApodCacheEntry } from "@/types";
-import { fetchApod, type ApodFetchError } from "@/lib/apod/apodClient";
-import { getCachedApod, setCachedApod } from "@/lib/apod/apodCache";
+import { fetchApod, FIRST_APOD_DATE, type ApodFetchError } from "@/lib/apod/apodClient";
+import { toDateString } from "@/lib/astronomy/dateUtils";
+import {
+  getCachedApod,
+  setCachedApod,
+  getMissingApodBatch,
+  markApodMissing,
+} from "@/lib/apod/apodCache";
+import { settledBefore } from "@/lib/apod/apodBatch";
 import { useSettingsStore } from "@/store/useSettingsStore";
 
 // ---- State shape ----
@@ -38,6 +45,16 @@ export function useApod(dateStr: string | null): ApodStatus & { retry: () => voi
     let cancelled = false;
 
     const load = async () => {
+      // Before NASA's first picture, or not yet published: the answer is known
+      // without asking, and asking spends the shared key's thirty an hour.
+      if (dateStr < FIRST_APOD_DATE || dateStr > toDateString(new Date())) {
+        setState({
+          status: "error",
+          error: { kind: "not_found", message: "No APOD exists for this date." },
+        });
+        return;
+      }
+
       setState({ status: "loading" });
 
       // 1. Check cache — avoids any network call on re-visits
@@ -52,6 +69,18 @@ export function useApod(dateStr: string | null): ApodStatus & { retry: () => voi
         return;
       }
 
+      // A date NASA already said it has no picture for gets the same answer
+      // without spending a request. See markApodMissing.
+      const known = await getMissingApodBatch([dateStr]);
+      if (cancelled) return;
+      if (known.has(dateStr)) {
+        setState({
+          status: "error",
+          error: { kind: "not_found", message: "No APOD exists for this date." },
+        });
+        return;
+      }
+
       // 2. Cache miss — fetch from NASA
       // Prefer user's custom key, then env var, then DEMO_KEY
       const apiKey =
@@ -63,6 +92,9 @@ export function useApod(dateStr: string | null): ApodStatus & { retry: () => voi
       if (cancelled) return;
 
       if (!result.ok) {
+        if (result.error.kind === "not_found" && dateStr < settledBefore()) {
+          markApodMissing(dateStr);
+        }
         setState({ status: "error", error: result.error });
         return;
       }

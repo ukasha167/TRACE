@@ -11,6 +11,8 @@ export interface ApodBatchState {
   total: number;
   rateLimited: boolean;
   failed: string[];
+  /** Dates NASA has no picture for. */
+  missing: string[];
 }
 
 /**
@@ -29,6 +31,7 @@ export function useApodBatch(dates: string[]): ApodBatchState & { retry: () => v
     total: 0,
     rateLimited: false,
     failed: [],
+    missing: [],
   });
 
   // Join the dates so the effect re-runs on content change, not identity change.
@@ -71,6 +74,7 @@ export function useApodBatch(dates: string[]): ApodBatchState & { retry: () => v
           total: prev.total,
           rateLimited: result.rateLimited,
           failed: result.failed,
+          missing: result.missing,
         }));
       })
       .catch(() => {
