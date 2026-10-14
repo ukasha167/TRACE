@@ -396,6 +396,11 @@ console.log(
   `  ${NORMAL_OUT} ${(fs.statSync(NORMAL_OUT).size / 1024).toFixed(0)} KB`
 );
 
+// The 256px pair small moons draw from. Rebuilt from the two files just written,
+// so a new grade or relief reaches the list thumbnails as well as the hero.
+console.log("Downsampling for small moons...");
+await import("./build-moon-thumbs.mjs");
+
 function clamp255(v) {
   return Math.max(0, Math.min(255, Math.round(v)));
 }
