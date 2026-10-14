@@ -1,84 +1,42 @@
-import { useState, useEffect } from "react";
-import * as Location from "expo-location";
+import { useEffect } from "react";
+import {
+  useLocationStore,
+  type LocationPermission,
+} from "@/store/useLocationStore";
 import type { MilestoneLocation } from "@/types";
 
+let refreshedThisSession = false;
+
+/**
+ * The phone's place, for screens that show "here".
+ *
+ * It starts from the place remembered from the last launch and refreshes it
+ * quietly once a session, only if permission was already granted. It never opens
+ * the permission dialog on its own. `request()` does that, and belongs behind a
+ * tap on something that says it will use the location. See useLocationStore for
+ * what the per-screen version of this hook used to cost.
+ */
 export function useCurrentLocation(): {
   location: MilestoneLocation | null;
-  loading: boolean;
+  permission: LocationPermission;
+  locating: boolean;
+  request: () => Promise<MilestoneLocation | null>;
 } {
-  const [location, setLocation] = useState<MilestoneLocation | null>(null);
-  const [loading, setLoading] = useState(true);
+  const location = useLocationStore((s) => s.place);
+  const permission = useLocationStore((s) => s.permission);
+  const locating = useLocationStore((s) => s.locating);
+  const refresh = useLocationStore((s) => s.refresh);
 
   useEffect(() => {
-    let active = true;
+    if (refreshedThisSession) return;
+    refreshedThisSession = true;
+    refresh({ ask: false });
+  }, [refresh]);
 
-    async function fetchLocation() {
-      try {
-        let { status } = await Location.getForegroundPermissionsAsync();
-        if (status !== "granted") {
-          const res = await Location.requestForegroundPermissionsAsync();
-          status = res.status;
-        }
-
-        if (status !== "granted") {
-          if (active) setLoading(false);
-          return;
-        }
-
-        // Try fast cached position first
-        const last = await Location.getLastKnownPositionAsync();
-        if (last && active) {
-          setLocation({
-            latitude: last.coords.latitude,
-            longitude: last.coords.longitude,
-            label: "Current Location",
-            timezoneOffsetMin: -new Date().getTimezoneOffset(),
-          });
-        }
-
-        // Get fresh position
-        const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-
-        if (!active) return;
-        const { latitude, longitude } = pos.coords;
-        let label = `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`;
-
-        try {
-          const [geo] = await Location.reverseGeocodeAsync({
-            latitude,
-            longitude,
-          });
-          if (geo) {
-            const parts = [geo.city, geo.region, geo.country].filter(Boolean);
-            if (parts.length) label = parts.join(", ");
-          }
-        } catch {
-          // Reverse geocoding is a nicety; coordinates are the payload
-        }
-
-        if (active) {
-          setLocation({
-            latitude,
-            longitude,
-            label,
-            timezoneOffsetMin: -new Date().getTimezoneOffset(),
-          });
-        }
-      } catch {
-        // Location unavailable
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-
-    fetchLocation();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  return { location, loading };
+  return {
+    location,
+    permission,
+    locating,
+    request: () => refresh({ ask: true }),
+  };
 }
