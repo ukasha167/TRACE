@@ -21,6 +21,8 @@ import {
 } from "@/constants/theme";
 import { Arrive } from "@/components/Arrive";
 import { useSettingsStore } from "@/store/useSettingsStore";
+import { useBackup } from "@/hooks/useBackup";
+import { sendTestReminder } from "@/hooks/useReminders";
 
 /**
  * SETTINGS, which is mostly a colophon.
@@ -34,8 +36,9 @@ import { useSettingsStore } from "@/store/useSettingsStore";
  *
  * There is exactly one setting in this app. A screen with one setting is not a
  * settings screen, it is an about page that happens to hold a key, so it is
- * built as one: what the app does, what stays on the phone, where the numbers
- * come from, and then the key, folded away.
+ * built as one: what the app does, what stays on the phone, how to keep the
+ * records and try a reminder, where the numbers come from, and then the key,
+ * folded away.
  *
  * THE KEY STILL HAS TO ANNOUNCE ITSELF. Burying it completely would be the
  * opposite mistake: the shared key really does run out, and when it does the
@@ -68,6 +71,8 @@ export default function SettingsScreen() {
   const usingDemo = !nasaApiKey && !envKey;
 
   const version = Constants.expoConfig?.version ?? null;
+  const backup = useBackup();
+  const [testSent, setTestSent] = useState<null | "sent" | "blocked">(null);
 
   const handleSaveKey = useCallback(() => {
     const trimmed = keyDraft.trim();
@@ -127,7 +132,7 @@ export default function SettingsScreen() {
             <Text style={styles.blockLead}>
               The moon, its tilt, how rare that sky was and the years it comes
               back are all worked out here, on the device, from the date you
-              typed. None of it needs a signal.
+              gave it. None of it needs a signal.
             </Text>
             <View style={styles.factRow}>
               <Text style={styles.factKey}>Account</Text>
@@ -137,11 +142,79 @@ export default function SettingsScreen() {
               <Text style={styles.factKey}>Tracking</Text>
               <Text style={styles.factValue}>None</Text>
             </View>
+            {/* Said exactly. This row used to read "Your dates and places:
+                never leave the phone", and both do leave it, each for one
+                purpose the person asked for. */}
             <View style={styles.factRow}>
-              <Text style={styles.factKey}>Your dates and places</Text>
-              <Text style={styles.factValue}>Never leave the phone</Text>
+              <Text style={styles.factKey}>Your records</Text>
+              <Text style={styles.factValue}>Kept on this phone only</Text>
+            </View>
+            <View style={styles.factRow}>
+              <Text style={styles.factKey}>A place you search for</Text>
+              <Text style={styles.factValue}>Sent to Apple or Google to find it</Text>
+            </View>
+            <View style={styles.factRow}>
+              <Text style={styles.factKey}>Your location</Text>
+              <Text style={styles.factValue}>Sent to Apple or Google for its name</Text>
+            </View>
+            <View style={styles.factRow}>
+              <Text style={styles.factKey}>A record's date</Text>
+              <Text style={styles.factValue}>Sent to NASA for that day's picture</Text>
             </View>
           </View>
+        </Arrive>
+
+        {/* ---- Keeping them ---- */}
+        <Arrive delay={120}>
+          <Text style={[styles.label, styles.spaced]}>Keeping your records</Text>
+          <Text style={styles.sectionNote}>
+            They live only on this phone, so a lost phone or a deleted app takes
+            them with it. A backup is one small file you keep wherever you keep
+            files. Restoring adds the records that are missing and leaves the
+            ones already here as they are.
+          </Text>
+          <View style={styles.actionRow}>
+            <Pressable
+              style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
+              onPress={backup.save}
+              disabled={backup.busy !== null}
+              accessibilityRole="button"
+            >
+              <Text style={styles.actionText}>
+                {backup.busy === "save" ? "Saving" : "Save a backup"}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
+              onPress={backup.restore}
+              disabled={backup.busy !== null}
+              accessibilityRole="button"
+            >
+              <Text style={styles.actionText}>
+                {backup.busy === "restore" ? "Reading" : "Restore"}
+              </Text>
+            </Pressable>
+          </View>
+
+          <Text style={[styles.label, styles.spaced]}>Reminders</Text>
+          <Text style={styles.sectionNote}>
+            A record with its bell on sends one notification at 19:00 on its
+            date. This sends the soonest one now, ten seconds from the tap, so
+            you can see what arrives.
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.actionButton, styles.actionSingle, pressed && styles.pressed]}
+            onPress={async () => setTestSent(await sendTestReminder())}
+            accessibilityRole="button"
+          >
+            <Text style={styles.actionText}>
+              {testSent === "sent"
+                ? "Sent. It arrives in ten seconds"
+                : testSent === "blocked"
+                  ? "Notifications are off for TRACE"
+                  : "Send a test reminder"}
+            </Text>
+          </Pressable>
         </Arrive>
 
         {/* ---- Where the numbers come from ---- */}
@@ -153,9 +226,18 @@ export default function SettingsScreen() {
             <SourceRow subject="Moon and sun" source="SunCalc 2" />
             <SourceRow subject="Planets" source="astronomy-engine" />
             <SourceRow subject="Stars" source="Yale Bright Star Catalog" />
+            <SourceRow subject="Star names" source="IAU WGSN" />
+            <SourceRow subject="Constellation lines" source="d3-celestial" />
             <SourceRow subject="Lunar surface" source="NASA LRO" />
             <SourceRow subject="Daily picture" source="NASA APOD" />
           </View>
+          {/* The Free Art License requires this credit to stay visible in the
+              app. See assets/constellations/ATTRIBUTION.md. */}
+          <Text style={styles.license}>
+            Constellation drawings by Johan Meuris for Stellarium, under the Free
+            Art License 1.3 at artlibre.org. Their placement data comes from the
+            Stellarium team under CC BY-SA 4.0.
+          </Text>
         </Arrive>
 
         {/* ---- The one setting ---- */}
@@ -339,7 +421,27 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
 
+  sectionNote: { ...Type.small, marginTop: Spacing.sm },
+  actionRow: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md },
+  actionButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.paperDim,
+  },
+  actionSingle: { marginTop: Spacing.md },
+  actionText: {
+    fontFamily: FontFamily.medium,
+    fontSize: FontSize.small,
+    color: Colors.ink,
+    textAlign: "center",
+  },
+
   sources: { marginTop: Spacing.sm },
+  license: { ...Type.small, marginTop: Spacing.md },
   sourceRow: {
     flexDirection: "row",
     justifyContent: "space-between",
