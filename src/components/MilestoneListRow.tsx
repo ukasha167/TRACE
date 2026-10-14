@@ -7,6 +7,7 @@ import {
   Type,
   FontFamily,
   FontSize,
+  Radius,
   formatShortDate,
 } from "@/constants/theme";
 import { MoonPhaseGlyph } from "./MoonPhaseGlyph";
@@ -24,12 +25,14 @@ const TYPE_LABELS: Record<Milestone["type"], string> = {
   birthday: "Birthday",
   anniversary: "Anniversary",
   graduation: "Graduation",
-  custom: "Record",
+  custom: "A day to remember",
 };
 
 interface Props {
   milestone: Milestone;
   isLast: boolean;
+  /** "In 41 days", from nextAnniversary. The list is sorted by it. */
+  countdown?: string;
 }
 
 /**
@@ -46,7 +49,7 @@ interface Props {
  *
  * No text is truncated. The row grows to fit its title and notes.
  */
-export function MilestoneListRow({ milestone, isLast }: Props) {
+export function MilestoneListRow({ milestone, isLast, countdown }: Props) {
   const tz = milestone.location?.timezoneOffsetMin;
 
   const { phase, tilt, north } = useMemo(() => {
@@ -70,7 +73,7 @@ export function MilestoneListRow({ milestone, isLast }: Props) {
         pressed && styles.rowPressed,
       ]}
       accessibilityRole="button"
-      accessibilityLabel={`${milestone.title}, ${describePhase(phase)}`}
+      accessibilityLabel={`${milestone.title}, ${describePhase(phase)}${countdown ? `, ${countdown.toLowerCase()}` : ""}`}
       onPress={() => router.push(route(`/milestone/${milestone.id}`))}
     >
       <View style={styles.content}>
@@ -84,6 +87,11 @@ export function MilestoneListRow({ milestone, isLast }: Props) {
         </View>
         {milestone.notes ? (
           <Text style={styles.notes}>{milestone.notes}</Text>
+        ) : null}
+        {countdown ? (
+          <View style={styles.pillRow}>
+            <Text style={styles.pill}>{countdown}</Text>
+          </View>
         ) : null}
       </View>
 
@@ -131,4 +139,15 @@ const styles = StyleSheet.create({
     color: Colors.inkMuted,
   },
   notes: { ...Type.small, marginTop: Spacing.sm },
+  pillRow: { flexDirection: "row", marginTop: Spacing.sm },
+  pill: {
+    fontFamily: FontFamily.mono,
+    fontSize: FontSize.label,
+    color: Colors.signal,
+    backgroundColor: Colors.paperDim,
+    borderRadius: Radius.pill,
+    overflow: "hidden",
+    paddingHorizontal: Spacing.sm + 1,
+    paddingVertical: 3,
+  },
 });

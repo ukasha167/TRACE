@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, StyleSheet, PixelRatio } from "react-native";
+import { View, StyleSheet } from "react-native";
 import {
   Canvas,
   Circle,
@@ -7,26 +7,11 @@ import {
   Group,
   ImageShader,
   Shader,
-  useImage,
 } from "@shopify/react-native-skia";
 import { Colors, Radius } from "@/constants/theme";
-import { getLitPathRotation } from "@/lib/astronomy/brightLimb";
-import {
-  lunarLambertL,
-  sunDirection,
-  earthshineGain,
-  printExposure,
-  EARTHSHINE_WRAP,
-} from "@/lib/astronomy/moonLighting";
-import {
-  moonEffect,
-  MINERAL_SATURATION,
-  PRINT_CONTRAST,
-  ALBEDO_MID,
-  RELIEF_STRENGTH,
-  ALBEDO_WHITE,
-  unitRgb,
-} from "@/components/moon/moonShader";
+import { useMoonTextures } from "@/components/moon/moonTextures";
+import { moonEffect } from "@/components/moon/moonShader";
+import { moonGutter, moonUniforms } from "@/components/moon/moonUniforms";
 
 interface MoonPhaseGlyphProps {
   phaseFraction: number; // 0.0–1.0 illuminated fraction
@@ -78,14 +63,6 @@ interface MoonPhaseGlyphProps {
   glow?: "tight" | "hero";
 }
 
-// Statically required assets so they bundle reliably with Metro
-const MOON_ASSET = require("../../assets/moon_disc.png");
-const MOON_NORMAL_ASSET = require("../../assets/moon_normal.png");
-
-const MOONLIGHT = unitRgb(Colors.moonlight);
-const EARTHSHINE = unitRgb(Colors.earthshine);
-const DEG = Math.PI / 180;
-
 /**
  * MOON PHASE GLYPH.
  *
@@ -125,9 +102,11 @@ export function MoonPhaseGlyph({
   round = false,
   glow = "tight",
 }: MoonPhaseGlyphProps) {
-  const moonImage = useImage(MOON_ASSET);
-  const normalImage = useImage(MOON_NORMAL_ASSET);
-  const hero = glow === "hero";
+  // Decoded once and shared by every glyph; small moons get the 256px pair.
+  // See moonTextures for what calling useImage here used to cost.
+  const textures = useMoonTextures(size);
+  const moonImage = textures?.albedo ?? null;
+  const normalImage = textures?.normal ?? null;
 
   // Room for the halo. The bloom falls off as exp(-(r-1)/width) in radii, so the
   // gutter has to outrun the WIDER of the two terms or the glow gets sliced off
@@ -135,55 +114,23 @@ export function MoonPhaseGlyph({
   // obvious in a way it never was on the Prussian plate, which is why the hero
   // gutter went from 0.26 to 0.34 of the disc. Negative margin below keeps the
   // laid-out size at `size`.
-  const gutter = hero
-    ? Math.round(size * 0.34)
-    : Math.max(4, Math.round(size * 0.12));
+  const gutter = moonGutter(size, glow);
   const canvasSize = size + gutter * 2;
   const cx = canvasSize / 2;
   const cy = canvasSize / 2;
   const r = size / 2;
 
-  const uniforms = useMemo(() => {
-    // The light. `getLitPathRotation` is the same number the old path was
-    // rotated by, so the phase lands exactly where it always did.
-    const litRotationDeg = getLitPathRotation(brightLimbAngleDeg, waxing);
-    const sun = sunDirection(phaseFraction, litRotationDeg);
-
-    // The photograph. Independent of the light — decision 18.
-    const texRotDeg = northAngleDeg ?? litRotationDeg;
-
-    return {
-      uCenter: [cx, cy],
-      uRadius: r,
-      uSun: [sun.x, sun.y, sun.z],
-      uLambert: lunarLambertL(sun.phaseAngle),
-      uTexRot: texRotDeg * DEG,
-      uSaturation: MINERAL_SATURATION,
-      uWhite: ALBEDO_WHITE,
-      uContrast: PRINT_CONTRAST,
-      uMid: ALBEDO_MID,
-      // Stopped down as the disc fills AND metered open when the crescent gets
-      // too thin to carry the ramp. The second half is coupled to uEarthGain
-      // below, so neither moves alone. See printExposure.
-      uExposure: printExposure(phaseFraction),
-      uTint: MOONLIGHT,
-      uGlow: hero ? 0.16 : 0.1,
-      // A tight bright core at the limb plus a faint wide skirt. One wide term
-      // strong enough to see is fog, and fog flattens the disc it surrounds.
-      uHalo: hero ? 0.3 : 0.22,
-      uHaloWidth: hero ? 0.045 : 0.035,
-      uHaloFar: hero ? 0.09 : 0.06,
-      uHaloWide: hero ? 0.22 : 0.14,
-      uEarthshine: EARTHSHINE,
-      // The Earth's phase, which is the Moon's inverted. See earthshineGain.
-      uEarthGain: earthshineGain(phaseFraction),
-      uEarthWrap: EARTHSHINE_WRAP,
-      // One device pixel, expressed in radii. fragCoord is in points, so a
-      // constant here would be three times too soft on a 3x screen.
-      uAA: 1 / PixelRatio.get() / r,
-      uRelief: RELIEF_STRENGTH,
-    };
-  }, [cx, cy, r, phaseFraction, waxing, brightLimbAngleDeg, northAngleDeg, hero]);
+  const uniforms = useMemo(
+    () =>
+      moonUniforms(
+        { phaseFraction, waxing, brightLimbAngleDeg, northAngleDeg },
+        cx,
+        cy,
+        r,
+        glow
+      ),
+    [cx, cy, r, phaseFraction, waxing, brightLimbAngleDeg, northAngleDeg, glow]
+  );
 
   const canvas = (
     <Canvas
