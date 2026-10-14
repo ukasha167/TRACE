@@ -38,7 +38,7 @@ const STARS: Star[] = catalog as Star[];
  */
 
 const SITES = [
-  { name: "Lahore", lat: 31.5497, lon: 74.3436 },
+  { name: "Tokyo", lat: 35.6762, lon: 139.6503 },
   { name: "Greenwich", lat: 51.4779, lon: 0 },
   { name: "Sydney", lat: -33.8688, lon: 151.2093 },
   { name: "Quito (equator)", lat: -0.1807, lon: -78.4678 },
@@ -47,7 +47,7 @@ const SITES = [
 
 const EPOCHS = [
   new Date(Date.UTC(1990, 2, 15, 3, 20)),
-  new Date(Date.UTC(2004, 9, 27, 19, 0)),
+  new Date(Date.UTC(2015, 8, 27, 15, 0)),
   new Date(Date.UTC(2026, 5, 1, 12, 0)),
   new Date(Date.UTC(2050, 11, 31, 23, 45)),
 ];
@@ -142,11 +142,11 @@ test("Polaris sits near the pole for a northern observer, and never rises in Syd
   const when = new Date(Date.UTC(2026, 5, 1, 22, 0));
   const polaris = { ra: 37.9529, dec: 89.2642 };
 
-  const lahore = equatorialToHorizontal(polaris.ra, polaris.dec, 31.55, 74.34, when);
+  const tokyo = equatorialToHorizontal(polaris.ra, polaris.dec, 35.68, 139.65, when);
   // Altitude of the celestial pole equals the observer's latitude.
   assert.ok(
-    Math.abs(lahore.altitudeDeg - 31.55) < 1,
-    `Polaris altitude ${lahore.altitudeDeg.toFixed(2)} should track latitude 31.55`
+    Math.abs(tokyo.altitudeDeg - 35.68) < 1,
+    `Polaris altitude ${tokyo.altitudeDeg.toFixed(2)} should track latitude 35.68`
   );
 
   const sydney = equatorialToHorizontal(polaris.ra, polaris.dec, -33.87, 151.2, when);
@@ -174,8 +174,8 @@ test("catalog parsed correctly from the Yale BSC", () => {
 });
 
 test("visibleStars culls the hemisphere below the horizon", () => {
-  const when = new Date(Date.UTC(2004, 9, 27, 19, 0));
-  const visible = visibleStars(STARS, 31.5497, 74.3436, when, 6.5);
+  const when = new Date(Date.UTC(2015, 8, 27, 15, 0));
+  const visible = visibleStars(STARS, 35.6762, 139.6503, when, 6.5);
   assert.ok(visible.length > 2000, `too few visible: ${visible.length}`);
   assert.ok(
     visible.length < STARS.length * 0.6,
@@ -197,8 +197,13 @@ test("disc projection puts zenith at centre and horizon on the rim", () => {
 
   // North (azimuth 0) must project upward, i.e. negative y in screen space.
   assert.ok(horizon.y < 0, "north points up");
+  // A chart of the sky is read looking up, so east sits on the LEFT with north
+  // up. This test used to assert east on the right, which mirrors every
+  // constellation. See projectToDisc.
   const east = projectToDisc({ altitudeDeg: 0, azimuthDeg: 90 });
-  assert.ok(east.x > 0.99, "east points right");
+  assert.ok(east.x < -0.99, "east points left");
+  const west = projectToDisc({ altitudeDeg: 0, azimuthDeg: 270 });
+  assert.ok(west.x > 0.99, "west points right");
 });
 
 // ---- Immersive-mode camera ----
@@ -268,8 +273,8 @@ test("azimuth normalisation and altitude clamping", () => {
 // ---- Precomputed sphere (immersive rendering path) ----
 
 test("sky sphere holds unit vectors and matches the direct transform", () => {
-  const when = new Date(Date.UTC(2004, 9, 27, 19, 0));
-  const loc = { latitude: 31.5497, longitude: 74.3436 };
+  const when = new Date(Date.UTC(2015, 8, 27, 15, 0));
+  const loc = { latitude: 35.6762, longitude: 139.6503 };
   const sphere = buildSkySphere(STARS, loc, when, 6.5);
 
   assert.ok(sphere.count > 8000, `expected the full catalog, got ${sphere.count}`);
@@ -291,10 +296,10 @@ test("sky sphere holds unit vectors and matches the direct transform", () => {
 });
 
 test("the sphere keeps the whole sky, including below the horizon", () => {
-  const when = new Date(Date.UTC(2004, 9, 27, 19, 0));
+  const when = new Date(Date.UTC(2015, 8, 27, 15, 0));
   const sphere = buildSkySphere(
     STARS,
-    { latitude: 31.5497, longitude: 74.3436 },
+    { latitude: 35.6762, longitude: 139.6503 },
     when,
     6.5
   );
@@ -307,10 +312,10 @@ test("the sphere keeps the whole sky, including below the horizon", () => {
 });
 
 test("projection is allocation-free and respects the buffer bound", () => {
-  const when = new Date(Date.UTC(2004, 9, 27, 19, 0));
+  const when = new Date(Date.UTC(2015, 8, 27, 15, 0));
   const sphere = buildSkySphere(
     STARS,
-    { latitude: 31.5497, longitude: 74.3436 },
+    { latitude: 35.6762, longitude: 139.6503 },
     when,
     6.5
   );
@@ -326,10 +331,10 @@ test("projection is allocation-free and respects the buffer bound", () => {
 
 test("looking down shows a different sky than looking up", () => {
   // The regression guard for "I point the phone anywhere and see the same thing".
-  const when = new Date(Date.UTC(2004, 9, 27, 19, 0));
+  const when = new Date(Date.UTC(2015, 8, 27, 15, 0));
   const sphere = buildSkySphere(
     STARS,
-    { latitude: 31.5497, longitude: 74.3436 },
+    { latitude: 35.6762, longitude: 139.6503 },
     when,
     6.5
   );
@@ -348,11 +353,12 @@ test("looking down shows a different sky than looking up", () => {
 // WHAT THE SPHERE DECIDES TO SHOW
 // ---------------------------------------------------------------------------
 
-const LAHORE = { latitude: 31.5204, longitude: 74.3587 };
-const NIGHT = new Date("2004-10-27T19:00:00Z");
+// Tokyo at local midnight on the eve of the 2015 total lunar eclipse.
+const TOKYO = { latitude: 35.6762, longitude: 139.6503 };
+const NIGHT = new Date("2015-09-27T15:00:00Z");
 
 test("constellation figures are grouped and named", () => {
-  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+  const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
 
   // 89 entries for 88 constellations: Serpens is drawn as two figures, because
   // Ophiuchus splits it across the sky. Both halves take the name "Serpens".
@@ -384,7 +390,7 @@ test("constellation figures are grouped and named", () => {
 });
 
 test("the centroid lands inside the figure it names", () => {
-  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+  const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
 
   // Averaging unit vectors, rather than azimuths, is what keeps this true for
   // figures that straddle the azimuth seam. Ursa Minor contains the pole and is
@@ -412,7 +418,7 @@ test("the centroid lands inside the figure it names", () => {
 });
 
 test("deep sky keeps only named nebulae and galaxies", () => {
-  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+  const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
 
   assert.equal(sphere.deepSky.length, 24, "24 of the 110 Messier objects");
 
@@ -436,8 +442,8 @@ test("deep sky keeps only named nebulae and galaxies", () => {
 
 test("the star density cut keeps three quarters of the catalogue", () => {
   // The immersive view builds its sphere at 6.2 rather than the catalogue's 6.5.
-  const full = buildSkySphere(STARS, LAHORE, NIGHT, 6.5);
-  const shown = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+  const full = buildSkySphere(STARS, TOKYO, NIGHT, 6.5);
+  const shown = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
 
   const ratio = shown.count / full.count;
   assert.ok(
@@ -458,7 +464,7 @@ test("the star density cut keeps three quarters of the catalogue", () => {
 // ---------------------------------------------------------------------------
 
 test("artwork data is well formed and fits its sheet", () => {
-  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+  const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
   const withArt = sphere.figures.filter((c) => c.art);
 
   assert.equal(withArt.length, 15, "fifteen figures carry artwork");
@@ -487,7 +493,7 @@ test("artwork data is well formed and fits its sheet", () => {
 });
 
 test("the anchor transform puts each anchor exactly where it projects", () => {
-  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+  const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
   const tile = CONSTELLATION_ART_TILE;
   const W = 400, H = 800;
 
@@ -521,7 +527,7 @@ test("the anchor transform puts each anchor exactly where it projects", () => {
 });
 
 test("the anchor transform refuses to place a figure it cannot see", () => {
-  const sphere = buildSkySphere(STARS, LAHORE, NIGHT, 6.2);
+  const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
   const orion = sphere.figures.find((c) => c.id === "Ori");
   assert.ok(orion?.art);
 

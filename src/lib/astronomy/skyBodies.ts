@@ -75,8 +75,8 @@ export function getSolarSystemSky(
     }
     // No altitude filter. The immersive view renders the full celestial
     // sphere, so a planet below the horizon is still something you can look
-    // down at — culling it here made only Saturn appear on a night when the
-    // other four were simply underfoot.
+    // down at. Culling it here hid Mercury, Venus and Mars on a night when they
+    // were simply underfoot (decision 17).
     planets.push(place(body, label, magnitude));
   }
 

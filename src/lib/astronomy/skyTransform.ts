@@ -141,12 +141,20 @@ export function visibleStars(
 }
 
 /**
- * Stereographic projection of the visible hemisphere onto a disc — the classic
- * planisphere / star-chart layout, and the right choice for a static "this was
- * the whole sky" figure.
+ * The visible hemisphere on a disc: the classic planisphere layout, and the
+ * right choice for a static "this was the whole sky" figure. Zenith distance
+ * maps linearly to radius, which makes it azimuthal equidistant rather than
+ * stereographic; constellations near the horizon stretch a little sideways.
  *
  * Zenith sits at the centre, the horizon on the rim. North is up by default;
  * `rotationDeg` turns the chart.
+ *
+ * EAST IS ON THE LEFT. A sky chart is read looking up, and looking up with north
+ * at the top of your view puts east on your left. Every planisphere and printed
+ * star chart is drawn that way. This function used to put east on the right,
+ * which is a map of the ground: every constellation came out mirrored, Orion
+ * facing the wrong way, and its test asserted the mirror. Nothing drew with it
+ * until the record's star map, which is why it never showed.
  *
  * Returns unit coordinates in [-1, 1]; the caller scales to its canvas.
  */
@@ -158,7 +166,8 @@ export function projectToDisc(
   const r = (90 - body.altitudeDeg) / 90;
   const theta = (body.azimuthDeg + rotationDeg) * DEG;
   return {
-    x: r * Math.sin(theta),
+    // Negated so east (azimuth 90) lands on the left, as seen looking up.
+    x: -r * Math.sin(theta),
     // Negated so north (azimuth 0) points up the screen rather than down.
     y: -r * Math.cos(theta),
   };
