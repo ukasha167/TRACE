@@ -33,8 +33,8 @@ test("phase angle inverts the illuminated fraction", () => {
   }
 });
 
-test("the shader's terminator is the same ellipse litMoonPath draws", () => {
-  // litMoonPath uses b = r * |2f - 1|. The shader's terminator falls out of
+test("the shader's terminator is the ellipse the two-arc cutout drew", () => {
+  // The cutout used b = r * |2f - 1|. The shader's terminator falls out of
   // N·L = 0 as an ellipse of semi-axis |cos g|, and cos g = 2f - 1. If these
   // ever diverge the phase is drawn two different ways in two places.
   for (const f of [0, 0.05, 0.25, 0.5, 0.75, 0.95, 1]) {

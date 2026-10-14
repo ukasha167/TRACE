@@ -232,7 +232,7 @@ const LIBRATION_TOLERANCE_DEG = 8;
 
 const SITES: [string, number, number][] = [
   ["London", 51.5, 0],
-  ["Lahore", 31.55, 74.34],
+  ["Tokyo", 35.68, 139.65],
   ["Sydney", -33.87, 151.21],
   ["Equator", 0, 0],
   ["Reykjavik", 64.13, -21.9],
@@ -242,7 +242,7 @@ const SITES: [string, number, number][] = [
 const PHASES = [
   "2024-04-15T19:30:00Z", // first quarter
   "2024-04-02T05:00:00Z", // last quarter
-  "2004-10-27T19:00:00Z", // 99.9% waning
+  "2015-09-27T20:00:00Z", // 99.9% waxing, seven hours before the eclipse
   "1996-04-21T20:46:00Z", // 15% waxing crescent
 ];
 
@@ -275,7 +275,7 @@ test("the pole is NOT 90° from the bright limb — this is the libration the ol
   // other, which is why the old coupled model looked plausible. But the offset
   // is real, and on at least one fixture it is degrees, not rounding.
   let largest = 0;
-  for (const iso of ["2024-04-15T19:30:00Z", "2004-10-27T19:00:00Z", "1996-04-21T20:46:00Z"]) {
+  for (const iso of ["2024-04-15T19:30:00Z", "2015-09-27T20:00:00Z", "1996-04-21T20:46:00Z"]) {
     for (const [name, lat, lng] of SITES) {
       const date = new Date(iso);
       const location = { latitude: lat, longitude: lng, label: name };
@@ -334,7 +334,7 @@ test("near syzygy the bright limb degenerates and the pole does not", () => {
   };
 
   // Total solar eclipse — exact new moon.
-  const newMoon = swing("2024-04-08T18:17:00Z", 31.55, 74.34);
+  const newMoon = swing("2024-04-08T18:17:00Z", 35.68, 139.65);
   assert.ok(
     newMoon.coupled > 250,
     `expected the bright limb to whip round at new moon, got ${newMoon.coupled.toFixed(1)}°`

@@ -82,10 +82,11 @@ export function sunDirection(
  *
  * For a sphere lit from L the terminator is N·L = 0, which projects to an
  * ellipse of semi-axis |cos g| across and 1 down; and cos g = 2f - 1. That is
- * the same |2f - 1| that `litMoonPath` uses for `b`.
+ * the same |2f - 1| the two-arc cutout used for `b` before the shader replaced
+ * it.
  *
- * This exists so the two can be held against each other in a test. If they ever
- * disagree, the phase is being drawn two different ways in two places.
+ * This exists so a test can hold the shader's terminator to that derivation. If
+ * the two ever disagree, the phase has moved without anyone meaning it to.
  */
 export function terminatorSemiAxis(phaseFraction: number): number {
   return Math.abs(2 * clamp01(phaseFraction) - 1);

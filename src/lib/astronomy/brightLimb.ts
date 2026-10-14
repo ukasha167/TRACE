@@ -92,8 +92,9 @@ export function getMoonLimbRotation(
 }
 
 /**
- * Computes the clockwise rotation (degrees) to apply to the LIT REGION path
- * (`litMoonPath`) — the illuminated limb and the terminator ellipse.
+ * Computes the clockwise rotation (degrees) to apply to the LIT REGION: the
+ * illuminated limb and the terminator ellipse, which the shader lights by aiming
+ * its sun along this angle.
  *
  * NAMING, because the old name was a trap: this used to be
  * `getMoonTextureRotation` and drove the lunar photograph as well as the
