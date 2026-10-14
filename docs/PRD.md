@@ -1,4 +1,4 @@
-# TRACE — product definition
+# TRACE: product definition
 
 ## The thesis
 
@@ -42,8 +42,15 @@ pulls back toward that shape is a regression.
 | Bright-limb tilt | Supporting | Folds into the moon glyph and the sky render. |
 | Constellation figures | Supporting | Lines and names for all 88, drawn artwork for the 15 people look for. |
 | NASA APOD per date | Supporting | A secondary card, never the hero. |
-| Export card | Supporting | Skia card at 1080x1920 or 1080x1080. |
-| Tonight surface | Supporting | The app is about now as well as then. |
+| The reveal | Core | Saving a record plays the moon of that night rising, with four lines. The moment the app exists for. |
+| Coming up and reminders | Core | The next anniversary and its moon, and a notification at 19:00 on the night. The reason to open the app twice. |
+| That night, in words | Core | When the moon rose and set, how high it climbed, what it sat in front of, any eclipse. |
+| Star map | Supporting | The whole sky over that place at midnight, on the record page. |
+| Life in moons | Supporting | Every anniversary's moon in one grid, returns ringed, a year opening onto NASA's picture. |
+| Planet returns | Supporting | Jupiter and Saturn coming back to the same stars, beside the moon's returns. |
+| Export card | Supporting | Night (default) or paper, story or square, 1080 wide, an optional line of the sender's own. |
+| Tonight surface | Supporting | Tonight's moon, any night's moon by the dial, the next full and new moon, rise and set, 30 nights. |
+| Backup and restore | Supporting | The records as one file through the share sheet, and back. |
 | Planetary age converter | Cut | Every space-novelty app has this. Removed, screen and library both. |
 | Light-travel distances | Cut | Emotionally inert. Nobody is alive for the arrival and the user cannot go look at the object. |
 | Hubble/JWST curated set | Cut | A worse APOD at higher curation cost, visibly redundant under the real NASA image. |
@@ -51,28 +58,29 @@ pulls back toward that shape is a regression.
 
 ## User journey
 
-1. Open the app. Home leads with tonight's moon over the current location, then the saved records.
-2. Tap `+`. Title, type, date, optional location.
-3. The app computes the moon, its rarity, the return years, and the sky for that date and place,
-   then fetches and caches the APOD.
-4. The detail screen leads with the moon that night, then rarity, then the returns, then the ledger
-   link, then the APOD card.
-5. Immersive mode: hold the phone up and look around the sky as it was that night.
-6. Export a card through the native share sheet.
-7. All of it works offline after the first fetch.
+1. Open the app. Home leads with tonight's moon over the current location, its tools, the soonest
+   anniversary, then the saved records sorted by days left. A first run offers three starts.
+2. Tap "Add a date". Title, type, date, optional place.
+3. Save. The reveal plays the moon of that night, and the record opens under it.
+4. The record leads with the moon, that night in a sentence or two, this year's night with its
+   reminder bell, how uncommon it was, the returns on a timeline with the planets, the star map,
+   life in moons, NASA's picture, and share. The instrument readings sit in a fold at the bottom.
+5. Immersive mode: hold the phone up, scrub from sunset to sunrise, tap a star to name it.
+6. Share a card through the native share sheet.
+7. On the night, a notification. All of it works offline after the first picture fetch.
 
 ## Screens
 
 | Screen | Route | Purpose |
 |---|---|---|
-| Home | `/` | Tonight's moon over the current location, then the record ledger. Empty state with a real CTA. |
+| Home | `/` | Tonight's moon and the any-night dial, tonight's tools, the soonest anniversary, then the records. First run offers three starts. |
 | Add record | `/milestone/new` | Title, type, date, optional location. |
 | Edit record | `/milestone/edit/[id]` | Same form, prefilled. |
-| Record detail | `/milestone/[id]` | Moon that night, rarity, returns, ledger link, APOD card, export. |
-| Immersive sky | `/sky/[id]` | Full-screen time-shifted planetarium. `/sky/tonight` synthesises a record for now. |
-| Life ledger | `/ledger/[id]` | One row per year: age, moon glyph at true phase and tilt, APOD thumbnail. |
-| Export preview | `/export/[id]` | Skia card, Story or Square, native share. |
-| Settings | `/settings` | What the app is, what stays on the phone, credits, and the NASA key folded away. |
+| Record detail | `/milestone/[id]` | The order in the journey above. |
+| Immersive sky | `/sky/[id]` | Full-screen planetarium for that night, sunset to sunrise. `/sky/tonight` synthesises a record for now. |
+| Life in moons | `/ledger/[id]` | A grid of every anniversary's moon, a card for the year tapped, and the table one tap away. |
+| Share | `/export/[id]` | Night or paper card, story or square, an optional dedication, native share. |
+| Settings | `/settings` | What the app is, what leaves the phone and why, backup and restore, a test reminder, credits, the NASA key folded away. |
 
 ## Framing rules
 
@@ -83,16 +91,20 @@ has no reason to exist.
 
 **APOD is never the hero.** It publishes a *featured* image, not one captured that day, and it is
 the one part of a record that is not specific to the person. The only honest framing is "what the
-world was looking at that day". Because the hero is local computation, every APOD failure state
+world was looking at that day". NASA's own API stopped serving past dates in 2026; the app reads the
+archive pages instead (DECISIONS 38). Because the hero is local computation, every APOD failure state
 still leaves a complete screen.
 
 **Rarity never uses an adjective where a number will do.** The global frequency is measured by
-walking the days, not asserted. The personal number matters more: "2 of your 22 birthdays have had a
-moon this full."
+walking the days, not asserted. The personal number matters more: "2 of the 22 birthdays so far have
+had one", counted at the same threshold the headline names (DECISIONS 37).
 
 ## Build phases
 
-Phases A through H are built, tested, and verified on an iPhone simulator and a Pixel 7 Pro.
+Phases A through H are built, tested, and verified on an iPhone simulator and a Pixel 7 Pro. The
+improvement stages after them (the reveal, coming up and reminders, night facts, the star map, the
+sky scrubber, life in moons, the night card, tonight's tools, backup) are verified on the iPhone
+simulator only.
 
 | Phase | Scope | State |
 |---|---|---|
@@ -109,11 +121,16 @@ Phases A through H are built, tested, and verified on an iPhone simulator and a 
 
 Open work, roughly in order of value.
 
+- **Real timezone data, from a bundled town list.** Typed places get an offset estimated from their
+  longitude, which is 1 to 2 hours out for Spain, Portugal, France and western China and 30 minutes
+  out for India. The plan is the GeoNames list of towns over 15,000 people (about 3 MB zipped, CC BY
+  4.0), searched offline as you type, each town carrying its own zone. It also makes the place field
+  work offline and gives typed places proper names. Waiting on a yes to download the file.
+- **Real-device checks.** Android as a whole, pointing on a real phone, a reminder arriving on its
+  night and opening its record when tapped, and one release build before judging speed.
+- **An Android home-screen widget** with tonight's moon and the next anniversary. Needs a
+  development build instead of Expo Go.
+- **The live moon above the form's date wheel.** Built in the prototype, not picked.
+- **A night appearance** for the reading surfaces. Built in the prototype, not picked; paper was.
 - **Figure artwork for the other 73 constellations.** Fifteen have one. The rest keep lines and a
   name, which is the right trade for now: nobody is looking for Antlia.
-- **Notification when a return approaches.** The tonight surface already knows; nothing tells the
-  user when the app is closed.
-- **Real timezone data.** Offsets are approximated from longitude today. See ASTRONOMY.md for the
-  size of the error and why it is tolerable. This is the largest correctness gap left: a place whose
-  civil offset does not match its longitude gets the wrong night, and the fix needs a timezone
-  boundary lookup bundled offline, not another approximation.

@@ -1,34 +1,39 @@
 # TRACE
 
-An offline-first astronomy app about recurrence. Enter any date and location meaningful to you, and TRACE reconstructs the exact night sky as it appeared that evening, calculates the rarity of that moon, and discovers the future and past anniversary years when that sky returns.
+An offline-first astronomy app about recurrence. Give it a date and a place, and it works out the moon that hung over that place that night, how uncommon that sky was, and the years it comes back.
 
-Built with Expo, React Native, and TypeScript. All astronomical calculations and planetarium renders run entirely on-device without requiring a backend.
+Built with Expo, React Native and TypeScript. Every astronomical calculation and the planetarium run on the phone. There is no backend.
 
 ---
 
 ## Features
 
-- **Moon Recurrence**: Searches 60 years in either direction to identify anniversary dates when the moon returns to the exact same phase (based on astronomical cycles like the 19-year Metonic cycle).
-- **Measured Rarity**: Calculates the statistical uniqueness of any given moon phase and illumination level against a 29,220-day historical baseline.
-- **Life Ledger**: A year-by-year chronological timeline across an entire life, pairing each birthday's true lunar phase and tilt with NASA's Astronomy Picture of the Day (APOD).
-- **Immersive Planetarium**: Real-time 3D sky view tracking phone movement (compass & gyro) or touch gestures. Features 8,404 stars, 89 constellations, 110 Messier objects, planets, and the moon accurately positioned for any historical date and location.
-- **Topocentric Lunar Rendering**: Real-time moon shader rendering true limb illumination, realistic Earthshine, and local observer tilt.
-- **Shareable Export Cards**: High-resolution Skia-rendered summary cards (1080x1920 or 1080x1080) for sharing milestones.
-- **Privacy & Offline First**: Zero tracking, zero ads, no accounts, and no telemetry. Location data never leaves the device.
+- **The reveal.** Saving a date plays the moon of that night rising at its real phase and tilt, then four lines: when and where, how lit, one fact about the night, and how uncommon it was or when it comes back.
+- **That night, in words.** When the moon rose and set against sunset and sunrise, how high it climbed and in which direction, the constellation it sat in, the planets up at midnight, and any lunar eclipse.
+- **Moon returns.** The anniversaries, 60 years either side, when the moon comes back to within a day of the same phase, each named by its cycle (Metonic 19 years, 11, 8, and their sums), drawn on a timeline with today marked. Jupiter and Saturn returns sit beside them.
+- **Measured rarity.** How many days in a 29,220-day window carry a moon at least as full as the threshold this one clears, and how many of the record's own anniversaries so far have.
+- **Coming up and reminders.** The next anniversary, the moon it will bring, and an optional notification at 19:00 on the night.
+- **Life in moons.** Every anniversary's moon in one grid, full ones glowing and return years ringed, each opening onto NASA's Astronomy Picture of the Day for that date.
+- **The sky that night.** A star map on the record page, and a full-screen planetarium that follows the phone or a finger, scrubs from sunset to sunrise, draws the moon at its phase, shows a lunar eclipse's shadow, and names what you tap: 6,331 stars to magnitude 6.2, 88 constellations, 24 named nebulae and galaxies, the five planets you can see by eye.
+- **Tonight.** Tonight's moon on Home, any other night's by a dial, the next full and new moon, moonrise and moonset, and the next 30 nights.
+- **Share cards.** A night card or a paper card, 1080 by 1920 or 1080 by 1080, with an optional line of your own.
+- **Backup and restore.** The records as one file through the share sheet, and back in without overwriting anything.
+- **Privacy.** No accounts, no tracking, no ads. Records stay on the phone. A place you search for goes to the phone's geocoder (Apple or Google), and a record's date goes to NASA to fetch that day's picture.
 
 ---
 
-## How It's Built
+## How it is built
 
-### Tech Stack
+### Stack
 
 - **Framework**: [Expo](https://expo.dev) (~57) with [Expo Router](https://docs.expo.dev/router/introduction/) (file-based routing) and React Native (0.86). Fully compatible with Expo Go.
 - **Rendering & Shaders**: [@shopify/react-native-skia](https://shopify.github.io/react-native-skia/) & [React Native Reanimated](https://docs.swmansion.com/react-native-reanimated/) for 60 FPS celestial projection and SkSL custom lunar surface shaders.
-- **Astronomical Math**: Client-side coordinate transforms, ephemeris calculations, and celestial mechanics using pure TypeScript, [`astronomy-engine`](https://github.com/cosinekitty/astronomy), and [`suncalc`](https://github.com/mourner/suncalc).
+- **Astronomy**: Coordinate transforms in plain TypeScript, with [`astronomy-engine`](https://github.com/cosinekitty/astronomy) for planets, rise and set, eclipses and cross-checks, and [`suncalc`](https://github.com/mourner/suncalc) for the moon's phase and angles.
 - **State Management**: [Zustand](https://github.com/pmndrs/zustand) with `@react-native-async-storage/async-storage` persistence.
-- **Data Caching**: NASA APOD imagery cached locally in AsyncStorage for offline access.
+- **Pictures**: NASA's Astronomy Picture of the Day, read from its archive pages for past dates and its API for recent ones, cached in AsyncStorage.
+- **Reminders**: `expo-notifications`, local only.
 
-### Project Structure
+### Project structure
 
 ```
 src/
@@ -36,15 +41,17 @@ src/
 ├── components/     # UI components, Skia canvas renderers, and lunar shaders
 ├── hooks/          # Custom hooks (device orientation, sensors, animations)
 ├── lib/
-│   ├── astronomy/  # Pure astronomical math and algorithms (100% test-covered)
-│   └── apod/       # NASA APOD client and response normalization
+│   ├── astronomy/  # Pure astronomical maths, where most of the tests point
+│   ├── reminders/  # The reminder plan and its words
+│   ├── backup/     # The records file, written and read
+│   └── apod/       # NASA's pictures: API, archive pages, cache
 ├── store/          # Zustand store with persistence
 └── data/           # Pre-compiled Yale star catalog, constellations, and Messier data
 ```
 
 ---
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
@@ -64,7 +71,7 @@ src/
    npm install
    ```
 
-### Running the App
+### Running the app
 
 Start the Expo development server:
 
@@ -76,9 +83,9 @@ npx expo start
 - Press **`a`** to launch in the Android Emulator.
 - Scan the QR code with your camera (iOS) or the Expo Go app (Android) to test on a physical device.
 
-### NASA API Key (Optional)
+### NASA API key (optional)
 
-The app queries NASA's Astronomy Picture of the Day (APOD) for the Life Ledger and milestone records. A fallback `DEMO_KEY` is included out-of-the-box, but is rate-limited to 30 requests per hour.
+The app asks NASA's APOD API for the pictures of the last two weeks; older dates come from the archive pages and need no key. A fallback `DEMO_KEY` is built in, limited to 30 requests an hour.
 
 For unrestricted use (1,000 requests/hour):
 1. Obtain a free API key at [api.nasa.gov](https://api.nasa.gov).
@@ -90,12 +97,12 @@ For unrestricted use (1,000 requests/hour):
 
 ---
 
-## Development & Testing
+## Development and testing
 
 TRACE uses `tsx` with Node's built-in test runner for unit tests:
 
 ```bash
-# Run unit test suite (155 tests)
+# Run the unit tests (215)
 npm test
 
 # Type check with TypeScript
@@ -104,11 +111,11 @@ npx tsc --noEmit
 
 ---
 
-## Data & Attribution
+## Data and attribution
 
 - **Stars (8,404 to mag 6.5)**: Yale Bright Star Catalog (5th Revised Ed., Public Domain)
 - **Proper Star Names (333)**: IAU Working Group on Star Names (IAU-CSN)
-- **Constellations & Messier Objects**: [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD-3-Clause)
+- **Constellations and Messier objects**: [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD-3-Clause)
 - **Constellation Illustrations**: Johan Meuris for Stellarium (Free Art License 1.3)
 - **Astronomy Picture of the Day**: NASA (Public Domain / respective authors)
 
