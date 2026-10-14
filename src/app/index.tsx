@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -20,13 +20,27 @@ import Animated, {
   Extrapolation,
 } from "react-native-reanimated";
 import { Colors, Spacing, Type, FontFamily, FontSize, Radius } from "@/constants/theme";
-import { useMilestonesStore } from "@/store/useMilestonesStore";
+import {
+  useMilestonesStore,
+  useMilestonesHydrated,
+} from "@/store/useMilestonesStore";
 import { MilestoneListRow } from "@/components/MilestoneListRow";
 import { TonightHero } from "@/components/TonightHero";
 import { Arrive } from "@/components/Arrive";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
+import { TonightTools } from "@/components/TonightTools";
+import { ComingUpHome } from "@/components/ComingUpHome";
+import { anniversaryDate, nextAnniversary, countdownLabel } from "@/lib/astronomy/anniversary";
+import { todayDateString } from "@/lib/astronomy/dateUtils";
 
 const route = (path: string) => path as Href;
+
+/** The first-run starts. Each opens the form with its type chosen. */
+const STARTS = [
+  { type: "birthday", title: "A birthday", body: "Yours, or someone else's." },
+  { type: "anniversary", title: "An anniversary", body: "The night two lives joined up." },
+  { type: "custom", title: "A day to remember", body: "A first night somewhere, a last one, anything." },
+] as const;
 
 /**
  * HOME. The dark hero, then the record ledger on paper.
@@ -47,9 +61,33 @@ const route = (path: string) => path as Href;
  */
 export default function HomeScreen() {
   const milestones = useMilestonesStore((s) => s.milestones);
-  const { location } = useCurrentLocation();
+  const hydrated = useMilestonesHydrated();
+  const { location, permission, request: requestLocation } = useCurrentLocation();
   const insets = useSafeAreaInsets();
   const isEmpty = milestones.length === 0;
+  const [offsetDays, setOffsetDays] = useState(0);
+  const scrollRef = useRef<Animated.ScrollView>(null);
+  const today = todayDateString();
+
+  // Soonest first. The list used to be in the order records were added, which
+  // is a fact about the app, not about anybody's year. Sorting needs only the
+  // dates; the moon is worked out for the one record the card shows.
+  const upcoming = useMemo(
+    () =>
+      milestones
+        .map((m) => ({ milestone: m, next: anniversaryDate(m, today) }))
+        .sort((a, b) => a.next.daysLeft - b.next.daysLeft),
+    [milestones, today]
+  );
+  const soonest = useMemo(
+    () => (upcoming.length ? nextAnniversary(upcoming[0].milestone, today) : null),
+    [upcoming, today]
+  );
+
+  const pickNight = useCallback((days: number) => {
+    setOffsetDays(days);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, []);
 
   const scrollY = useSharedValue(0);
   const [heroHeight, setHeroHeight] = useState(0);
@@ -127,6 +165,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.root}>
       <Animated.ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         onScroll={onScroll}
@@ -134,23 +173,50 @@ export default function HomeScreen() {
       >
         <View onLayout={onHeroLayout}>
           <TonightHero
+            offsetDays={offsetDays}
+            onChangeOffset={setOffsetDays}
+            onSaveDate={(date) => router.push(route(`/milestone/new?date=${date}`))}
             milestones={milestones}
             location={location}
+            locationDenied={permission === "denied"}
+            onRequestLocation={requestLocation}
             topInset={insets.top}
           />
         </View>
 
         <View style={styles.page}>
-          {isEmpty ? (
+          <TonightTools location={location} offsetDays={offsetDays} onPickNight={pickNight} />
+          {/* Nothing until storage answers. Branching on an empty array before
+              then told people with records that they had none. */}
+          {!hydrated ? null : isEmpty ? (
             <Arrive delay={200}>
-              <Text style={styles.emptyHeadline}>Nothing recorded yet.</Text>
+              <Text style={styles.emptyHeadline}>Whose night should we find first?</Text>
               <Text style={styles.emptyBody}>
-                Add a date that matters and TRACE works out the moon that hung
-                over it, how uncommon that sky was, and the years it comes back.
+                Give TRACE a date and it works out the moon that hung over it, how
+                uncommon that sky was, and the years it comes back.
               </Text>
+              <View style={styles.starts}>
+                {STARTS.map((s) => (
+                  <Pressable
+                    key={s.type}
+                    onPress={() => router.push(route(`/milestone/new?type=${s.type}`))}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [styles.start, pressed && styles.addPressed]}
+                  >
+                    <Text style={styles.startTitle}>{s.title}</Text>
+                    <Text style={styles.startBody}>{s.body}</Text>
+                  </Pressable>
+                ))}
+              </View>
             </Arrive>
           ) : (
             <>
+              {soonest && (
+                <Arrive delay={120}>
+                  <ComingUpHome milestone={upcoming[0].milestone} next={soonest} />
+                </Arrive>
+              )}
+
               <Arrive delay={160}>
                 <View style={styles.listHead}>
                   <Text style={styles.listLabel}>Your skies</Text>
@@ -158,11 +224,12 @@ export default function HomeScreen() {
                 </View>
               </Arrive>
 
-              {milestones.map((milestone, index) => (
+              {upcoming.map(({ milestone, next }, index) => (
                 <Arrive key={milestone.id} index={index} delay={220}>
                   <MilestoneListRow
                     milestone={milestone}
-                    isLast={index === milestones.length - 1}
+                    isLast={index === upcoming.length - 1}
+                    countdown={countdownLabel(next.daysLeft)}
                   />
                 </Arrive>
               ))}
@@ -236,6 +303,16 @@ const styles = StyleSheet.create({
 
   emptyHeadline: { ...Type.title, marginTop: Spacing.xl },
   emptyBody: { ...Type.bodyMuted, marginTop: Spacing.md, maxWidth: 380 },
+  starts: { gap: Spacing.sm + 2, marginTop: Spacing.lg },
+  start: {
+    backgroundColor: Colors.paperDim,
+    borderRadius: Radius.plate,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md + 2,
+    gap: 2,
+  },
+  startTitle: { ...Type.heading },
+  startBody: { ...Type.small },
 
   settingsLink: { alignSelf: "flex-start", paddingVertical: Spacing.lg },
   settingsText: {
