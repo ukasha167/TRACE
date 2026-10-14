@@ -132,9 +132,14 @@ const SNAP_DEG = 45;
  */
 const GRAVITY_SIGN = Platform.OS === "android" ? 1 : -1;
 
+/**
+ * @param diagnostics whether the debug panel is open. Its numbers are published
+ *   through React state, so with the panel shut they are not published at all.
+ */
 export function useSkyOrientation(
   initialAzimuth = 180,
-  fovDeg = 65
+  fovDeg = 65,
+  diagnostics = false
 ): SkyOrientation {
   // NOT React state. Publishing the view through setState ran a full
   // reconciliation pass 60 times a second, which congested the JS thread and
@@ -190,6 +195,20 @@ export function useSkyOrientation(
   flipHeadingRef.current = flipHeading;
   const fovRef = useRef(fovDeg);
   fovRef.current = fovDeg;
+  const diagnosticsRef = useRef(diagnostics);
+  diagnosticsRef.current = diagnostics;
+  const headingAccuracyRef = useRef(headingAccuracy);
+  headingAccuracyRef.current = headingAccuracy;
+
+  // Whether there is a motion sensor at all, asked once. Drag mode needs the
+  // answer to say so when pointing cannot work, without running the sensors.
+  useEffect(() => {
+    let cancelled = false;
+    Accelerometer.isAvailableAsync()
+      .then((available) => { if (!cancelled) setMotionAvailable(available); })
+      .catch(() => { if (!cancelled) setMotionAvailable(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   // ---- Raw sensors -> absolute orientation ----
   //
@@ -200,10 +219,12 @@ export function useSkyOrientation(
   // the magnetometer, that mismatch made vertical motion visibly stepped while
   // horizontal stayed smooth. Raw sensors, sampled at matched rates, fixes it.
   //
-  // DeviceMotion is still subscribed, but only as the referee for the
-  // accelerometer's sign convention (see gravitySignFromEuler) — a slow,
-  // occasional job it is perfectly good at.
+  // ONLY WHILE POINTING. Three sensors at 60 Hz ran for as long as the view was
+  // open, including in drag mode, where nothing reads them. They now start when
+  // pointing starts and stop when it stops, and the readings are dropped on the
+  // way out so a return to pointing cannot snap to where the phone used to be.
   useEffect(() => {
+    if (mode !== "sensor") return;
     let cancelled = false;
     const subs: { remove: () => void }[] = [];
 
@@ -214,9 +235,7 @@ export function useSkyOrientation(
       } catch {
         available = false;
       }
-      if (cancelled) return;
-      setMotionAvailable(available);
-      if (!available) return;
+      if (cancelled || !available) return;
 
       const HZ = 1000 / 60;
       Accelerometer.setUpdateInterval(HZ);
@@ -275,11 +294,19 @@ export function useSkyOrientation(
     return () => {
       cancelled = true;
       for (const s of subs) s.remove();
+      gravity.current = null;
+      magnetic.current = null;
+      look.current = null;
+      lastGyroAt.current = 0;
     };
-  }, []);
+  }, [mode]);
 
   // ---- Compass: north reference only ----
+  //
+  // Also only while pointing. It is the one thing in this view that needs the
+  // location permission, so a person who only ever drags is never asked for it.
   useEffect(() => {
+    if (mode !== "sensor") return;
     let cancelled = false;
     let sub: Location.LocationSubscription | null = null;
     (async () => {
@@ -292,7 +319,7 @@ export function useSkyOrientation(
           // Only DECLINATION is taken from the compass: the fixed angle between
           // magnetic and true north at this place. It does not depend on how the
           // device is held, so unlike the previous north-offset it cannot form a
-          // feedback loop with rotation. (~2 degrees in Lahore, far below the
+          // feedback loop with rotation. (About 1 degree at Greenwich, far below the
           // magnetometer's own error, so it is a refinement not a dependency.)
           if (h.trueHeading >= 0 && h.magHeading >= 0) {
             declination.current = angleDelta(h.trueHeading, h.magHeading);
@@ -306,7 +333,7 @@ export function useSkyOrientation(
       }
     })();
     return () => { cancelled = true; sub?.remove(); };
-  }, []);
+  }, [mode]);
 
   // ---- Frame loop: ease toward the sensors, publish once per frame ----
   useEffect(() => {
@@ -315,6 +342,20 @@ export function useSkyOrientation(
     let fpsFrames = 0;
     let fpsSince = Date.now();
     let fps = 0;
+    // What the heading label last showed. It re-renders the screen, so it is
+    // published only when the view has turned far enough to change it.
+    const shown = { az: NaN, alt: NaN };
+    const publishLabel = (az: number, alt: number) => {
+      if (
+        Math.abs(angleDelta(az, shown.az)) < 1 &&
+        Math.abs(alt - shown.alt) < 1
+      ) {
+        return;
+      }
+      shown.az = az;
+      shown.alt = alt;
+      setLabel({ az, alt });
+    };
     const tick = () => {
       raf = requestAnimationFrame(tick);
 
@@ -336,7 +377,7 @@ export function useSkyOrientation(
           viewRef.current.alt,
           0
         );
-        if (++frames % 15 === 0) setLabel({ ...viewRef.current });
+        if (++frames % 15 === 0) publishLabel(viewRef.current.az, viewRef.current.alt);
         return;
       }
       if (!gravity.current || !magnetic.current) return;
@@ -381,15 +422,13 @@ export function useSkyOrientation(
       axesRef.current = cameraAxesFromAngles(s.az, s.alt, rollRef.current);
 
       // Labels and diagnostics only — never the view itself.
-      if (++frames % 15 === 0) {
-        setLabel({ az: s.az, alt: s.alt });
-      }
-      if (frames % 30 === 0) {
+      if (++frames % 15 === 0) publishLabel(s.az, s.alt);
+      if (frames % 30 === 0 && diagnosticsRef.current) {
         setDebug((d) => ({
           ...d,
           betaDeg: gravity.current?.z ?? null,
           headingDeg: magnetic.current?.z ?? null,
-          accuracy: headingAccuracy,
+          accuracy: headingAccuracyRef.current,
           motionEvents: motionCount.current,
           headingEvents: headingCount.current,
           northOffset: declination.current,
@@ -402,18 +441,18 @@ export function useSkyOrientation(
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [headingAccuracy]);
+  }, []);
 
-  // Diagnostics stay live in drag mode so a user who can't get pointing to
-  // engage can still see whether readings arrive at all.
+  // In drag mode the panel still shows what the last pointing session saw, and
+  // whether a compass ever answered. Published only while the panel is open.
   useEffect(() => {
-    if (mode === "sensor") return;
+    if (mode === "sensor" || !diagnostics) return;
     const id = setInterval(() => {
       setDebug((d) => ({
         ...d,
         betaDeg: gravity.current?.z ?? null,
         headingDeg: magnetic.current?.z ?? null,
-        accuracy: headingAccuracy,
+        accuracy: headingAccuracyRef.current,
         motionEvents: motionCount.current,
         headingEvents: headingCount.current,
         northOffset: declination.current,
@@ -423,7 +462,7 @@ export function useSkyOrientation(
       }));
     }, 500);
     return () => clearInterval(id);
-  }, [mode, headingAccuracy]);
+  }, [mode, diagnostics]);
 
   const pan = useCallback(
     (dx: number, dy: number, fovDeg: number, viewWidth: number) => {
