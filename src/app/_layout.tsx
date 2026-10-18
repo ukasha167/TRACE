@@ -14,6 +14,7 @@ import {
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
+import { useReducedMotion } from "react-native-reanimated";
 import { useEffect } from "react";
 import { StatusBar } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -42,6 +43,7 @@ const HEADER_TITLE = {
 } as const;
 
 export default function RootLayout() {
+  const reduced = useReducedMotion();
   // Keeps each record's anniversary notifications in step with the records.
   useReminderSync();
 
@@ -77,7 +79,7 @@ export default function RootLayout() {
           headerShadowVisible: false,
           headerBackButtonDisplayMode: "minimal",
           contentStyle: { backgroundColor: Colors.paper },
-          animation: "slide_from_right",
+          animation: reduced ? "fade" : "slide_from_right",
         }}
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -87,17 +89,27 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="milestone/new"
-          options={{ title: "New record", presentation: "modal" }}
+          options={{ title: "Add a date", presentation: "modal" }}
         />
         <Stack.Screen
           name="milestone/edit/[id]"
-          options={{ title: "Edit record", presentation: "modal" }}
+          options={{ title: "Edit date", presentation: "modal" }}
         />
         <Stack.Screen name="milestone/[id]" options={{ title: "" }} />
         <Stack.Screen name="ledger/[id]" options={{ title: "" }} />
         <Stack.Screen
           name="sky/[id]"
-          options={{ headerShown: false, animation: "fade" }}
+          // A moon carried in from the page draws its own entrance, so the
+          // stack must not fade over it. Set here because options the screen
+          // sets on itself land after the push has already started.
+          options={({ route }) => ({
+            headerShown: false,
+            animation:
+              !reduced && (route.params as { focus?: string } | undefined)?.focus === "moon"
+                ? "none"
+                : "fade",
+            contentStyle: { backgroundColor: Colors.space },
+          })}
         />
         <Stack.Screen
           name="export/[id]"

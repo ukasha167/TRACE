@@ -1,12 +1,35 @@
 import { useCallback, useEffect, useState } from "react";
 import { router, type Href } from "expo-router";
 import { Linking, Platform } from "react-native";
-import * as Notifications from "expo-notifications";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import { useMilestonesStore, useMilestonesHydrated } from "@/store/useMilestonesStore";
 import { useRemindersStore } from "@/store/useRemindersStore";
 import { planReminders, reminderBody, REMINDER_HOUR } from "@/lib/reminders/planReminders";
 import { anniversaryDate } from "@/lib/astronomy/anniversary";
 import { todayDateString, parseDateString } from "@/lib/astronomy/dateUtils";
+
+type NotificationsModule = typeof import("expo-notifications");
+
+/**
+ * expo-notifications throws at import time inside Expo Go on Android (removed
+ * in SDK 53). A static import took the whole route tree down with it: _layout,
+ * settings and milestone/[id] all lost their default export. The module is
+ * loaded here instead, and every caller treats null as "reminders are not
+ * available in this build". A development build or a store build gets the
+ * real module.
+ */
+const Notifications: NotificationsModule | null = (() => {
+  if (Platform.OS === "android" && Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
+    return null;
+  }
+  try {
+    return require("expo-notifications") as NotificationsModule;
+  } catch {
+    return null;
+  }
+})();
+
+export const remindersAvailable = Notifications !== null;
 
 /**
  * Every pending notification this app owns carries this prefix, and nothing
@@ -23,7 +46,7 @@ function hash(s: string): string {
   return (h >>> 0).toString(36);
 }
 
-Notifications.setNotificationHandler({
+Notifications?.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
     shouldShowList: true,
@@ -33,6 +56,7 @@ Notifications.setNotificationHandler({
 });
 
 async function sync(): Promise<void> {
+  if (!Notifications) return;
   const { milestones } = useMilestonesStore.getState();
   const { enabled } = useRemindersStore.getState();
   const perms = await Notifications.getPermissionsAsync();
@@ -142,12 +166,13 @@ let handledTap: string | null = null;
  * stack to push onto.
  */
 export function useReminderTaps(): void {
-  const response = Notifications.useLastNotificationResponse();
+  // Constant for the life of the process, so the hook order never changes.
+  const response = Notifications ? Notifications.useLastNotificationResponse() : null;
   const milestones = useMilestonesStore((s) => s.milestones);
   const ready = useMilestonesHydrated();
 
   useEffect(() => {
-    if (!response || !ready) return;
+    if (!Notifications || !response || !ready) return;
     if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
     const id = response.notification.request.content.data?.milestoneId;
     const key = `${response.notification.request.identifier}@${response.notification.date}`;
@@ -171,6 +196,7 @@ export function useReminderBell(milestoneId: string) {
   const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
+    if (!Notifications) return;
     let alive = true;
     Notifications.getPermissionsAsync().then((p) => {
       if (alive) setBlocked(!p.granted && !p.canAskAgain);
@@ -181,6 +207,7 @@ export function useReminderBell(milestoneId: string) {
   }, []);
 
   const toggle = useCallback(async () => {
+    if (!Notifications) return;
     if (on) {
       setOn(milestoneId, false);
       return;
@@ -206,7 +233,8 @@ export function useReminderBell(milestoneId: string) {
  * without waiting a year for it. Its id sits outside the "trace:" prefix, so a
  * sync running meanwhile leaves it alone.
  */
-export async function sendTestReminder(): Promise<"sent" | "blocked"> {
+export async function sendTestReminder(): Promise<"sent" | "blocked" | "unavailable"> {
+  if (!Notifications) return "unavailable";
   let perms = await Notifications.getPermissionsAsync();
   if (!perms.granted && perms.canAskAgain) perms = await Notifications.requestPermissionsAsync();
   const allowed = perms.granted || perms.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
@@ -234,7 +262,7 @@ export async function sendTestReminder(): Promise<"sent" | "blocked"> {
         }
       : {
           title: "TRACE",
-          body: "Reminders work. Turn on the bell on any record and one arrives on its night.",
+          body: "Reminders work. Turn on the bell on any date and one arrives on its night.",
         },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
