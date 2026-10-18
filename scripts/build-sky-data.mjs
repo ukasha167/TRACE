@@ -71,35 +71,3 @@ console.log(`matched to BSC : ${named}`);
 console.log(`bsc.json size  : ${(fs.statSync("src/data/bsc.json").size / 1024).toFixed(0)} KB`);
 const bright = stars.filter((s) => s.proper && s.mag < 2).map((s) => s.proper);
 console.log(`brightest named: ${bright.slice(0, 12).join(", ")}`);
-
-// ---- Messier deep-sky catalogue ----
-// SOURCE: d3-celestial data/messier.json (BSD-3-Clause). 110 objects, every one
-// named, with magnitudes and common names. Galaxies, nebulae and clusters —
-// the classic naked-eye-to-binocular deep sky.
-const messierPath = process.argv[4];
-if (messierPath) {
-  const dso = JSON.parse(fs.readFileSync(messierPath, "utf8"));
-  const TYPE_LABEL = {
-    g: "galaxy", s: "galaxy", e: "galaxy", i: "galaxy",
-    oc: "open cluster", gc: "globular cluster",
-    pn: "planetary nebula", snr: "supernova remnant",
-    bn: "nebula", en: "nebula", rn: "nebula", dn: "nebula", sfr: "nebula",
-    pos: "asterism",
-  };
-  const objects = dso.features.map((f) => {
-    const [ra, dec] = f.geometry.coordinates;
-    return {
-      id: f.properties.name,
-      name: f.properties.alt || f.properties.name,
-      ra: ((ra % 360) + 360) % 360,
-      dec,
-      mag: typeof f.properties.mag === "number" ? f.properties.mag : 99,
-      kind: TYPE_LABEL[f.properties.type] ?? "deep sky",
-    };
-  });
-  fs.writeFileSync("src/data/messier.json", JSON.stringify(objects));
-  const galaxies = objects.filter((o) => o.kind === "galaxy").length;
-  console.log(`\nmessier objects: ${objects.length} (${galaxies} galaxies)`);
-  console.log(`size           : ${(fs.statSync("src/data/messier.json").size / 1024).toFixed(0)} KB`);
-  console.log(`named sample   : ${objects.filter(o => o.name !== o.id).slice(0, 6).map(o => o.name).join(", ")}`);
-}
