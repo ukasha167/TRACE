@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, Pressable, useWindowDimensions } from "react-native";
 import { Colors, Spacing, Type, FontFamily, FontSize } from "@/constants/theme";
 import { SectionHeader } from "./SectionHeader";
 import { formatIllumination } from "@/lib/astronomy/moonPhase";
@@ -17,6 +17,7 @@ interface Props {
   today: string;
   /** Jupiter and Saturn, which come back to the same stars on longer clocks. */
   planets?: PlanetReturns[];
+  onExpand?: () => void;
 }
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -50,7 +51,9 @@ const SPAN_YEARS = 60;
  * the record, and comparing years alone would call this October's return past
  * in January.
  */
-export function MoonReturnSection({ returns, sourceDate, today, planets = [] }: Props) {
+export function MoonReturnSection({ returns, sourceDate, today, planets = [], onExpand }: Props) {
+  const [expanded, setExpanded] = useState(false);
+  const { fontScale } = useWindowDimensions();
   const source = parseDateString(sourceDate);
   const end = source.year + SPAN_YEARS;
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -78,13 +81,7 @@ export function MoonReturnSection({ returns, sourceDate, today, planets = [] }: 
     <View style={styles.section}>
       <SectionHeader label="When this sky comes back" />
       <Text style={styles.lead}>{lead}</Text>
-      <Text style={styles.explainer}>
-        19 years and 235 lunar months differ by about two hours, so the moon
-        returns to nearly the same phase on the same date. It is a cycle, not a
-        coincidence.
-      </Text>
-
-      <View style={styles.line} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      {fontScale <= 1.3 && <View style={styles.line} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         <View style={styles.rule} />
         <View style={[styles.today, { left: `${todayAt * 100}%` }]} />
         <Text style={[styles.todayLabel, { left: `${todayAt * 100}%` }]}>Today</Text>
@@ -96,9 +93,16 @@ export function MoonReturnSection({ returns, sourceDate, today, planets = [] }: 
         ))}
         <Text style={[styles.end, { left: 0 }]}>{source.year}</Text>
         <Text style={[styles.end, { right: 0 }]}>{end}</Text>
-      </View>
+      </View>}
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} style={styles.more}
+        onPress={() => { setExpanded((open) => !open); if (!expanded) onExpand?.(); }}>
+        <Text style={styles.moreText}>{expanded ? "Show less" : "Why does it return?"}</Text>
+      </Pressable>
+      {expanded && <Text style={styles.explainer}>
+        The moon takes about a month to repeat its shape. After 19 years, those months and our calendar nearly match again.
+      </Text>}
 
-      {shown.map((r, i) => (
+      {(expanded ? shown : next ? [next] : shown.slice(-1)).map((r, i) => (
         <View key={r.year} style={[styles.row, i > 0 && styles.rowRule]}>
           <Text style={styles.year}>{r.year}</Text>
           <View style={styles.info}>
@@ -115,7 +119,7 @@ export function MoonReturnSection({ returns, sourceDate, today, planets = [] }: 
         </View>
       ))}
 
-      {planets.length > 0 && (
+      {expanded && planets.length > 0 && (
         <View style={styles.planets}>
           <Text style={styles.planetsLabel}>The planets come back too</Text>
           {planets.map((p) => (
@@ -132,6 +136,8 @@ export function MoonReturnSection({ returns, sourceDate, today, planets = [] }: 
 const styles = StyleSheet.create({
   section: { marginBottom: Spacing.xl },
   lead: { ...Type.heading },
+  more: { paddingVertical: Spacing.md, minHeight: 44 },
+  moreText: { ...Type.body, color: Colors.signal },
   explainer: { ...Type.bodyMuted, marginTop: Spacing.sm },
 
   line: { height: 96, marginTop: Spacing.md, marginBottom: Spacing.sm },
@@ -160,9 +166,9 @@ const styles = StyleSheet.create({
     color: Colors.inkMuted,
   },
 
-  row: { flexDirection: "row", alignItems: "baseline", gap: Spacing.md, paddingVertical: Spacing.md },
+  row: { flexDirection: "row", flexWrap: "wrap", alignItems: "baseline", gap: Spacing.md, paddingVertical: Spacing.md },
   rowRule: { borderTopWidth: 1, borderTopColor: Colors.rule },
-  year: { fontFamily: FontFamily.monoMedium, fontSize: FontSize.lead, color: Colors.signal, width: 56 },
+  year: { fontFamily: FontFamily.monoMedium, fontSize: FontSize.lead, color: Colors.signal, minWidth: 56 },
   info: { flex: 1, gap: 2 },
   cycle: { ...Type.body },
   offset: { ...Type.small },
