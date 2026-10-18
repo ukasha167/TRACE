@@ -16,10 +16,10 @@ import {
   type WorldCameraAxes,
   smoothVector,
   normalizeDeg,
-  smoothAngle,
   angleDelta,
   type Vec3,
 } from "@/lib/astronomy/attitude";
+import { GLIDE, glide } from "@/lib/glide";
 
 /**
  * Where the immersive view is pointed. Spec §7.3.
@@ -83,6 +83,10 @@ export interface SkyOrientation {
   toggleFlipGravity: () => void;
   toggleFlipHeading: () => void;
   pan: (dx: number, dy: number, fovDeg: number, viewWidth: number) => void;
+  /** The finger lifted at this velocity, points per second: the view coasts on. */
+  release: (vx: number, vy: number, fovDeg: number, viewWidth: number) => void;
+  /** Turn the dragged view to face a direction, gliding there unless `now`. */
+  lookAt: (azimuthDeg: number, altitudeDeg: number, now?: boolean) => void;
   debug: SkyOrientationDebug;
 }
 
@@ -100,8 +104,12 @@ function smoothingFor(fovDeg: number): number {
   // is only a final polish pass — the heavy easing it used to do was
   // compensating for raw accel/mag noise that the gyro now absorbs, and
   // stacking both would just reintroduce the lag we set out to remove.
+  //
+  // A time constant in milliseconds, for lib/glide.ts. It was a per-frame
+  // factor (0.9 zoomed in, 0.65 wide), which ran twice as fast on a 120 Hz
+  // iPhone as on a 60 Hz phone; these are the same easing at 60 Hz.
   const t = Math.max(0, Math.min(1, (fovDeg - 18) / (100 - 18)));
-  return 0.9 - t * 0.25; // 0.9 zoomed in -> 0.65 wide
+  return 7 + t * 9; // 7 ms zoomed in -> 16 ms wide
 }
 /** Beyond this the view snaps instead of easing, so fast turns don't lag. */
 const SNAP_DEG = 45;
@@ -147,6 +155,15 @@ export function useSkyOrientation(
   // the orientation behind them updated at 10-20Hz. The renderer reads this ref
   // from its own frame loop instead, and React never re-renders for motion.
   const viewRef = useRef({ az: initialAzimuth, alt: 25 });
+  /**
+   * Where the finger has put the view. In drag mode the frame loop glides
+   * viewRef toward this rather than pan() writing viewRef directly: touch
+   * events reach the JS thread unevenly, two in one frame and none in the next,
+   * and a view moved by each event as it lands moves in steps. The azimuth is
+   * not wrapped, so a glide across north takes the short way.
+   */
+  const dragTarget = useRef({ az: initialAzimuth, alt: 25 });
+  const dragCoast = useRef(false);
   /**
    * Full camera frame, roll included. The renderer uses THIS, not az/alt —
    * deriving the frame from angles alone forces the horizon parallel to the
@@ -356,8 +373,12 @@ export function useSkyOrientation(
       shown.alt = alt;
       setLabel({ az, alt });
     };
+    let lastAt = performance.now();
     const tick = () => {
       raf = requestAnimationFrame(tick);
+      const at = performance.now();
+      const dt = at - lastAt;
+      lastAt = at;
 
       // Measure the actual render rate. This is the number that decides whether
       // the renderer needs moving off the JS thread.
@@ -370,8 +391,15 @@ export function useSkyOrientation(
       }
 
       if (modeRef.current !== "sensor") {
-        // Drag mode: viewRef is mutated by pan(). No device attitude to read, so
-        // the horizon stays level, which is what a dragged view should do.
+        // Drag mode: the view glides toward where the finger put it. No device
+        // attitude to read, so the horizon stays level, which is what a dragged
+        // view should do.
+        const v = viewRef.current;
+        const t = dragTarget.current;
+        const tau = dragCoast.current ? GLIDE.coast : GLIDE.follow;
+        const az = glide(v.az, v.az + angleDelta(t.az, v.az), dt, tau);
+        v.alt = glide(v.alt, t.alt, dt, tau);
+        v.az = normalizeDeg(az);
         axesRef.current = cameraAxesFromAngles(
           viewRef.current.az,
           viewRef.current.alt,
@@ -406,14 +434,14 @@ export function useSkyOrientation(
       const targetAlt = fused.altitudeDeg;
 
       const s = smoothed.current;
-      const k = smoothingFor(fovRef.current);
+      const tau = smoothingFor(fovRef.current);
       // Snap on large moves so a quick turn doesn't drag behind the hand.
       s.az = Math.abs(angleDelta(targetAz, s.az)) > SNAP_DEG
         ? targetAz
-        : smoothAngle(s.az, targetAz, k);
+        : normalizeDeg(glide(s.az, s.az + angleDelta(targetAz, s.az), dt, tau));
       s.alt = Math.abs(targetAlt - s.alt) > SNAP_DEG
         ? targetAlt
-        : s.alt + (targetAlt - s.alt) * k;
+        : glide(s.alt, targetAlt, dt, tau);
 
       viewRef.current.az = s.az;
       viewRef.current.alt = s.alt;
@@ -467,16 +495,32 @@ export function useSkyOrientation(
   const pan = useCallback(
     (dx: number, dy: number, fovDeg: number, viewWidth: number) => {
       const perPoint = fovDeg / viewWidth;
-      const v = viewRef.current;
-      v.az = normalizeDeg(v.az - dx * perPoint);
+      const t = dragTarget.current;
+      dragCoast.current = false;
+      t.az = normalizeDeg(t.az - dx * perPoint);
       // No clamp beyond the poles: the view passes through the zenith and below
       // the horizon, which is what makes it feel like standing somewhere.
-      v.alt = Math.max(-90, Math.min(90, v.alt + dy * perPoint));
-      smoothed.current.az = v.az;
-      smoothed.current.alt = v.alt;
+      t.alt = Math.max(-90, Math.min(90, t.alt + dy * perPoint));
+      smoothed.current.az = t.az;
+      smoothed.current.alt = t.alt;
     },
     []
   );
+
+  const release = useCallback(
+    (vx: number, vy: number, fovDeg: number, viewWidth: number) => {
+      const throwPts = GLIDE.throwSeconds;
+      pan(vx * throwPts, vy * throwPts, fovDeg, viewWidth);
+      dragCoast.current = true;
+    },
+    [pan]
+  );
+
+  const lookAt = useCallback((azimuthDeg: number, altitudeDeg: number, now = false) => {
+    dragTarget.current = { az: normalizeDeg(azimuthDeg), alt: altitudeDeg };
+    dragCoast.current = true;
+    if (now) Object.assign(viewRef.current, dragTarget.current);
+  }, []);
 
   const changeMode = useCallback((m: OrientationMode) => {
     // Entering sensor mode: adopt the current sensor reading immediately rather
@@ -491,6 +535,8 @@ export function useSkyOrientation(
         };
       }
     }
+    // Leaving sensor mode: the drag starts from wherever the phone was pointing.
+    if (m === "drag") dragTarget.current = { ...viewRef.current };
     setMode(m);
   }, []);
 
@@ -516,6 +562,8 @@ export function useSkyOrientation(
     toggleFlipGravity: () => setFlipGravity((v) => !v),
     toggleFlipHeading: () => setFlipHeading((v) => !v),
     pan,
+    release,
+    lookAt,
     debug,
   };
 }
