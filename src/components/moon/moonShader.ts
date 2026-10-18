@@ -271,30 +271,8 @@ half4 main(float2 fragCoord) {
  */
 export const moonEffect = Skia.RuntimeEffect.Make(SOURCE);
 
-/**
- * How far each texel is pushed from its own grey.
- *
- * This is the mineral moon, and it is allowed to exist now because the albedo
- * map is real LROC WAC colour rather than the monochrome map that shipped
- * before. The hues it amplifies are measurements: titanium shifts a mare from
- * red toward blue, which is why Mare Tranquillitatis comes out cooler than Mare
- * Serenitatis. Measured on the bundled map, B/R 0.967 against 0.895.
- *
- * The Moon's real colour is faint — mean saturation 0.057 — so seeing it takes
- * amplification, exactly as it does in the astrophotographs this is modelled on.
- * The operation can only scale a texel away from its own grey, so it cannot
- * invent a hue that is not there. Point it at a greyscale map and it does
- * nothing at all.
- *
- * Raising it does not make the app claim anything it could not measure. Setting
- * it while feeding the shader a colourised greyscale would, and that is the
- * line.
- *
- * Was 5. The moon now prints on black rather than on Prussian blue, and a
- * ground that dark takes a fifth or so of the apparent saturation out of
- * everything on it.
- */
-export const MINERAL_SATURATION = 9.0;
+/** Real LROC colour, amplified 2x so the moon keeps its familiar grey appearance. */
+export const MINERAL_SATURATION = 2.0;
 
 /**
  * Print contrast on the albedo, pivoted on ALBEDO_MID. 1 is the map as bundled.
