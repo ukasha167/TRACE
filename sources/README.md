@@ -71,3 +71,15 @@ node --max-old-space-size=4096 scripts/build-moon-maps.mjs gentle
 
 `--list` prints the grades. `photograph` reproduces the map as measured, so the
 print is always comparable against it.
+
+## The Milky Way
+
+`milkyway_2020_4k.exr` (4096x2048, 35 MB) is the "Milky Way background" layer of NASA's
+[Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851) (Ernie Wright, NASA Scientific Visualization
+Studio, public domain): the star map with the Hipparcos and Tycho stars removed, leaving the light of
+Gaia DR2's fainter stars, in J2000 RA/Dec plate carree. Download it from that page into this folder
+and run `node scripts/build-milky-way.mjs`. It is gitignored like the lunar maps.
+
+To check a replacement: the galactic centre must land at about RA 17h45m, Dec -29 degrees (three
+quarters of the way across the map, RA increasing to the left), and the Large and Small Magellanic
+Clouds must show as two bright patches near Dec -70 degrees.
