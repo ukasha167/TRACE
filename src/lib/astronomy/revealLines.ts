@@ -8,7 +8,7 @@ import { daysBetween, formatWeekdayDate } from "./anniversary";
 import { toLocalNight, toLocalDayStart } from "./dateUtils";
 
 /** Thresholds tried high-to-low, the same list the record page uses. */
-const RARITY_THRESHOLDS = [99.5, 99, 97, 95, 90];
+const RARITY_THRESHOLDS = [99.5, 99];
 
 export interface RevealContent {
   moon: {
@@ -38,15 +38,16 @@ export function revealContent(
   const tz = milestone.location?.timezoneOffsetMin;
   const night = toLocalNight(milestone.date, tz);
   const phase = getMoonPhase(night, toLocalDayStart(milestone.date, tz));
+  // Records typed before decision 4 hold 0, 0. The card and the list skip
+  // them, so the reveal must too, or it shows a sky the card says is not there.
   const place =
     milestone.location && milestone.location.latitude !== 0 ? milestone.location : null;
 
   const when = formatWeekdayDate(milestone.date).replace(/^\w+ /, "");
-  const line1 = place ? `${when} · ${shortPlace(place.label)}` : when;
-  const line2 = `${describePhase(phase)}, ${formatIllumination(phase.phaseFraction)} lit`;
+  const line1 = place ? `Evening of ${when} · ${shortPlace(place.label)}` : `Evening of ${when}`;
+  const line2 = `${describePhase(phase)}, ${formatIllumination(phase.phaseFraction)}\u00a0lit`;
   const line3 = place ? headlineSentences(getNightFacts(milestone.date, place, tz))[0] ?? null : null;
 
-  const unit = milestone.type === "birthday" ? "birthdays" : "anniversaries";
   const threshold = RARITY_THRESHOLDS.find((t) => phase.phaseFraction * 100 >= t);
   let line4: string | null = null;
   if (threshold !== undefined) {
@@ -54,7 +55,7 @@ export function revealContent(
     // The frequency is measured at the threshold, not at this moon's own
     // figure, so the line names the threshold. "A moon this full" would claim a
     // rarer sky than the number describes.
-    line4 = `1 in ${r.oneInN.toFixed(0)} days has a moon at least ${threshold}% lit. ${r.matchingYears.length} of the ${r.totalYears} ${unit} so far ${r.matchingYears.length === 1 ? "has" : "have"} had one.`;
+    line4 = `1 in ${r.oneInN.toFixed(0)} days has a moon at least ${threshold}% lit. On this date, ${r.matchingYears.length} of ${r.totalYears} years so far had one.`;
   } else {
     const md = milestone.date.slice(4);
     const next = getMoonReturns(milestone.date, { tzOffsetMin: tz }).find(

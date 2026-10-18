@@ -1,16 +1,17 @@
 import type { Star, MilestoneLocation } from "@/types";
 import { equatorialToHorizontal } from "./skyTransform";
 import { getSolarSystemSky } from "./skyBodies";
+import { starTint, airmassFromSine } from "./skyLight";
 import type { WorldCameraAxes } from "./attitude";
 import constellationData from "@/data/constellations.json";
-import messierData from "@/data/messier.json";
 import { CONSTELLATION_NAMES } from "@/data/constellationNames";
 import constellationArt from "@/data/constellationArt.json";
+import constellationStars from "@/data/constellationStars.json";
 
 interface ConstellationSource { id: string; lines: number[][] }
-interface MessierSource {
-  id: string; name: string; ra: number; dec: number; mag: number; kind: string;
-}
+/** ra, dec, magnitude, chart label. See scripts/build-constellation-stars.mjs. */
+type FigureStarSource = [number, number, number, string];
+const FIGURE_STARS = constellationStars as unknown as Record<string, FigureStarSource[]>;
 
 /**
  * THE PRECOMPUTED CELESTIAL SPHERE — the performance spine of immersive mode.
@@ -30,7 +31,7 @@ interface MessierSource {
  */
 
 /**
- * A drawn figure pinned to the sky, for the 15 constellations that have one.
+ * A drawn figure pinned to the sky, for the 85 constellations that have one.
  *
  * Stellarium's anchor scheme: three points in the illustration are tied to three
  * real stars, and an affine map from those three pairs places the whole image.
@@ -67,8 +68,14 @@ export interface ConstellationFigure {
    * strongly to draw the figure.
    */
   centroid: [number, number, number];
-  /** Present only for the fifteen constellations that ship artwork. */
+  /** Absent for Puppis, Vela and Serpens, which the pack draws inside other figures. */
   art?: ConstellationArt;
+  /**
+   * Every star the lines pass through, named the way a chart names it: proper
+   * name, else Bayer letter, else Flamsteed number. Brightest first. Shown
+   * while the figure is lit.
+   */
+  stars: { vec: [number, number, number]; label: string; mag: number }[];
 }
 
 export interface SkySphere {
@@ -78,6 +85,16 @@ export interface SkySphere {
   mag: Float32Array;
   /** Parallel index into the source catalog, for labels. */
   hr: Int32Array;
+  /** Colour bin per star from its measured B-V (skyLight.starTint). 0 is white. */
+  tint: Uint8Array;
+  /**
+   * The rotation from this sphere's frame back to J2000 equatorial: three rows,
+   * so (row0 . v, row1 . v, row2 . v) is the unit vector at the right
+   * ascension and declination v was computed from. The Milky Way shader reads
+   * its map through this. Exact, because equatorialToHorizontal is a pure
+   * rotation with no refraction.
+   */
+  toEquatorial: Float32Array;
   /**
    * Constellation figures, grouped by constellation and pre-projected to unit
    * vectors. Precomputed for the same reason the stars are: the geometry never
@@ -91,20 +108,13 @@ export interface SkySphere {
   figures: ConstellationFigure[];
   /** Stars worth labelling: IAU proper names, brightest first. RA/Dec in degrees, J2000. */
   labels: { vec: [number, number, number]; name: string; mag: number; ra: number; dec: number }[];
-  /** Messier objects — galaxies, nebulae, clusters. */
-  deepSky: {
-    id: string; name: string; vec: [number, number, number];
-    mag: number; kind: string; ra: number; dec: number;
-  }[];
   /** Solar-system bodies, kept separate so they can be drawn differently. */
   bodies: {
     id: string;
     label: string;
     vec: [number, number, number];
     magnitude: number;
-    kind: "planet" | "moon" | "sun" | "deepsky";
-    /** Galaxy / nebula / cluster, for the deep-sky objects. */
-    detail?: string;
+    kind: "planet" | "moon" | "sun";
   }[];
 }
 
@@ -115,39 +125,6 @@ function unitVector(altitudeDeg: number, azimuthDeg: number): [number, number, n
   const az = azimuthDeg * DEG;
   const c = Math.cos(alt);
   return [c * Math.sin(az), c * Math.cos(az), Math.sin(alt)];
-}
-
-/**
- * Kinds worth drawing at all: things that are a cloud or another galaxy.
- *
- * Star clusters are deliberately out. An open cluster drawn as a glyph sits on
- * top of stars that are already in the catalogue and rendering correctly, so it
- * adds a symbol over a thing the view is already showing. The Pleiades do not
- * disappear when M45 is dropped; they go back to being seven stars, which is
- * what they are.
- */
-const DEEP_SKY_KINDS = new Set([
-  "galaxy",
-  "nebula",
-  "planetary nebula",
-  "supernova remnant",
-]);
-
-/**
- * THE CLUTTER RULE: an object earns a glyph by having a name people use.
- *
- * All 110 Messier objects used to draw, which put a symbol every few degrees
- * across the whole sphere and turned the view into a chart. Most of them are
- * anonymous: half the catalogue's galaxies are labelled "M58", "M59", "M60",
- * which tells a reader nothing and costs them the sky behind it.
- *
- * Keeping only the ones with a proper common name is a data-driven rule rather
- * than a hand-typed list, so it survives a catalogue rebuild. It leaves 24
- * objects: Orion, Andromeda, the Lagoon, the Whirlpool, the Ring, the Crab and
- * the rest of the ones a person could plausibly want to find.
- */
-function isFamousDeepSky(o: MessierSource): boolean {
-  return DEEP_SKY_KINDS.has(o.kind) && o.name !== o.id;
 }
 
 interface ArtSource {
@@ -186,6 +163,7 @@ export function buildSkySphere(
   const vec = new Float32Array(kept.length * 3);
   const mag = new Float32Array(kept.length);
   const hr = new Int32Array(kept.length);
+  const tint = new Uint8Array(kept.length);
 
   for (let i = 0; i < kept.length; i++) {
     const s = kept[i];
@@ -202,7 +180,17 @@ export function buildSkySphere(
     vec[i * 3 + 2] = u;
     mag[i] = s.mag;
     hr[i] = s.hr;
+    tint[i] = starTint(s.bv, s.mag);
   }
+
+  // R maps an equatorial unit vector into this frame, so its columns are where
+  // the three equatorial axes land; the inverse rotation is its transpose,
+  // whose rows are those same three vectors.
+  const axis = (ra: number, dec: number) => {
+    const h = equatorialToHorizontal(ra, dec, location.latitude, location.longitude, date);
+    return unitVector(h.altitudeDeg, h.azimuthDeg);
+  };
+  const toEquatorial = Float32Array.from([...axis(0, 0), ...axis(90, 0), ...axis(0, 90)]);
 
   // ---- Constellation figures ----
   const figures: ConstellationFigure[] = [];
@@ -251,12 +239,21 @@ export function buildSkySphere(
         }
       : undefined;
 
+    // Serpens arrives as two entries, head and tail, under one id. Its stars
+    // are listed once, against the first half.
+    const named = figures.some((f) => f.id === con.id);
     figures.push({
       id: con.id,
       name: CONSTELLATION_NAMES[con.id] ?? con.id,
       lines,
       centroid: [cx / len, cy / len, cz / len],
       art,
+      stars: named
+        ? []
+        : (FIGURE_STARS[con.id] ?? []).map(([ra, dec, m, label]) => {
+            const h = equatorialToHorizontal(ra, dec, location.latitude, location.longitude, date);
+            return { vec: unitVector(h.altitudeDeg, h.azimuthDeg), label, mag: m };
+          }),
     });
   }
 
@@ -305,22 +302,7 @@ export function buildSkySphere(
     });
   }
 
-  const deepSky: SkySphere["deepSky"] = [];
-  for (const o of messierData as MessierSource[]) {
-    if (!isFamousDeepSky(o)) continue;
-    const h = equatorialToHorizontal(o.ra, o.dec, location.latitude, location.longitude, date);
-    deepSky.push({
-      id: o.id,
-      name: o.name,
-      vec: unitVector(h.altitudeDeg, h.azimuthDeg),
-      mag: o.mag,
-      kind: o.kind,
-      ra: o.ra,
-      dec: o.dec,
-    });
-  }
-
-  return { count: kept.length, vec, mag, hr, figures, labels, deepSky, bodies };
+  return { count: kept.length, vec, mag, hr, tint, toEquatorial, figures, labels, bodies };
 }
 
 /** Orthonormal camera basis for a look direction. Right is held horizontal. */
@@ -398,7 +380,15 @@ export function projectSphere(
    * back with a NEGATIVE radius, so the caller can draw the ground's stars dim
    * without a second pass.
    */
-  zenith?: { x: number; y: number; z: number }
+  zenith?: { x: number; y: number; z: number },
+  /** Receives each drawn star's colour bin, parallel to `out`. */
+  tintOut?: Uint8Array,
+  /**
+   * Dim stars by the air they are seen through, magnitudes per airmass. A
+   * star two degrees up loses about three magnitudes, which is why the horizon
+   * is nearly empty of faint stars on any real night. Needs `zenith`.
+   */
+  extinction = 0
 ): number {
   const halfW = width / 2;
   const halfH = height / 2;
@@ -408,13 +398,18 @@ export function projectSphere(
   let n = 0;
 
   for (let i = 0; i < count; i++) {
-    const m = mag[i];
+    let m = mag[i];
     if (m > magnitudeLimit) continue;
 
     const i3 = i * 3;
     const e = vec[i3];
     const nn = vec[i3 + 1];
     const u = vec[i3 + 2];
+    const up = zenith ? e * zenith.x + nn * zenith.y + u * zenith.z : 1;
+    if (extinction > 0 && up > 0) {
+      m += extinction * (airmassFromSine(up) - 1);
+      if (m > magnitudeLimit) continue;
+    }
 
     const z = e * cam.fx + nn * cam.fy + u * cam.fz;
     if (z <= 0.04) continue; // behind the camera
@@ -432,7 +427,8 @@ export function projectSphere(
     const r = 0.45 + t * t * 4.0;
     out[o] = x;
     out[o + 1] = y;
-    out[o + 2] = zenith && e * zenith.x + nn * zenith.y + u * zenith.z < 0 ? -r : r;
+    out[o + 2] = up < 0 ? -r : r;
+    if (tintOut) tintOut[n] = sphere.tint[i];
     n++;
     if (o + 3 >= out.length) break;
   }
