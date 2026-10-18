@@ -1,4 +1,4 @@
-import type { Star, SkyBody } from "@/types";
+import type { Star, SkyPoint } from "@/types";
 
 /**
  * EQUATORIAL -> HORIZONTAL coordinates. Spec §6.6.
@@ -117,8 +117,8 @@ export function visibleStars(
   longitude: number,
   date: Date,
   magnitudeLimit = 5.5
-): SkyBody[] {
-  const out: SkyBody[] = [];
+): SkyPoint[] {
+  const out: SkyPoint[] = [];
   for (const star of catalog) {
     if (star.mag > magnitudeLimit) continue;
     const h = equatorialToHorizontal(
@@ -159,7 +159,7 @@ export function visibleStars(
  * Returns unit coordinates in [-1, 1]; the caller scales to its canvas.
  */
 export function projectToDisc(
-  body: Pick<SkyBody, "altitudeDeg" | "azimuthDeg">,
+  body: Pick<SkyPoint, "altitudeDeg" | "azimuthDeg">,
   rotationDeg = 0
 ): { x: number; y: number } {
   // Zenith distance 0 at centre, 1 at the horizon.
@@ -206,7 +206,7 @@ function toVector(altitudeDeg: number, azimuthDeg: number): [number, number, num
 }
 
 export function projectToView(
-  body: Pick<SkyBody, "altitudeDeg" | "azimuthDeg">,
+  body: Pick<SkyPoint, "altitudeDeg" | "azimuthDeg">,
   view: ViewDirection,
   width: number,
   height: number

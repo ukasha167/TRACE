@@ -71,15 +71,16 @@ test("a near-full day bucketed as Full Moon does NOT report isTruePhase", () => 
   const dayStart = new Date(Date.UTC(2015, 8, 30));
   const p = getMoonPhase(new Date(Date.UTC(2015, 8, 30, 12)), dayStart);
   assert.equal(p.isTruePhase, false);
-  assert.notEqual(describePhase(p), "Full Moon");
+  assert.notEqual(describePhase(p), "Full moon");
 });
 
-test("describePhase uses real waxing flag, not the bucket index", () => {
-  // Two days BEFORE full — must read as waxing, not waning.
-  const dayStart = new Date(Date.UTC(2015, 8, 26));
-  const p = getMoonPhase(new Date(Date.UTC(2015, 8, 26, 12)), dayStart);
-  if (p.phaseIndex === 4 && !p.isTruePhase) {
-    assert.equal(describePhase(p), "Waxing Gibbous");
+test("phase wording uses illumination and the measured direction", () => {
+  const base = getMoonPhase(new Date(Date.UTC(2015, 8, 26, 12)));
+  assert.equal(describePhase({ ...base, phaseIndex: 4, phaseFraction: 0.9, waxing: true }), "Growing moon");
+  assert.equal(describePhase({ ...base, phaseIndex: 4, phaseFraction: 0.9, waxing: false }), "Fading moon");
+  assert.equal(describePhase({ ...base, isTruePhase: true, phaseFraction: 0.97 }), "Almost full moon");
+  for (const [fraction, name] of [[0.9599, "Growing moon"], [0.96, "Almost full moon"], [0.9899, "Almost full moon"], [0.99, "Full moon"], [0.01, "New moon"], [0.0101, "Thin crescent"], [0.4499, "Growing crescent"], [0.45, "Half moon"], [0.55, "Half moon"], [0.5501, "Growing moon"]] as const) {
+    assert.equal(describePhase({ ...base, phaseFraction: fraction, waxing: true }), name);
   }
 });
 
@@ -203,7 +204,7 @@ test("a 99%+ moon is called Full even when the syzygy lands on the next day", ()
   const p = getMoonPhase(new Date(Date.UTC(2015, 8, 27, 20)), dayStart);
   assert.ok(p.phaseFraction >= 0.99, `setup: expected >=99%, got ${p.phaseFraction}`);
   assert.equal(p.isTruePhase, false);
-  assert.equal(describePhase(p), "Full Moon");
+  assert.equal(describePhase(p), "Full moon");
   // ...but it must disclose where the exact instant fell.
   assert.ok(describeSyzygyNote(p) !== null);
 });
@@ -212,7 +213,7 @@ test("a sub-99% moon bucketed as Full is never called Full", () => {
   const dayStart = new Date(Date.UTC(2015, 8, 30));
   const p = getMoonPhase(new Date(Date.UTC(2015, 8, 30, 12)), dayStart);
   assert.ok(p.phaseFraction < 0.99);
-  assert.notEqual(describePhase(p), "Full Moon");
+  assert.notEqual(describePhase(p), "Full moon");
   assert.equal(describeSyzygyNote(p), null);
 });
 

@@ -417,27 +417,39 @@ test("the centroid lands inside the figure it names", () => {
   }
 });
 
-test("deep sky keeps only named nebulae and galaxies", () => {
+test("every star a figure is drawn through carries a name, and sits on a vertex", () => {
   const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
+  const ids = new Set(sphere.figures.map((f) => f.id));
+  assert.equal(ids.size, 88);
 
-  assert.equal(sphere.deepSky.length, 24, "24 of the 110 Messier objects");
-
-  const allowed = new Set(["galaxy", "nebula", "planetary nebula", "supernova remnant"]);
-  for (const o of sphere.deepSky) {
-    assert.ok(allowed.has(o.kind), `${o.id} is a ${o.kind}, which should be filtered`);
-    assert.notEqual(o.name, o.id, `${o.id} has no common name and should be filtered`);
+  for (const id of ids) {
+    const parts = sphere.figures.filter((f) => f.id === id);
+    const stars = parts.flatMap((f) => f.stars);
+    const vertices = parts.flatMap((f) => f.lines.flatMap((l) => Array.from({ length: l.length / 3 }, (_, i) => [l[i * 3], l[i * 3 + 1], l[i * 3 + 2]])));
+    assert.ok(stars.length >= 2, `${id} has ${stars.length} named stars`);
+    for (const st of stars) {
+      assert.ok(st.label.trim().length > 0, `${id}: an unnamed star`);
+      // Every label must land on the line, or it names empty sky.
+      const nearest = Math.max(...vertices.map((v) => v[0] * st.vec[0] + v[1] * st.vec[1] + v[2] * st.vec[2]));
+      assert.ok(nearest > Math.cos((0.1 * Math.PI) / 180), `${id}: ${st.label} is off its figure`);
+    }
+    for (const v of vertices) {
+      const nearest = Math.max(...stars.map((st) => v[0] * st.vec[0] + v[1] * st.vec[1] + v[2] * st.vec[2]));
+      assert.ok(nearest > Math.cos((0.1 * Math.PI) / 180), `${id}: a vertex with no label`);
+    }
   }
 
-  const ids = new Set(sphere.deepSky.map((o) => o.id));
-  for (const famous of ["M42", "M31", "M1", "M51", "M57", "M104"]) {
-    assert.ok(ids.has(famous), `${famous} must survive the cut`);
+  const orion = sphere.figures.find((f) => f.id === "Ori")!.stars.map((s) => s.label);
+  for (const name of ["Betelgeuse", "Rigel", "Bellatrix", "Alnilam", "η", "π⁴"]) {
+    assert.ok(orion.includes(name), `Orion should name ${name}`);
   }
-  // M45 is the Pleiades. It goes, and does not vanish: its stars are in the
-  // catalogue and keep drawing. A glyph over stars that already render is the
-  // clutter this rule exists to remove.
-  for (const cut of ["M45", "M13", "M58", "M59"]) {
-    assert.ok(!ids.has(cut), `${cut} should have been filtered out`);
-  }
+});
+
+test("the illustrations cover the whole pack", () => {
+  const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
+  const without = sphere.figures.filter((f) => !f.art).map((f) => f.id);
+  // Stellarium draws Puppis and Vela inside Argo Navis, and Serpens has none.
+  assert.deepEqual([...new Set(without)].sort(), ["Pup", "Ser", "Vel"]);
 });
 
 test("the star density cut keeps three quarters of the catalogue", () => {
@@ -467,7 +479,8 @@ test("artwork data is well formed and fits its sheet", () => {
   const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
   const withArt = sphere.figures.filter((c) => c.art);
 
-  assert.equal(withArt.length, 15, "fifteen figures carry artwork");
+  assert.equal(withArt.length, 85, "every illustration in the pack");
+  const rows = Math.ceil(withArt.length / CONSTELLATION_ART_COLS);
 
   const seen = new Set<string>();
   for (const con of withArt) {
@@ -477,7 +490,7 @@ test("artwork data is well formed and fits its sheet", () => {
     assert.ok(!seen.has(key), `${con.id} shares tile ${key} with another figure`);
     seen.add(key);
     assert.ok(col >= 0 && col < CONSTELLATION_ART_COLS, `${con.id} column out of sheet`);
-    assert.ok(row >= 0 && row < CONSTELLATION_ART_COLS, `${con.id} row out of sheet`);
+    assert.ok(row >= 0 && row < rows, `${con.id} row out of sheet`);
 
     assert.equal(art.anchors.length, 3, `${con.id} needs exactly three anchors`);
     for (const a of art.anchors) {

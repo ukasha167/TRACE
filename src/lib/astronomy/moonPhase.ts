@@ -149,26 +149,16 @@ export function describePhase(
     "phaseName" | "phaseIndex" | "isTruePhase" | "phaseFraction" | "waxing"
   >
 ): string {
-  const isPrimary = PRIMARY_PHASE_TARGETS[snapshot.phaseIndex] !== undefined;
-  if (!isPrimary) return snapshot.phaseName;
-
-  switch (snapshot.phaseIndex) {
-    case 4:
-      if (snapshot.phaseFraction >= FULL_ENOUGH || snapshot.isTruePhase) return "Full Moon";
-      // NOTE: waxing must come from SunCalc, never from phaseIndex — in this
-      // branch the index IS the primary value (exactly 4), so inferring
-      // direction from it would call every near-full moon "waning".
-      return snapshot.waxing ? "Waxing Gibbous" : "Waning Gibbous";
-    case 0:
-      if (snapshot.phaseFraction <= NEW_ENOUGH || snapshot.isTruePhase) return "New Moon";
-      return snapshot.waxing ? "Waxing Crescent" : "Waning Crescent";
-    case 2:
-      return snapshot.isTruePhase ? "First Quarter" : "Near First Quarter";
-    case 6:
-      return snapshot.isTruePhase ? "Last Quarter" : "Near Last Quarter";
-    default:
-      return snapshot.phaseName;
-  }
+  const f = snapshot.phaseFraction;
+  if (f >= FULL_ENOUGH) return "Full moon";
+  if (f >= 0.96) return "Almost full moon";
+  if (f <= NEW_ENOUGH) return "New moon";
+  // Wide enough to catch most evenings of a quarter day: near a quarter the
+  // lit fraction moves about 10 points a day, so 48 to 52 caught only a third.
+  if (f >= 0.45 && f <= 0.55) return "Half moon";
+  if (f < 0.08) return "Thin crescent";
+  if (f < 0.45) return snapshot.waxing ? "Growing crescent" : "Fading crescent";
+  return snapshot.waxing ? "Growing moon" : "Fading moon";
 }
 
 /**
@@ -181,10 +171,10 @@ export function describeSyzygyNote(
 ): string | null {
   if (snapshot.isTruePhase) return null;
   if (snapshot.phaseIndex === 4 && snapshot.phaseFraction >= FULL_ENOUGH) {
-    return "Exact full moon fell just outside this date";
+    return "The moon looks full. Its fullest moment falls on a nearby date.";
   }
   if (snapshot.phaseIndex === 0 && snapshot.phaseFraction <= NEW_ENOUGH) {
-    return "Exact new moon fell just outside this date";
+    return "The moon looks dark. The exact new moon falls on a nearby date.";
   }
   return null;
 }
