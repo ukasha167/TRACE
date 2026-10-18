@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   Pressable,
   Alert,
-  useWindowDimensions,
 } from "react-native";
 import { useLocalSearchParams, router, type Href } from "expo-router";
 import { Pencil, Share2 } from "lucide-react-native";
@@ -21,13 +20,11 @@ import {
 } from "@/constants/theme";
 import { useMilestone, useMilestonesStore } from "@/store/useMilestonesStore";
 import { useRevealStore } from "@/store/useRevealStore";
-import { getMoonPhase, formatIllumination } from "@/lib/astronomy/moonPhase";
+import { getMoonPhase } from "@/lib/astronomy/moonPhase";
 import { getMoonReturns } from "@/lib/astronomy/moonReturn";
 import { getRarityStat } from "@/lib/astronomy/rarity";
-import { getNightFacts, headlineSentences, shortPlace } from "@/lib/astronomy/nightFacts";
-import { getLifeLedger } from "@/lib/astronomy/lifeLedger";
+import { getNightFacts, headlineSentences } from "@/lib/astronomy/nightFacts";
 import { planetReturns } from "@/lib/astronomy/planetReturns";
-import { daysBetween } from "@/lib/astronomy/anniversary";
 import {
   getBrightLimbAngle,
   getLunarNorthRotation,
@@ -37,17 +34,12 @@ import {
   toLocalDayStart,
   todayDateString,
 } from "@/lib/astronomy/dateUtils";
-import { useApod } from "@/hooks/useApod";
+import { useOpenSky } from "@/hooks/useOpenSky";
 import { Arrive } from "@/components/Arrive";
-import { MoonGrid } from "@/components/MoonGrid";
-import { SkyCanvas } from "@/components/SkyCanvas";
 import { MoonSection } from "@/components/detail/MoonSection";
 import { ComingUpCard } from "@/components/detail/ComingUpCard";
-import { RaritySection } from "@/components/detail/RaritySection";
 import { MoonReturnSection } from "@/components/detail/MoonReturnSection";
-import { SectionHeader } from "@/components/detail/SectionHeader";
 import { DetailsFold } from "@/components/detail/DetailsFold";
-import { ApodCard } from "@/components/detail/ApodCard";
 
 const route = (path: string) => path as Href;
 
@@ -59,28 +51,14 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 /** Thresholds tried high-to-low; the first one the moon clears is the one shown. */
-const RARITY_THRESHOLDS = [99.5, 99, 97, 95, 90];
+const RARITY_THRESHOLDS = [99.5, 99];
 
-/**
- * MILESTONE DETAIL. Spec §2.
- *
- * ORDER IS THE DESIGN, and it changed. The page used to go moon, rarity,
- * returns, a link, NASA, with the night described by a tilt in degrees. Now it
- * goes: the name, the moon, what that night was like in a sentence or two, this
- * year's night with a bell, how uncommon it was, when it comes back, the whole
- * sky that night, every year's moon, NASA's picture, share. The instrument
- * readings are all still here, in a fold at the bottom, because rule 1 is that
- * anyone can check them.
- *
- * Everything above the NASA card is local computation, so the page is whole
- * offline.
- */
 export default function MilestoneDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const deleteMilestone = useMilestonesStore((s) => s.deleteMilestone);
   // Subscribed, not read once. See useMilestone.
   const milestone = useMilestone(id);
-  const { width } = useWindowDimensions();
+  const { moonRef, openSky } = useOpenSky(id);
 
   const tzOffsetMin = milestone?.location?.timezoneOffsetMin;
   const today = todayDateString();
@@ -109,9 +87,25 @@ export default function MilestoneDetailScreen() {
     const threshold = RARITY_THRESHOLDS.find((t) => phase.phaseFraction * 100 >= t);
     const facts = place ? getNightFacts(milestone.date, place, tzOffsetMin) : null;
     const brightLimbAngleDeg = place ? getBrightLimbAngle(night, place) : null;
+    const rarity =
+      threshold !== undefined
+        ? getRarityStat(milestone.date, threshold, { tzOffsetMin, today })
+        : null;
 
-
-    const rows: { label: string; value: string }[] = [...(facts?.rows ?? [])];
+    // Rarity lives in the fold. On the page it was a second big number under
+    // the moon's own, and the return line already says why the night matters.
+    const rows: { label: string; value: string }[] = [];
+    if (rarity) {
+      rows.push({
+        label: "How uncommon",
+        value: `1 in ${rarity.oneInN.toFixed(0)} days has a moon at least ${rarity.thresholdPct}% lit`,
+      });
+      rows.push({
+        label: "On this date",
+        value: `${rarity.matchingYears.length} of ${rarity.totalYears} years so far had one`,
+      });
+    }
+    rows.push(...(facts?.rows ?? []));
     if (brightLimbAngleDeg != null) {
       rows.push({
         label: "Lit edge",
@@ -135,63 +129,29 @@ export default function MilestoneDetailScreen() {
       returns,
       facts,
       rows,
-      rarity:
-        threshold !== undefined
-          ? getRarityStat(milestone.date, threshold, { tzOffsetMin, today })
-          : null,
       brightLimbAngleDeg,
       northAngleDeg: place ? getLunarNorthRotation(night, place) : null,
     };
   }, [milestone, tzOffsetMin, today]);
 
-  // BELOW THE FOLD, AFTER THE FIRST FRAME. The strip of every year's moon and
-  // the planet returns are the two slowest things on the page, together a few
-  // hundred milliseconds under Hermes, and both sit well off the first screen.
-  // Computed with the rest they held the screen's first frame, and the push
-  // waits for that frame. The slide itself runs natively, so work started one
-  // frame later does not stutter it.
-  const [settled, setSettled] = useState(false);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setSettled(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
-  const later = useMemo(() => {
-    if (!settled || !milestone || !computed) return null;
-    return {
-      // Every anniversary so far, for the strip of moons.
-      life: getLifeLedger(milestone.date, { location: milestone.location }).filter(
-        (row) => daysBetween(row.date, today) >= 0
-      ),
-      // Jupiter and Saturn, geocentric, so "the same stars" means what it says.
-      planets: [
-        planetReturns("Jupiter", computed.night, new Date()),
-        planetReturns("Saturn", computed.night, new Date()),
-      ],
-    };
-  }, [settled, milestone, computed, today]);
-
-  const apod = useApod(milestone?.date ?? null);
+  const [showPlanets, setShowPlanets] = useState(false);
+  const planets = useMemo(() => showPlanets && computed ? [
+    planetReturns("Jupiter", computed.night, new Date()),
+    planetReturns("Saturn", computed.night, new Date()),
+  ] : [], [showPlanets, computed]);
 
   if (!milestone || !computed) {
     return (
       <View style={styles.root}>
-        <Text style={styles.errorText}>Record not found.</Text>
+        <Text style={styles.errorText}>Date not found.</Text>
       </View>
     );
   }
 
-  const unitLabel = milestone.type === "birthday" ? "birthdays" : "anniversaries";
   const headline = computed.facts ? headlineSentences(computed.facts) : [];
-  const moon = {
-    phaseFraction: computed.phase.phaseFraction,
-    waxing: computed.phase.waxing,
-    brightLimbAngleDeg: computed.brightLimbAngleDeg,
-    northAngleDeg: computed.northAngleDeg,
-  };
-
   const handleDelete = () => {
     Alert.alert(
-      "Delete this record?",
+      "Delete this date?",
       `"${milestone.title}" will be permanently removed.`,
       [
         { text: "Cancel", style: "cancel" },
@@ -207,7 +167,6 @@ export default function MilestoneDetailScreen() {
     );
   };
 
-  const mapSize = width - Spacing.page * 2;
 
   return (
     <View style={styles.root}>
@@ -216,6 +175,10 @@ export default function MilestoneDetailScreen() {
           <View style={styles.masthead}>
             <View style={styles.kickerRow}>
               <Text style={styles.kicker}>{TYPE_LABELS[milestone.type]}</Text>
+              <View style={styles.editRow}>
+              <Pressable onPress={() => router.push(route(`/export/${milestone.id}`))} accessibilityRole="button" accessibilityLabel="Share this night" style={{ padding: Spacing.sm }}>
+                <Share2 size={19} color={Colors.signal} />
+              </Pressable>
               <Pressable
                 onPress={() => router.push(route(`/milestone/edit/${milestone.id}`))}
                 accessibilityRole="button"
@@ -227,9 +190,10 @@ export default function MilestoneDetailScreen() {
                   <Text style={styles.editLink}>Edit</Text>
                 </View>
               </Pressable>
+              </View>
             </View>
             <Text style={styles.title}>{milestone.title}</Text>
-            <Text style={styles.date}>{formatLongDate(milestone.date)}</Text>
+            <Text style={styles.date}>{`Evening of ${formatLongDate(milestone.date)}`}</Text>
             {milestone.location ? (
               <Text style={styles.place}>{milestone.location.label}</Text>
             ) : null}
@@ -242,6 +206,8 @@ export default function MilestoneDetailScreen() {
             phase={computed.phase}
             brightLimbAngleDeg={computed.brightLimbAngleDeg}
             northAngleDeg={computed.northAngleDeg}
+            moonRef={moonRef}
+            onOpenSky={computed.place ? openSky : undefined}
           />
         </Arrive>
 
@@ -275,96 +241,18 @@ export default function MilestoneDetailScreen() {
           <ComingUpCard milestone={milestone} />
         </Arrive>
 
-        {computed.rarity && (
-          <RaritySection rarity={computed.rarity} unitLabel={unitLabel} />
-        )}
-
         <MoonReturnSection
           returns={computed.returns}
+          planets={planets}
+          onExpand={() => setShowPlanets(true)}
           sourceDate={milestone.date}
           today={today}
-          planets={later?.planets ?? []}
         />
 
-        {computed.place && (
-          <View style={styles.section}>
-            <SectionHeader label={`The sky over ${shortPlace(computed.place.label)} that night`} />
-            <SkyCanvas
-              date={computed.night}
-              location={computed.place}
-              size={mapSize}
-              moon={moon}
-              onPress={() => router.push(route(`/sky/${milestone.id}`))}
-            />
-            <Text style={styles.caption}>
-              At midnight, looking straight up. North is at the top and east on the
-              left, the way the sky looks from underneath. The moon is drawn far
-              larger than it is so its phase shows.
-            </Text>
-            <Pressable
-              style={({ pressed }) => [styles.skyLink, pressed && styles.pressed]}
-              onPress={() => router.push(route(`/sky/${milestone.id}`))}
-              accessibilityRole="button"
-            >
-              <Text style={styles.skyLinkText}>Stand under this sky</Text>
-              <Text style={styles.arrow}>→</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {later && later.life.length > 1 && (
-          <View style={styles.section}>
-            <SectionHeader label="Life in moons" />
-            <Text style={styles.lifeLine}>
-              The moon over every {formatLongDate(milestone.date).replace(/ \d{4}$/, "")} since{" "}
-              {milestone.date.slice(0, 4)}.
-            </Text>
-            <View style={styles.lifePlate}>
-              <MoonGrid
-                width={mapSize - Spacing.md}
-                columns={7}
-                moonScale={0.66}
-                cells={later.life.map((row) => ({
-                  key: String(row.year),
-                  label: String(row.year),
-                  phaseFraction: row.phaseFraction,
-                  waxing: row.waxing,
-                  brightLimbAngleDeg: row.brightLimbAngleDeg,
-                  northAngleDeg: row.northAngleDeg,
-                  full: row.phaseFraction >= 0.99,
-                  ring: row.isReturn,
-                  accessibilityLabel: `${row.year}, ${formatIllumination(row.phaseFraction)} lit${row.isReturn ? ", a return" : ""}`,
-                }))}
-              />
-            </View>
-            <Pressable
-              style={({ pressed }) => [styles.skyLink, pressed && styles.pressed]}
-              onPress={() => router.push(route(`/ledger/${milestone.id}`))}
-              accessibilityRole="button"
-            >
-              <Text style={styles.skyLinkText}>Every year, one moon</Text>
-              <Text style={styles.arrow}>→</Text>
-            </Pressable>
-          </View>
-        )}
-
-        <ApodCard
-          status={apod.status}
-          data={apod.status === "success" || apod.status === "video" ? apod.data : null}
-          error={apod.status === "error" ? apod.error : null}
-          onRetry={apod.retry}
-        />
-
-        <Pressable
-          style={({ pressed }) => [styles.exportButton, pressed && styles.pressed]}
-          onPress={() => router.push(route(`/export/${milestone.id}`))}
-          accessibilityRole="button"
-          accessibilityLabel="Share this night as a card"
-        >
-          <View style={styles.editRow}>
-            <Share2 size={17} color={Colors.paper} strokeWidth={2} />
-            <Text style={styles.exportText}>Share this night</Text>
-          </View>
+        <Pressable style={({ pressed }) => [styles.skyLink, pressed && styles.pressed]}
+          onPress={() => router.push(route(`/ledger/${milestone.id}`))} accessibilityRole="button">
+          <Text style={styles.skyLinkText}>Every year, one moon</Text>
+          <Text style={styles.arrow}>→</Text>
         </Pressable>
 
         <View style={styles.fold}>
@@ -375,9 +263,9 @@ export default function MilestoneDetailScreen() {
           style={styles.deleteButton}
           onPress={handleDelete}
           accessibilityRole="button"
-          accessibilityLabel="Delete this record"
+          accessibilityLabel="Delete this date"
         >
-          <Text style={styles.deleteText}>Delete this record</Text>
+          <Text style={styles.deleteText}>Delete this date</Text>
         </Pressable>
       </ScrollView>
     </View>
@@ -424,7 +312,6 @@ const styles = StyleSheet.create({
   replay: { alignSelf: "flex-start", marginTop: Spacing.md },
   link: { fontFamily: FontFamily.medium, fontSize: FontSize.small, color: Colors.signal },
 
-  caption: { ...Type.small, marginTop: Spacing.md },
   skyLink: {
     flexDirection: "row",
     justifyContent: "center",
@@ -438,26 +325,6 @@ const styles = StyleSheet.create({
   skyLinkText: { fontFamily: FontFamily.semibold, fontSize: FontSize.body, color: Colors.ink },
   arrow: { fontFamily: FontFamily.regular, fontSize: FontSize.body, color: Colors.signal },
 
-  lifeLine: { ...Type.body, marginBottom: Spacing.md },
-  lifePlate: {
-    backgroundColor: Colors.space,
-    borderRadius: Radius.plate,
-    paddingVertical: Spacing.sm + 2,
-    paddingHorizontal: Spacing.sm,
-    overflow: "hidden",
-  },
-
-  exportButton: {
-    backgroundColor: Colors.ink,
-    borderRadius: Radius.pill,
-    paddingVertical: Spacing.md,
-    alignItems: "center",
-  },
-  exportText: {
-    fontFamily: FontFamily.semibold,
-    fontSize: FontSize.body,
-    color: Colors.paper,
-  },
   fold: { marginTop: Spacing.xl },
   deleteButton: { alignSelf: "center", paddingVertical: Spacing.lg },
   deleteText: {

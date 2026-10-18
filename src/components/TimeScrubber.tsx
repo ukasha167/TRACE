@@ -1,6 +1,14 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, type LayoutChangeEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  Easing,
+  runOnJS,
+  runOnUI,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/theme";
 
@@ -19,6 +27,8 @@ interface Props {
 const STEP = 10 * 60_000;
 const HOUR = 3_600_000;
 const THUMB = 22;
+/** The thumb's settle onto its ten-minute mark, and onto a value set from outside. */
+const SETTLE = { duration: 260, easing: Easing.out(Easing.exp) };
 
 /**
  * A rail and a thumb for scrubbing through one night.
@@ -27,6 +37,13 @@ const THUMB = 22;
  * the slider packages that look right are native modules and this app runs in
  * Expo Go. It snaps to ten minutes and ticks the phone once per hour crossed,
  * so a thumb dragged through the night can be felt going past each hour.
+ *
+ * THE THUMB LIVES ON THE UI THREAD. It used to be placed from the `value` prop,
+ * so it moved only after the whole sky screen had re-rendered for the new
+ * time, and it trailed the finger by however long that took. Now the finger
+ * moves it directly and continuously; only the snapped time goes to the JS
+ * thread, at most once a frame, and the thumb settles onto that mark when the
+ * finger lifts.
  */
 export function TimeScrubber({
   min,
@@ -38,33 +55,77 @@ export function TimeScrubber({
   accessibilityValue,
 }: Props) {
   const [width, setWidth] = useState(0);
-  const lastHour = useRef(Math.floor(value / HOUR));
   const span = Math.max(1, max - min);
+  const railWidth = useSharedValue(0);
+  const thumbX = useSharedValue(0);
+  const dragging = useSharedValue(false);
+  const lastStep = useSharedValue(value);
+  const lastHour = useSharedValue(Math.floor(value / HOUR));
 
-  const setFromX = useCallback(
-    (x: number) => {
-      if (width <= 0) return;
-      const f = Math.min(1, Math.max(0, x / width));
-      const snapped = Math.round((min + f * span) / STEP) * STEP;
-      const v = Math.min(max, Math.max(min, snapped));
-      const hour = Math.floor(v / HOUR);
-      if (hour !== lastHour.current) {
-        lastHour.current = hour;
-        Haptics.selectionAsync();
-      }
-      onChange(v);
-    },
-    [width, min, max, span, onChange]
-  );
+  // A value set from outside ("Midnight", a screen reader) moves the thumb.
+  // While a finger is on it, the finger wins.
+  useEffect(() => {
+    runOnUI((v: number, w: number) => {
+      railWidth.value = w;
+      if (dragging.value || w <= 0) return;
+      lastStep.value = v;
+      thumbX.value = withTiming(((v - min) / span) * w, SETTLE);
+    })(value, width);
+  }, [value, width, min, span]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Several snapped values can arrive between two frames on a fast drag. Only
+  // the last matters, and the sky re-renders once for it.
+  const pending = useRef<number | null>(null);
+  const flush = () => {
+    const v = pending.current;
+    pending.current = null;
+    if (v != null) onChange(v);
+  };
+  const emit = (v: number) => {
+    if (pending.current == null) requestAnimationFrame(flush);
+    pending.current = v;
+  };
+  const tick = () => void Haptics.selectionAsync();
+
+  const setFromX = (x: number) => {
+    "worklet";
+    const w = railWidth.value;
+    if (w <= 0) return;
+    const cx = Math.min(w, Math.max(0, x));
+    thumbX.value = cx;
+    const snapped = Math.min(max, Math.max(min, Math.round((min + (cx / w) * span) / STEP) * STEP));
+    if (snapped === lastStep.value) return;
+    lastStep.value = snapped;
+    const hour = Math.floor(snapped / HOUR);
+    if (hour !== lastHour.value) {
+      lastHour.value = hour;
+      runOnJS(tick)();
+    }
+    runOnJS(emit)(snapped);
+  };
+  const settle = () => {
+    "worklet";
+    const w = railWidth.value;
+    if (w > 0) thumbX.value = withTiming(((lastStep.value - min) / span) * w, SETTLE);
+  };
 
   const pan = Gesture.Pan()
-    .onBegin((e) => setFromX(e.x))
+    .onBegin((e) => {
+      dragging.value = true;
+      setFromX(e.x);
+    })
     .onUpdate((e) => setFromX(e.x))
-    .runOnJS(true);
-  const tap = Gesture.Tap()
-    .onEnd((e) => setFromX(e.x))
-    .runOnJS(true);
+    .onFinalize(() => {
+      dragging.value = false;
+      settle();
+    });
+  const tap = Gesture.Tap().onEnd((e) => {
+    setFromX(e.x);
+    settle();
+  });
 
+  const fillStyle = useAnimatedStyle(() => ({ width: Math.max(0, thumbX.value) }));
+  const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: thumbX.value - THUMB / 2 }] }));
   const at = (t: number) => ((t - min) / span) * width;
 
   return (
@@ -87,10 +148,8 @@ export function TimeScrubber({
           marks
             .filter((m) => m >= min && m <= max)
             .map((m) => <View key={m} style={[styles.mark, { left: at(m) - 0.5 }]} />)}
-        {width > 0 && (
-          <View style={[styles.fill, { width: Math.max(0, at(value)) }]} />
-        )}
-        {width > 0 && <View style={[styles.thumb, { left: at(value) - THUMB / 2 }]} />}
+        {width > 0 && <Animated.View style={[styles.fill, fillStyle]} />}
+        {width > 0 && <Animated.View style={[styles.thumb, thumbStyle]} />}
       </View>
     </GestureDetector>
   );
@@ -109,6 +168,7 @@ const styles = StyleSheet.create({
   mark: { position: "absolute", width: 1, height: 12, backgroundColor: Colors.plateMuted },
   thumb: {
     position: "absolute",
+    left: 0,
     width: THUMB,
     height: THUMB,
     borderRadius: THUMB / 2,
