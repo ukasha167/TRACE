@@ -20,12 +20,12 @@
  *
  * WHAT IT PRODUCES.
  *
- *   assets/constellations/figures.png   one 4x4 sheet, 512pt tiles, greyscale
+ *   assets/constellations/figures.png   one sheet, ten tiles across, greyscale
  *   src/data/constellationArt.json      per figure: tile index, size, anchors
  *
- * ONE SHEET, NOT FIFTEEN FILES. The renderer needs every figure available on
- * any frame, and `useImage` is a hook, so fifteen files means either fifteen
- * fixed hook calls or an async loader with its own cache. One sheet is one
+ * ONE SHEET, NOT EIGHTY-EIGHT FILES. The renderer needs every figure available
+ * on any frame, and `useImage` is a hook, so one file per figure means either
+ * a hook call per figure or an async loader with its own cache. One sheet is one
  * texture upload, one hook, and one thing that can fail.
  *
  * ANCHORS. Stellarium pins each illustration with three (image x, y) to HIP
@@ -46,33 +46,31 @@ const RAW = "https://raw.githubusercontent.com/Stellarium/stellarium/master/skyc
 const VIZIER = "https://vizier.cds.unistra.fr/viz-bin/asu-tsv";
 
 /**
- * The figures worth carrying, and why these fifteen.
+ * EVERY FIGURE THE PACK HAS. This used to be fifteen hand-picked figures, on
+ * the theory that nobody looks for Antlia. In practice the gap was the thing
+ * people noticed: Orion lit up with its hunter and Lepus at his feet lit up as
+ * bare lines. A figure only shows while you are looking at it, so carrying all
+ * of them costs texture memory and nothing on screen.
  *
- * Every one is either naked-eye obvious, a zodiac sign people know they were
- * born under, or the thing you point at first in its hemisphere. The remaining
- * 73 constellations keep their line figures and their names; what they do not
- * get is a drawing, because nobody is looking for Antlia.
+ * The list comes from the line data, so a constellation with lines and no
+ * illustration is reported rather than silently skipped. Three are, and that
+ * is the pack, not a gap in it: Stellarium draws Puppis and Vela as parts of
+ * Argo Navis, filed under Carina, and has no separate Serpens.
  */
-const PICKS = [
-  "Ori", // Orion, the one everybody finds first
-  "UMa", // Ursa Major, the Plough
-  "UMi", // Ursa Minor, holds Polaris
-  "Cas", // Cassiopeia, the W
-  "Cyg", // Cygnus, the Northern Cross
-  "Peg", // Pegasus, the Great Square
-  "And", // Andromeda, and the galaxy in it
-  "Per", // Perseus
-  "Leo", // zodiac
-  "Tau", // zodiac, holds the Pleiades and Aldebaran
-  "Gem", // zodiac
-  "Sco", // zodiac, Antares
-  "Sgr", // zodiac, the galactic centre
-  "CMa", // Canis Major, Sirius
-  "Cru", // Crux, the Southern Cross
+const LINE_IDS = [
+  ...new Set(
+    JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../src/data/constellations.json"), "utf8")).map((c) => c.id)
+  ),
 ];
 
-const TILE = 512;
-const COLS = 4;
+/**
+ * 384pt tiles, ten across: a 3840 x 3456 sheet, inside the 4096 texture limit
+ * every phone this app runs on supports. At 512 the full set would be 5120
+ * wide. The art is drawn at a fifth of full strength under the lines, where a
+ * quarter less resolution does not show.
+ */
+const TILE = 384;
+const COLS = 10;
 const ROOT = path.resolve(import.meta.dirname, "..");
 const OUT_PNG = path.join(ROOT, "assets/constellations/figures.png");
 const OUT_JSON = path.join(ROOT, "src/data/constellationArt.json");
@@ -87,7 +85,7 @@ async function getJson(url) {
 }
 
 /**
- * Sixteen sequential fetches from one CDN drop connections often enough to be
+ * Eighty-odd sequential fetches from one CDN drop connections often enough to be
  * worth retrying, and `fetch` has no default timeout, so a stalled socket hangs
  * the build forever rather than failing. Both are handled here.
  *
@@ -181,18 +179,17 @@ const main = async () => {
   }
 
   const chosen = [];
-  for (const abbrev of PICKS) {
+  const without = [];
+  for (const abbrev of LINE_IDS) {
     const c = byAbbrev.get(abbrev);
-    if (!c) throw new Error(`no constellation "${abbrev}" in the index`);
-    if (!c.image) throw new Error(`"${abbrev}" has no illustration`);
+    if (!c?.image) { without.push(abbrev); continue; }
     if (c.image.anchors?.length !== 3) {
       throw new Error(`"${abbrev}" has ${c.image.anchors?.length} anchors, expected 3`);
     }
     chosen.push({ abbrev, c });
   }
-  if (chosen.length > COLS * COLS) {
-    throw new Error(`${chosen.length} figures will not fit a ${COLS}x${COLS} sheet`);
-  }
+  if (without.length) console.log(`no illustration in the pack: ${without.join(", ")}`);
+  const ROWS = Math.ceil(chosen.length / COLS);
 
   const hips = [...new Set(chosen.flatMap(({ c }) => c.image.anchors.map((a) => a.hip)))];
   console.log(`resolving ${hips.length} anchor stars through VizieR...`);
@@ -200,7 +197,7 @@ const main = async () => {
   const missing = hips.filter((h) => !positions.has(h));
   if (missing.length) throw new Error(`VizieR returned nothing for HIP ${missing.join(", ")}`);
 
-  const sheet = new PNG({ width: TILE * COLS, height: TILE * COLS });
+  const sheet = new PNG({ width: TILE * COLS, height: TILE * ROWS });
   sheet.data.fill(0);
 
   const figures = [];
@@ -215,11 +212,10 @@ const main = async () => {
       throw new Error(`${abbrev}: index says ${sw}x${sh}, file is ${png.width}x${png.height}`);
     }
 
-    // Not every illustration is 512: Crux ships at 128 and Gemini and Ursa
-    // Minor at 256. They are resampled up into a uniform tile rather than
-    // packed at native size, because a sheet of mixed tile sizes means the
-    // renderer has to carry a per-figure source rect for no benefit. Crux
-    // upscales 4x and is soft, which is survivable for four stars in a cross.
+    // Illustrations come in several sizes (Crux ships at 128, Gemini and Ursa
+    // Minor at 256). All are resampled into one tile size rather than packed
+    // at native size, because a sheet of mixed tile sizes means the renderer
+    // has to carry a per-figure source rect for no benefit.
     const col = i % COLS;
     const row = Math.floor(i / COLS);
     blitScaled(png, sheet, col * TILE, row * TILE, TILE, COLS);
@@ -267,13 +263,13 @@ const main = async () => {
       "repository and in any build that ships them; TRACE's own source stays MIT.",
       "Attribution must remain visible in the app's credits.",
       "",
-      "Figures included: " + PICKS.join(", ") + ".",
+      "Figures included: " + chosen.map((f) => f.abbrev).join(", ") + ".",
       "",
     ].join("\n")
   );
 
   const kb = (fs.statSync(OUT_PNG).size / 1024).toFixed(0);
-  console.log(`\nwrote ${OUT_PNG}  (${TILE * COLS}x${TILE * COLS}, ${kb} KB)`);
+  console.log(`\nwrote ${OUT_PNG}  (${TILE * COLS}x${TILE * ROWS}, ${kb} KB)`);
   console.log(`wrote ${OUT_JSON}  (${figures.length} figures)`);
   console.log(`wrote ${OUT_ATTR}`);
 };
