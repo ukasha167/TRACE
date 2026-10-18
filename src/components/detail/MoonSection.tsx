@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, useWindowDimensions } from "react-native";
+import { View, Text, StyleSheet, useWindowDimensions, Pressable } from "react-native";
 import {
   Colors,
   Spacing,
@@ -25,30 +25,11 @@ interface Props {
   phase: PhaseData;
   brightLimbAngleDeg: number | null;
   northAngleDeg: number | null;
+  onOpenSky?: () => void;
+  moonRef?: React.RefObject<View | null>;
 }
 
-/**
- * THE MOON THAT NIGHT. The hero of the record.
- *
- * WHAT WAS WRONG WITH IT. It was a 148pt moon centred in an inset rounded
- * plate, under a numbered section header. Three things stopped it reading as
- * the subject of the screen and every one of them was framing rather than
- * content:
- *
- *   1. A section header above it announced it as one section among five. The
- *      hero of a page is not introduced, it is the first thing there.
- *   2. The plate was inset from the page margins, which makes any dark block
- *      read as a card. Cards are things a page contains; a plate is something
- *      the page is tucked under.
- *   3. A small disc adrift in a large dark rectangle. Emptiness around a
- *      subject reads as a placeholder, not as space.
- *
- * So: full bleed to both screen edges, the moon at 62% of the screen width, and
- * the wide halo (see MoonPhaseGlyph's `glow`) so the light carries into the
- * plate instead of stopping at the limb. Nothing else is on the plate. The
- * caption stays on paper below it, because reading surfaces are never dark.
- */
-export function MoonSection({ phase, brightLimbAngleDeg, northAngleDeg }: Props) {
+export function MoonSection({ phase, brightLimbAngleDeg, northAngleDeg, onOpenSky, moonRef }: Props) {
   const { width } = useWindowDimensions();
   const note = describeSyzygyNote(phase);
 
@@ -59,11 +40,13 @@ export function MoonSection({ phase, brightLimbAngleDeg, northAngleDeg }: Props)
 
   return (
     <View style={styles.section}>
-      <View style={[styles.plate, { height: plateHeight }]}>
+      <Pressable style={[styles.plate, { height: plateHeight }]} onPress={onOpenSky} disabled={!onOpenSky}
+        accessibilityRole={onOpenSky ? "button" : "image"} accessibilityLabel={`${describePhase(phase)}, ${formatIllumination(phase.phaseFraction)} lit${onOpenSky ? ". Stand under this sky" : ""}`}>
         {/* First child, so it paints under the moon — see moon/starGrain.ts for
             why the field is the same one the home hero and the card draw. */}
         <StarField />
 
+        <View ref={moonRef} collapsable={false} style={{ width: moonSize, height: moonSize, alignItems: "center", justifyContent: "center" }}>
         <MoonPhaseGlyph
           phaseFraction={phase.phaseFraction}
           waxing={phase.waxing}
@@ -73,7 +56,9 @@ export function MoonSection({ phase, brightLimbAngleDeg, northAngleDeg }: Props)
           variant="bare"
           glow="hero"
         />
-      </View>
+        </View>
+        {onOpenSky && <Text style={styles.skyHint}>Tap the moon to stand under this sky</Text>}
+      </Pressable>
 
       <View style={styles.caption}>
         <Text style={styles.phaseName}>{describePhase(phase)}</Text>
@@ -102,6 +87,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  skyHint: { ...Type.smallOnPlate, position: "absolute", bottom: Spacing.md, left: Spacing.page, right: Spacing.page, textAlign: "center" },
   caption: {
     flexDirection: "row",
     justifyContent: "space-between",
