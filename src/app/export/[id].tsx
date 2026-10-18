@@ -135,7 +135,7 @@ export default function ExportScreen() {
   if (!milestone || !moonPhase || !moonReturns) {
     return (
       <View style={styles.root}>
-        <Text style={styles.errorText}>Milestone not found.</Text>
+        <Text style={styles.errorText}>Date not found.</Text>
       </View>
     );
   }

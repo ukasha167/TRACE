@@ -75,7 +75,7 @@ export default function LedgerScreen() {
   if (!milestone) {
     return (
       <View style={styles.root}>
-        <Text style={styles.errorText}>Record not found.</Text>
+        <Text style={styles.errorText}>Date not found.</Text>
       </View>
     );
   }
