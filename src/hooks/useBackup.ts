@@ -34,7 +34,7 @@ export function useBackup() {
       await Sharing.shareAsync(uri, {
         mimeType: "application/json",
         UTI: "public.json",
-        dialogTitle: "Save your TRACE records",
+        dialogTitle: "Save your TRACE dates",
       });
     } catch (err) {
       Alert.alert("Backup failed", err instanceof Error ? err.message : "Unknown error");
@@ -62,7 +62,7 @@ export function useBackup() {
       const adding = newRecords(store.milestones, read.milestones);
       const already = read.milestones.length - adding.length;
       const parts = [
-        adding.length === 1 ? "1 record added." : `${adding.length} records added.`,
+        adding.length === 1 ? "1 date added." : `${adding.length} dates added.`,
         already > 0 ? `${already} already on this phone, kept as they are.` : "",
         read.skipped > 0 ? `${read.skipped} could not be read and were left out.` : "",
       ].filter(Boolean);

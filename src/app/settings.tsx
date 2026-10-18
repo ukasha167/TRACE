@@ -72,7 +72,7 @@ export default function SettingsScreen() {
 
   const version = Constants.expoConfig?.version ?? null;
   const backup = useBackup();
-  const [testSent, setTestSent] = useState<null | "sent" | "blocked">(null);
+  const [testSent, setTestSent] = useState<null | "sent" | "blocked" | "unavailable">(null);
 
   const handleSaveKey = useCallback(() => {
     const trimmed = keyDraft.trim();
@@ -92,7 +92,7 @@ export default function SettingsScreen() {
       "Remove your key?",
       usingEnv
         ? "TRACE will go back to the key set in your environment."
-        : "TRACE will go back to the shared key, which runs out after about 30 pictures an hour.",
+        : "TRACE will use the shared key for recent pictures. Older pictures use NASA's archive.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -146,7 +146,7 @@ export default function SettingsScreen() {
                 never leave the phone", and both do leave it, each for one
                 purpose the person asked for. */}
             <View style={styles.factRow}>
-              <Text style={styles.factKey}>Your records</Text>
+              <Text style={styles.factKey}>Your dates</Text>
               <Text style={styles.factValue}>Kept on this phone only</Text>
             </View>
             <View style={styles.factRow}>
@@ -158,7 +158,7 @@ export default function SettingsScreen() {
               <Text style={styles.factValue}>Sent to Apple or Google for its name</Text>
             </View>
             <View style={styles.factRow}>
-              <Text style={styles.factKey}>A record's date</Text>
+              <Text style={styles.factKey}>A saved date</Text>
               <Text style={styles.factValue}>Sent to NASA for that day's picture</Text>
             </View>
           </View>
@@ -166,11 +166,11 @@ export default function SettingsScreen() {
 
         {/* ---- Keeping them ---- */}
         <Arrive delay={120}>
-          <Text style={[styles.label, styles.spaced]}>Keeping your records</Text>
+          <Text style={[styles.label, styles.spaced]}>Keeping your dates</Text>
           <Text style={styles.sectionNote}>
             They live only on this phone, so a lost phone or a deleted app takes
             them with it. A backup is one small file you keep wherever you keep
-            files. Restoring adds the records that are missing and leaves the
+            files. Restoring adds the dates that are missing and leaves the
             ones already here as they are.
           </Text>
           <View style={styles.actionRow}>
@@ -198,7 +198,7 @@ export default function SettingsScreen() {
 
           <Text style={[styles.label, styles.spaced]}>Reminders</Text>
           <Text style={styles.sectionNote}>
-            A record with its bell on sends one notification at 19:00 on its
+            A date with its bell on sends one notification at 19:00 on its
             date. This sends the soonest one now, ten seconds from the tap, so
             you can see what arrives.
           </Text>
@@ -212,7 +212,9 @@ export default function SettingsScreen() {
                 ? "Sent. It arrives in ten seconds"
                 : testSent === "blocked"
                   ? "Notifications are off for TRACE"
-                  : "Send a test reminder"}
+                  : testSent === "unavailable"
+                    ? "Not available in Expo Go on Android"
+                    : "Send a test reminder"}
             </Text>
           </Pressable>
         </Arrive>
@@ -261,8 +263,8 @@ export default function SettingsScreen() {
               </Text>
               <Text style={styles.disclosureNote}>
                 {usingDemo
-                  ? "Shared with every copy of TRACE, so pictures stop after about 30 an hour. A free key from NASA lifts that to 1,000."
-                  : "Pictures load up to 1,000 times an hour."}
+                  ? "Recent pictures use a shared key with a request limit. Older pictures come from the archive and do not need a key."
+                  : "This key is used for recent pictures and when the archive cannot answer."}
               </Text>
             </View>
             <Text style={styles.disclosureChevron}>{keyOpen ? "−" : "+"}</Text>

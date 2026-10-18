@@ -7,6 +7,7 @@ interface SettingsState extends AppSettings {
   setNasaApiKey: (key: string | null) => void;
   setHasCompletedOnboarding: (value: boolean) => void;
   setHasSeenPointHint: (value: boolean) => void;
+  setHasSeenDragHint: (value: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -15,10 +16,12 @@ export const useSettingsStore = create<SettingsState>()(
       nasaApiKey: null,
       hasCompletedOnboarding: false,
       hasSeenPointHint: false,
+      hasSeenDragHint: false,
 
       setNasaApiKey: (key) => set({ nasaApiKey: key }),
       setHasCompletedOnboarding: (value) => set({ hasCompletedOnboarding: value }),
       setHasSeenPointHint: (value) => set({ hasSeenPointHint: value }),
+      setHasSeenDragHint: (value) => set({ hasSeenDragHint: value }),
     }),
     {
       name: "app-settings",
