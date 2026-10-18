@@ -38,7 +38,7 @@ Read DECISIONS.md before changing anything in `lib/astronomy/`, `hooks/useSkyOri
 
 ```bash
 npx expo start          # then i for iOS simulator, a for Android
-npm test                # 215 tests, tsx + node:test. NOT jest.
+npm test                # 251 tests, tsx + node:test. NOT jest.
 npx tsc --noEmit
 ```
 
@@ -51,15 +51,17 @@ src/
 ├── app/            Expo Router routes. Screens only.
 ├── components/     Presentation. No astronomy, no network.
 │   ├── detail/     The record detail sections.
-│   └── moon/       The moon's SkSL lighting shader, its uniforms and textures, the star field.
+│   ├── moon/       The moon's SkSL lighting shader, its uniforms and textures, the star field.
+│   └── sky/        The Milky Way and moonlit-sky shader; true-size sun and planet discs.
 ├── hooks/          Stateful glue.
 ├── store/          Zustand + AsyncStorage.
 ├── lib/
 │   ├── astronomy/  Pure functions. No network, no RN imports, no side effects. Most tests point here.
 │   ├── reminders/  The reminder plan and its words. Pure.
 │   ├── backup/     The records file, written and read. Pure.
-│   └── apod/       NASA's pictures: the API, the archive pages, the cache. Network lives here.
-├── data/           bsc.json, constellations.json, messier.json. Rebuildable from scripts/.
+│   ├── apod/       NASA's pictures: the API, the archive pages, the cache. Network lives here.
+│   └── occasion.ts Reads a date's type from its title. Pure.
+├── data/           bsc.json (with B-V), constellations.json, constellationStars.json, milkyWay.json. Rebuildable from scripts/.
 ├── constants/      theme.ts. The only file allowed a colour literal.
 └── types/          Shared shapes. Nothing else defines a domain type.
 ```
@@ -72,8 +74,8 @@ looked, `toLocalDayStart` for the syzygy check.
 
 **Timezones.** A record with a location is evaluated in *that place's* local time, not the device's.
 A birthday in Tokyo is a Tokyo night. A typed place's offset is estimated from its longitude, so a
-record's clock time is never printed; say it against sunset or sunrise (`nightFacts`). Tonight's tools
-are the exception: the phone's own clock for the phone's own place is exact. Decision 33.
+record's clock time is never printed; say it against sunset or sunrise (`nightFacts`). Tonight's live
+sky is the exception: the phone's own clock for the phone's own place is exact. Decision 33.
 
 **NASA's API is not trusted on a 200.** For past dates it answers with its logo. `apodArchive` reads
 the archive page instead, and `isPlaceholderApod` keeps the logo out of the cache. Decision 38.
@@ -117,6 +119,11 @@ Material calendar dialog, which is a modal on a screen that is one continuous sc
 looks right is a native module and this app runs in Expo Go. The haptic tick fires per detent
 crossed, live, not on momentum end.
 
+**The sky view draws everything at its true size.** The sun, moon and planets subtend their real
+angle through the frame's focal length; nothing is enlarged so it can be seen, which is why the zoom
+reaches 0.1 degrees. The Milky Way keeps its brightness under zoom because surface brightness does
+not change with magnification. Read DECISIONS 55 to 58 before changing `components/sky/`.
+
 **Colour.** Only `theme.ts` holds hex. `SkyColors` is separate from `Colors` on purpose: it answers
 to physics, so changing the app's accent must not change a constellation line.
 
@@ -133,7 +140,7 @@ come back. Do not narrate what the next line does.
 
 Phases A through H are built, tested, and verified on an iPhone simulator and a Pixel 7 Pro. The
 improvement stages after them (the reveal, reminders, night facts, star map, sky scrubber, life in
-moons, the night card, tonight's tools, backup) are verified on the iPhone simulator only. `npm test`
-is green at 215 tests and `npx tsc --noEmit` is clean.
+moons, the night card, backup) are verified on the iPhone simulator only. `npm test`
+is green at 251 tests and `npx tsc --noEmit` is clean.
 
 Open work is listed at the end of PRD.md.

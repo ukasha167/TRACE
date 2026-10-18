@@ -34,7 +34,7 @@ tsconfig paths and runs the suite in under a second. Revisit only if component t
 ```bash
 npm install
 npx expo start          # then i for iOS simulator, a for Android
-npm test                # 215 tests, tsx + node:test
+npm test                # 228 tests, tsx + node:test
 npx tsc --noEmit
 ```
 
@@ -120,7 +120,11 @@ This is the one place where the ordinary React model is deliberately abandoned.
    reused buffer (three dot products per star, zero allocation), and records geometry **and text**
    into a single `SkPicture`.
 3. The picture is handed to Skia through a Reanimated shared value. React re-renders only for things
-   a person changes: field of view, mode, and a 4 Hz text label.
+   a person changes (mode, the end of a pinch, a scrubber step) and a 4 Hz text label.
+4. Nothing a finger moves is drawn where the finger put it. Drag, pinch and the time scrubber set a
+   target and the frame loop glides toward it (`lib/glide.ts`), so uneven touch events arrive as
+   even motion, and a flick coasts. The home carousel runs the same glide in a Reanimated frame
+   callback on the UI thread.
 
 Stars draw as batched Skia `Path`s bucketed by brightness. Nothing is culled by altitude, so the
 view passes through the horizon and keeps going. Standing somewhere means being able to look down.
@@ -130,16 +134,39 @@ view passes through the horizon and keeps going. Standing somewhere means being 
 carries no shape a person recognises and fogs the bright stars that make constellations legible. Any
 star with an IAU proper name is kept regardless of the limit.
 
-Of the 110 Messier objects, 24 draw: the galaxies, nebulae, planetary nebulae and supernova remnants
-that carry a common name. Anonymous objects ("M58", "M59") cost the reader the sky behind them, and
-cluster glyphs sit on top of stars the catalogue is already drawing correctly. Dropping M45 does not
-remove the Pleiades; it returns them to being seven stars.
+No deep-sky objects draw. A galaxy or nebula drawn as a chart glyph (dashed oval, box, ringed
+cross) is a symbol with no shape of its own, and none of them is a naked-eye sight the way a star is.
+DECISIONS 53.
+
+The view opens at the normal lens, 46.8 degrees across the diagonal (`skyView.eyeFieldOfView`), and
+"Reset zoom" returns to it. It zooms from 100 degrees to 0.1, a small telescope at about 140x.
+
+The sun, the moon and the planets are drawn at the angle they really subtend
+(`skyBodies.angularRadiusDeg` through the frame's focal length). A planet is a point of light until
+the zoom resolves its disc, then a phased, flattened, limb-darkened disc on its IAU pole, with
+Saturn's rings split around the globe (`components/sky/drawBodies.ts`). Opening the sky from a moon
+starts at the field of view in which the moon's true size matches the moon that was tapped, and
+zooms out to the eye's.
+
+Stars are coloured from their catalogued B-V (`skyLight.bvToKelvin`, binned into nine temperatures
+so colour costs nine extra fills), white below magnitude 4 where the eye sees no colour, and dimmed
+by the airmass they are seen through.
+
+The Milky Way is NASA's Deep Star Maps 2020 background layer, the light of Gaia's faint stars,
+projected per pixel by `components/sky/skyShader.ts` through the same camera as the stars. The same
+pass computes moonlight scattered by the air (Krisciunas and Schaefer 1991), which washes the band
+out and lights the sky blue around a bright moon, and extinction toward the horizon. Twilight and a
+compressed dark adaptation set one exposure per frame. A ground covers everything below the horizon while the view looks up and
+dissolves as it tips to the horizon (`skyView.groundRegion`, `groundOpacity`).
 
 Constellation figures rest at an alpha almost too faint to notice and lift, with their name, when
 the view centre comes within 60% of the half-field of their centroid, easing over about 0.8 seconds.
 Figures at rest all draw in one path, so the common case costs what the whole set used to.
 
-Fifteen of them also carry a drawn figure, riding the same fade and drawn under the lines. Placement
+85 of them also carry a drawn figure, riding the same fade and drawn under the lines. That is
+Stellarium's whole pack: Puppis and Vela are drawn inside Argo Navis, and Serpens has no figure. While
+a figure is lit, every star its lines pass through is labelled, with its proper name, else its Bayer
+letter, else its Flamsteed number. Placement
 comes from Stellarium's anchor scheme: three points in the illustration are tied to three real
 stars, and `anchorTransform` solves the affine map through their projected positions. That is an
 approximation of the spherical projection and it is the one Stellarium makes too; it holds because a
@@ -147,7 +174,8 @@ constellation spans tens of degrees rather than a hemisphere. The transform retu
 a near-degenerate matrix when an anchor approaches the camera plane.
 
 Labels claim rectangles as they are drawn, and a later label that would overlap is dropped. Priority
-runs solar system, named stars, deep sky, constellation names.
+runs solar system, named stars, a lit figure's stars, constellation names. While the ground is
+solid, nothing under it is labelled.
 
 Measured cost of the per-frame maths is 0.05 ms against a 16.7 ms budget.
 
@@ -215,18 +243,19 @@ phone's own offset on the record's date; a typed place stores the longitude esti
 
 ## Bundled data
 
-795 KB total, all reproducible from `scripts/`.
+648 KB of data under `src/data/`, plus the images below. All of it is reproducible from `scripts/`.
 
 | File | Contents | Source |
 |---|---|---|
-| `src/data/bsc.json` | 8,404 stars to magnitude 6.5, with 333 IAU proper names merged in | Yale BSC5 (public domain) + IAU-CSN |
+| `src/data/bsc.json` | 8,404 stars to magnitude 6.5, with 333 IAU proper names and 8,160 B-V colour indices merged in | Yale BSC5, V/50 on VizieR (public domain) + IAU-CSN |
+| `assets/sky/milkyway.png`, `src/data/milkyWay.json` | 2048x1024 greyscale Milky Way in J2000 RA/Dec, gamma 2.2, and its reference radiance | NASA SVS Deep Star Maps 2020, Ernie Wright (public domain) |
 | `src/data/constellations.json` | 89 constellations, 150 line segments | d3-celestial (BSD-3) |
-| `src/data/messier.json` | 110 deep-sky objects, 40 of them galaxies | d3-celestial (BSD-3) |
+| `src/data/constellationStars.json` | 767 figure stars with chart labels | `scripts/build-constellation-stars.mjs`, from the two files above |
 | `src/data/constellationNames.ts` | 88 IAU abbreviations to full names | IAU designations |
 | `assets/moon_disc.png` | 1024x1024 orthographic near-side albedo, exposure graded, opaque to the corners | NASA LROC WAC / CGI Moon Kit (public domain) |
 | `assets/moon_normal.png` | 1024x1024 surface normals for the same projection, y down | NASA LOLA LDEM / CGI Moon Kit (public domain) |
 | `assets/moon_disc_256.png`, `assets/moon_normal_256.png` | The same pair box-filtered to 256px, for moons drawn small | `scripts/build-moon-thumbs.mjs` |
-| `assets/constellations/figures.png` | 2048x2048 sheet, 15 figure illustrations at 512pt | Stellarium, Johan Meuris (**Free Art License 1.3**) |
+| `assets/constellations/figures.png` | 3840x3456 sheet, 85 figure illustrations at 384pt | Stellarium, Johan Meuris (**Free Art License 1.3**) |
 | `src/data/constellationArt.json` | Three sky anchors per figure, resolved from HIP through VizieR | Stellarium (CC BY-SA 4.0) |
 
 The figure artwork is the one bundled asset that is not public domain. The Free Art License is
@@ -235,7 +264,11 @@ copyleft: the images keep it, the app's own source stays MIT, and the attributio
 
 ```bash
 node scripts/build-star-catalog.mjs <bsc5.dat>
-node scripts/build-sky-data.mjs <constellations.lines.json> <IAU-CSN.txt> <messier.json>
+node scripts/build-sky-data.mjs <constellations.lines.json> <IAU-CSN.txt>
+node scripts/build-constellation-stars.mjs   # no network; reads the two files above
+node scripts/build-constellation-art.mjs     # downloads Stellarium's illustrations
+node scripts/build-star-colours.mjs          # B-V from VizieR; caches under .cache/
+node scripts/build-milky-way.mjs             # reads sources/milkyway_2020_4k.exr (see its header)
 node --max-old-space-size=4096 scripts/build-moon-maps.mjs [grade]
 node scripts/build-moon-thumbs.mjs   # the 256px pair only; build-moon-maps runs it too
 # Builds moon_disc.png and moon_normal.png together, from one projection, so the

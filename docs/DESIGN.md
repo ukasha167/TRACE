@@ -52,7 +52,7 @@ and phase labels stay honest.
 | `paper` | `#F3F0E8` | Warm bone stock. The ground for every reading surface. |
 | `paperDim` | `#E6E2D6` | Recessed paper: inset blocks, empty thumbnails, pressed states. |
 | `ink` | `#15181F` | Near-black carrying a trace of the plate's blue. Never pure `#000`. |
-| `inkMuted` | `#646A76` | Secondary text, captions, resolved values. |
+| `inkMuted` | `#58616D` | Secondary text, captions, resolved values. |
 | `rule` | `#D6D2C6` | Hairlines between rows. |
 | `plate` | `#0A1120` | Prussian night. The ground for anything showing sky. |
 | `plateInk` | `#E8EDF6` | Text on a plate. |
@@ -94,9 +94,17 @@ these**, because a brass constellation line would read as a real object.
 | `grid` | `#7FB0D0` | Alt/az grid rings and meridians, at very low alpha. |
 | `figure` | `#7FB0D0` | Constellation figure lines. |
 | `horizon` | `#C9C4B8` | The horizon ring, the one line that marks the ground. |
-| `deepSky` | `#9BE0C8` | Messier objects. Green-cyan, so a galaxy never reads as another star. |
 | `label` | `#93A7B4` | Star and body names. Cooler and quieter than the stars. |
 | `planet` | `#D9A15C` | Planets and their labels. Warm, so they never read as scaffolding. |
+| `groundNight` | `#0B0D10` | The ground at night. A step above `space`, so the horizon is an edge. |
+| `groundDay` | `#252C33` | The ground with the sun up. Mixed with `groundNight` by the sun's altitude. |
+| `milkyWay` | `#DCE3F0` | The Milky Way's light. Grey with the Purkinje shift; the rods see no colour. |
+| `moonlitSky` | `#101C36` | The sky lit by a bright moon at full strength. |
+| `sun` | `#FFF6E8` | The sun's disc and glare. The air reddens it toward the horizon. |
+| `planetDisc.*` | five hexes | Resolved planet discs, in each planet's own colour. Labels keep `planet`. |
+
+`Blackbody` beside `SkyColors` is Mitchell Charity's blackbody table from 3,000 K to 30,000 K. Star
+cores take their colour from it by measured B-V, never from a design choice.
 
 `planet` exists because planets used to borrow `Colors.signalOnPlate`. That was safe while the accent
 was brass and became a bug the moment it went cool: a planet drawn in the grid's own blue reads as a
@@ -138,8 +146,9 @@ moon settles. Scattered one-off animations are what make an interface feel busy 
 
 One sequence is allowed to be more than that, because it is the moment the app exists for: the
 reveal after a save. One clock drives it, a tap skips it to the last frame, and reduced motion or a
-screen reader starts there. Outside it, motion follows a hand: the tonight dial, the strip of
-nights, and the sky scrubber.
+screen reader starts there. Outside it, motion follows a hand. The home moon moves along a circular arc and settles on one
+day. Tapping a moon carries its measured position into the sky view; closing returns along the same
+path. Reduced motion skips those movements. The sky scrubber eases between its time samples.
 
 Haptics mark something landing or changing state, never decoration: a save, the reveal's moon
 arriving, the reminder bell, the details fold, and each hour the scrubber crosses.

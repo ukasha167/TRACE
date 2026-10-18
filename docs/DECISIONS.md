@@ -705,12 +705,240 @@ NASA's archive begins on 16 June 1995. The ledger asked for every anniversary an
 shared key's thirty requests an hour a 1970 birthday spent twenty-five of them on dates that cannot
 have a picture. Dates before the archive, and dates still ahead, are never requested now.
 
+### 45. The moon is the entrance to its sky
+
+Tapping a date's moon opens the sky at the same date, place and illumination sample.
+The route carries the moon's measured screen bounds. The sky renderer moves it from those bounds
+into the projected sky while widening the view. Closing reverses that movement. Both use the
+existing frame loop. Reduced motion skips the movement. A missing place still asks for a place.
+
+Tonight on Home opens the live sky, `/sky/tonight`. Any other day uses `/sky/preview` with that calendar date. Opening a different date must
+never show tonight under that date's label. The carousel stops at thirty days before and after
+today. Its arrows and screen-reader actions share those limits.
+
+### 46. Phase names describe what the moon looks like
+
+Display names now use illumination directly. At 99% the label is "Full moon", at 96% it is
+"Almost full moon", and from 45% through 55% it is "Half moon". Near a quarter the lit fraction moves about 10 points a day, so a narrower band missed most quarter-day evenings. Below 8% it is a thin crescent,
+except at 1% or below, which is a new moon. Other phases say growing or fading using the measured
+waxing flag. The percentage stays beside the name and never rounds a near-full moon up to 100%.
+The exact phase instant remains separate metadata and cannot override a display threshold.
+
+### 47. Fewer repeated sections, and a closed date picker
+
+Home shows saved dates immediately below the moon. Tonight's extra tools open on demand. The date
+page puts sharing beside Edit and opens the sky through the moon. The year grid and NASA pictures
+stay in the year page. Planet calculations run only when the return explanation opens.
+
+The form starts with one date row. Tapping it opens the native iOS wheel or the existing Android
+wheel. Place follows the date, notes open on demand, and new dates have three type choices.
+Existing graduation records keep their stored type when edited. The form has no after-midnight
+switch. It states that the selected date means that evening, matching the calculation convention.
+
+The reveal names the saved date and offers Share. Rarity appears only at 99% and above. Its
+personal count says years on this calendar date, which includes the source year without calling
+the day of birth a first anniversary.
+
+### 48. Mineral colour was too strong for an everyday moon
+
+The shader used 9x saturation while older notes described 5x and 1x. It now uses 2x across the app
+and share cards. The map, phase geometry, earthshine and exposure remain the same. The colour comes
+from the measured map; its amplification is a display choice.
+
+### 49. One thing per screen, and nothing to decide that the app can work out
+
+The audit's question was what a first-time person has to think about. Each cut below removes a
+question or a second way to do the same thing.
+
+- **Home is the moon and your dates.** Tonight's tools (full and new moon tiles, moonrise and
+  moonset, the 30-night strip) are gone. The carousel already answers "what will the moon look like
+  on night X", and the tools pushed the first saved date below the fold. The arrows under the moon
+  went too: the moons either side show that it swipes, and the carousel is an adjustable element
+  for a screen reader. The live sky still prints the phone's own clock, which is exact, as decision
+  33 allows.
+- **One word for what you save: a date.** "Record" is gone from every screen. The sky view says "The
+  sky that night", the same shape as "The sky tonight".
+- **Rarity is in "The numbers".** It was a second large figure under the moon's own, and the return
+  line already says why the night matters. The phase name keeps its percentage beside it, rule 1.
+- **The form does not ask the type.** `inferOccasion` reads it from the title ("birthday", "born",
+  "wedding", "nikah"). A title that names nothing keeps the start button's type or the saved one,
+  and a new date falls back to "Other", whose wording ("30 years on") is true for any occasion.
+- **The form fills in the phone's place** when location permission is already granted, read from
+  the store without asking, with a line saying to change it if the date happened elsewhere. Its
+  offset is the phone's own zone on the date itself, as "Use my location" always did.
+- **The sky view shows "Find the moon" only while the moon is off screen,** and the drag tip once per
+  install. The frame loop publishes the moon's on-screen state only when it flips.
+- **The reveal's one button is Share.** "Done" sits under it as text.
+
+### 50. A spring overshoots, and an overshoot reads as a stutter
+
+The home carousel settled each swipe with a spring started at the finger's velocity. A spring that
+fast overshoots its detent and comes back, and on a moon that is a visible hitch at the end of every
+swipe. Worse, it handed the new date to the screen the instant the finger lifted, so Home re-rendered
+and mounted a new moon at the edge of the window during the first frames of the coast, which is
+exactly when a dropped frame shows.
+
+Everything a finger moves now uses one law, `lib/glide.ts`: the shown value closes a fixed fraction
+of its gap to the target per unit of time, the motion Lenis gives a web page. Under the finger the
+time constant is 45 ms, which evens out touch events that arrive two to a frame and then none; after
+release it is 160 ms, Lenis's default lerp at 60 Hz. It is written against elapsed time, not per
+frame, because "0.1 of the gap per frame" runs twice as fast on a 120 Hz iPhone as on a 60 Hz phone.
+
+- **The carousel** glides in a Reanimated frame callback on the UI thread, ticks the phone per day
+  crossed, and commits the date when the coast is within 0.15 of a day of landing.
+- **The sky's drag** moves a target that the view glides toward, and a flick throws the target on by
+  0.22 s of the finger's velocity. "Find the moon" glides there instead of cutting.
+- **Pinch** wrote the field of view into React state on every event, re-rendering the whole sky
+  screen for each one. It now writes a ref; React hears the value once, when the pinch ends.
+- **The scrubber's thumb** was placed from its `value` prop, so it moved only after the sky screen
+  had re-rendered for the new time. It lives on the UI thread now, follows the finger continuously,
+  sends at most one snapped time per frame, and settles onto its ten-minute mark on release.
+
+### 51. A moon painted over a blue sky is a dark coin
+
+The sky moon's offscreen image is opaque across the whole disc, night side included. On black that is
+invisible. In twilight or by day, the night side drew as a dark disc on blue. During a lunar eclipse
+it was worse: the Earth's shadow was multiplied onto the screen inside a clip 1.35 times the moon's
+radius, so it darkened a circle of sky around the disc, and on any sky lighter than black that is a
+ring.
+
+What you see on the night side of a real moon is the air in front of it. So the disc first covers
+what is behind it (the stars it hides) in the sky's own colour, and the moon is then **added** in its
+own layer. At night that is the old picture exactly. By day the dark side disappears and the lit side
+reads as pale. The shadow is drawn inside that layer with `Modulate`, which leaves transparent pixels
+transparent, so it can only darken the moon. It is also one radial gradient now rather than two flat
+discs: the penumbra darkens steadily inward from its outer edge, and drawn flat its edge cut a hard
+straight line across the disc.
+
+The layer's colour filter is the air, `skyView.moonSkyLight`: extinction per channel over the extra
+air below the zenith, from typical sea-level coefficients, which is why a rising moon draws orange
+and an overhead one draws as the shader made it. Daylight takes the lit side down a quarter. None of
+it is printed and the phase is untouched.
+
+The sky moon was also flat for a reason unrelated to light: it sampled the 256px thumbnail maps into
+a 550px disc, so the relief was blurred out before the disc was shrunk onto the sky. It now uses the
+full 1024px maps, the hero glow, and mipmapped sampling.
+
+### 52. The view opens at the eye's lens, not a wide angle
+
+The view opened at 65 degrees across the short side of a portrait phone, which is about 108 degrees
+top to bottom. A flat (gnomonic) projection that wide stretches everything near the top and bottom of
+the screen, so Orion looked pulled tall. It now opens at the photographer's normal lens, 46.8
+degrees across the diagonal, which comes to about 21 degrees across a portrait phone. The zoom range
+widened to 6 to 100 degrees so a pinch still has somewhere to go, and "Reset zoom" returns to the
+normal lens.
+
+### 53. A glyph is not a galaxy
+
+Twenty-four Messier objects drew as chart glyphs: a dashed oval for a galaxy, a dashed box for a
+nebula, a ringed cross for a planetary nebula. On a chart those are a convention a reader knows. In a
+view that otherwise draws things as they look, they were shapes with no object behind them. None of
+them is a naked-eye sight the way a star is, and drawing their real shapes would need images at
+known size and orientation, which is a catalogue this app does not carry. They are gone, with
+`messier.json`. The star field stays.
+
+The constellation art went the other way. Fifteen figures carried an illustration and the rest drew
+bare lines, so Orion lit up as a hunter while Lepus at his feet lit up as a wireframe. All 85
+illustrations in Stellarium's pack ship now; Puppis and Vela are drawn inside Argo Navis, and Serpens
+has none. A figure only shows while you are looking at it, so the cost is texture memory: a
+3840x3456 greyscale sheet at 384pt tiles, inside the 4096 texture limit.
+
+While a figure is lit, every star its lines pass through is labelled the way a chart labels it:
+proper name, else Bayer letter, else Flamsteed number, else HR number. The line data has no star
+identity, so `scripts/build-constellation-stars.mjs` matches each vertex to the nearest catalogue
+star within 0.1 degrees, and fails the build if any vertex has none. A test checks the other
+direction too: every vertex has a label on it, and every label sits on a vertex.
+
+### 54. A sky needs a floor
+
+The view showed stars below the horizon dimmed to 22%, with nothing to say the ground was there. It
+now draws a ground, Stellarium's way: solid while the view looks 10 degrees up or more, gone by 2
+degrees down, smooth between, so the half of the sky under your feet can still be looked at. The
+projection is gnomonic, which draws every great circle as a straight line, so the ground is a
+half-plane of the screen and costs one clipped rectangle per frame. Its last 6% before the horizon
+fades into the sky's colour, and its colour follows the sun with the sky's. Labels under a solid
+ground are not drawn.
+
+### 55. Nothing is drawn bigger than it is
+
+The moon was drawn at `max(9, 420 / fov)` points, six times its size at the eye's field of view,
+and the planets at `max(3.4, 210 / fov)`, which made Jupiter a disc the size of a star cluster. Both
+were readable and both were claims about the sky that the sky does not make.
+
+Every body now subtends its real angle: radius over distance, through the frame's focal length,
+stretched by the projection off the centre of the view. The moon is about ten points across at the
+eye's field. A planet is a point of light, sized by its magnitude like a star, until the zoom
+resolves its disc; the two cross-fade over the zoom where the true disc overtakes the point. A
+resolved disc is phased from the phase angle and the sun's direction on screen, flattened along its
+IAU pole, and limb-darkened. Saturn's rings take their opening from astronomy-engine and their
+orientation from the pole, and are drawn in two halves round the globe, the far half first.
+
+That only matters if the zoom can resolve anything, so it reaches 0.1 degrees, a small telescope
+at about 140x. At half a degree Saturn's rings are four points across, which is right for 28x and
+is why the limit went lower.
+
+Opening the sky from a moon used to scale the moon down from the tapped size. It now opens at the
+field of view in which the true moon matches the tapped one and zooms out, geometrically so each
+frame zooms by the same factor. The moon is never scaled; the field grows round it.
+
+### 56. The Milky Way is a measurement, projected
+
+The band is NASA's Deep Star Maps 2020 background layer: the star map with the Hipparcos and Tycho
+stars taken out, which leaves the light of Gaia's faint stars. Two properties made it the right
+source. It is in J2000 RA/Dec, the catalogue's own frame, so nothing needs a galactic transform. And
+its bright stars are gone, so nothing in it doubles a star the view already draws.
+
+It is not a picture laid on the sky. `skyShader.ts` rebuilds every pixel's ray through the same
+camera the stars use, turns it back to RA/Dec through the sphere's inverse rotation (exact, because
+`equatorialToHorizontal` has no refraction; a test holds every star to 0.001 degrees), and reads the
+map there. So the band turns with the scrubber, bends across the screen as the projection bends the
+constellations, and magnifies with the zoom.
+
+**Zoom does not change its brightness, and that is the physics.** An extended source's surface
+brightness is the same at any magnification. Zooming spreads the same light per square degree over
+more screen: the band grows and its structure opens up, but a patch of it is no brighter. Stars are
+points and do brighten with aperture, which is why the star limit deepens as the view narrows and
+the band's does not.
+
+The map is luminance only. The band is seen by the rods, which see no colour; the cool grey is the
+Purkinje shift observers report. It is stored through a 1/2.2 power so its faint outskirts keep
+their levels, and dithered at output, because magnified, the steps between those levels drew as
+contour rings.
+
+### 57. The moon hides the Milky Way, and the air hides the horizon
+
+What decides whether the band is visible is the sky behind it. The same shader evaluates
+Krisciunas and Schaefer's (1991) model per pixel: moonlight scattered by air molecules and aerosols,
+brightest near the moon and grown by the opposition surge at full. The band's contrast is the dark
+sky over the dark sky plus the moonlight, so a full moon at 45 degrees takes it under a tenth and a
+quarter moon leaves most of it. The moonlight also lights the sky itself, toward `moonlitSky`, so a
+full-moon night is a dark blue rather than black.
+
+Extinction applies per pixel to the band and per star to the catalogue, so the horizon thins the
+way it does outside. Twilight leaves the band nothing until the sun is 12 degrees down and all of it
+at 18, the definition of astronomical night.
+
+The eye adapts to light in a fraction of a second and to the dark over minutes. The view compresses
+the second to 2.5 seconds: the band comes up after the sky opens or after a scrub out of twilight,
+and goes at once when the sky brightens.
+
+### 58. A star's colour is its B-V, and a faint star has none
+
+8,160 of the catalogue's stars now carry their measured B-V from VizieR V/50. Ballesteros's formula
+turns it into a temperature and Mitchell Charity's blackbody table into a colour, the same chain
+NASA's star maps use. Cores are binned into nine temperatures so colour costs nine extra fills a
+frame; the glow stays one neutral path, because the halo belongs to the air and the eye.
+
+Two choices are print, not measurement, and are named as such. Colours are mixed a third of the way
+back to white, because the eye sees a point's colour less saturated than the same light over an
+area. And stars fainter than magnitude 4 are white: there the rods do the seeing, and every
+observer reports the faint field as colourless whatever its spectra.
+
 ## Decisions
 
 **The mineral colour is real, and that is the only reason it is allowed.**
 
-The moon carries LROC WAC colour now, amplified by `MINERAL_SATURATION`. The amplification is large
-(5x) and the result is striking, so it is worth being exact about why it is not a lie.
+The moon carries LROC WAC colour now, amplified by `MINERAL_SATURATION`. The current amplification is 2x. Decision 48 records the change from the earlier settings.
 
 The Moon's colour differences are genuine and faint. Titanium shifts a mare from red toward blue, so
 Mare Tranquillitatis really is cooler than Mare Serenitatis: measured on the bundled map, B/R 0.967
@@ -727,7 +955,7 @@ in, because the maps come from a mirror and a mirror is somebody's copy.
 **Two things had to be got right before the colour showed at all.**
 
 *White balance before saturation.* The map has a mild global warm cast. Saturating around each texel's
-own grey amplifies that cast along with everything else, and at 5x the whole disc went uniformly sepia
+own grey amplifies that cast along with everything else, and at the earlier 5x setting the whole disc went uniformly sepia
 with the mineral signal buried under it. Dividing by the map's mean chromaticity first makes the
 average texel neutral, so what gets amplified afterwards is each region's departure from the Moon's
 own average colour, which is the titanium and iron signal.
@@ -769,9 +997,7 @@ it runs to twice full brightness and prints a white wire along the sunward limb,
 capped at 1.35.
 
 **Colour is still never invented.** `MINERAL_SATURATION` pushes each texel away from its own grey and
-can only amplify hues the albedo map already contains. It sits at exactly 1.0, a no-op, because the
-bundled map is monochrome to within its JPEG noise. Raising it without a real colour map would be
-inventing measurements, which is rule 1.
+can only amplify hues the albedo map already contains. The monochrome map originally used 1.0. The current LROC colour map uses 2.0, as recorded in decision 48.
 
 **The lunar photograph is graded. The geometry is not.**
 
