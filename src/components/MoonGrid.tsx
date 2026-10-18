@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, useWindowDimensions } from "react-native";
 import {
   Canvas,
   Circle,
@@ -59,10 +59,11 @@ export function MoonGrid({
   selectedKey = null,
   onPressCell,
 }: Props) {
+  const { fontScale } = useWindowDimensions();
   const cellW = width / columns;
   const moonSize = cellW * moonScale;
   const rows = Math.ceil(cells.length / columns);
-  const cellH = cellW + LABEL_H;
+  const cellH = cellW + LABEL_H * fontScale * Math.max(1, Math.ceil(FontSize.micro * fontScale * 2.5 / cellW));
   const textures = useMoonTextures(moonSize);
 
   const laid = useMemo(
@@ -128,7 +129,7 @@ export function MoonGrid({
           accessibilityLabel={cell.accessibilityLabel ?? cell.label}
           style={[styles.hit, { left: x, top: y, width: cellW, height: cellH }]}
         >
-          <Text style={[styles.label, cell.future && styles.labelFuture, { top: cellW - 2 }]}>
+          <Text style={[styles.label, { top: cellW - 2 }]}>
             {cell.label}
           </Text>
         </Pressable>
@@ -148,5 +149,4 @@ const styles = StyleSheet.create({
     fontSize: FontSize.micro,
     color: Colors.plateMuted,
   },
-  labelFuture: { opacity: 0.6 },
 });

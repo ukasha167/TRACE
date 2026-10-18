@@ -6,8 +6,10 @@ import {
   Pressable,
   StatusBar,
   AccessibilityInfo,
+  ScrollView,
   useWindowDimensions,
 } from "react-native";
+import { router, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import Animated, {
@@ -44,11 +46,13 @@ export function RevealHost() {
     [milestone]
   );
   if (!id || !content) return null;
-  return <Reveal key={id} content={content} onDone={hide} />;
+  return <Reveal key={id} content={content} title={milestone!.title} onDone={hide} onShare={() => { hide(); router.push(`/export/${id}` as Href); }} />;
 }
 
 interface Props {
   content: RevealContent;
+  title: string;
+  onShare: () => void;
   onDone: () => void;
 }
 
@@ -78,7 +82,7 @@ function fade(t: SharedValue<number>, start: number, rise = 10) {
  * A tap skips to the last frame. Reduced motion starts there. A light haptic
  * lands with the moon, and nothing else on this screen makes a sound or a buzz.
  */
-function Reveal({ content, onDone }: Props) {
+function Reveal({ content, title, onDone, onShare }: Props) {
   const { moon, line1, line2, line3, line4 } = content;
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -151,7 +155,7 @@ function Reveal({ content, onDone }: Props) {
           modal that left a screen-reader user with nowhere to go. */}
       <Pressable style={styles.root} onPress={skip} accessible={false}>
         <StarField />
-        <View style={[styles.stage, { paddingTop: insets.top + Spacing.xl }]}>
+        <ScrollView contentContainerStyle={[styles.stage, { paddingTop: insets.top + Spacing.lg, paddingBottom: Spacing.xl }]} showsVerticalScrollIndicator={false}>
           <Animated.View style={[styles.moon, moonStyle]}>
             <MoonPhaseGlyph
               phaseFraction={moon.phaseFraction}
@@ -165,12 +169,13 @@ function Reveal({ content, onDone }: Props) {
           </Animated.View>
 
           <View style={styles.lines}>
+            <Animated.Text style={[styles.l2, s1]}>{title}</Animated.Text>
             <Animated.Text style={[styles.l1, s1]}>{line1}</Animated.Text>
             <Animated.Text style={[styles.l2, s2]}>{line2}</Animated.Text>
             {line3 ? <Animated.Text style={[styles.l3, s3]}>{line3}</Animated.Text> : null}
             {line4 ? <Animated.Text style={[styles.l4, s4]}>{line4}</Animated.Text> : null}
           </View>
-        </View>
+        </ScrollView>
 
         <Animated.Text
           style={[styles.hint, { bottom: insets.bottom + Spacing.xl }, hint]}
@@ -181,14 +186,24 @@ function Reveal({ content, onDone }: Props) {
           Tap to skip
         </Animated.Text>
         <Animated.View style={[styles.actions, { paddingBottom: insets.bottom + Spacing.md }, actions]}>
+          {/* Share leads: this frame is the moment people want to send, and
+              sharing from the date page cost four taps. Both buttons are
+              invisible until the lines land, so an early tap skips like a tap
+              anywhere else rather than leaving. */}
           <Pressable
-            // Invisible until the lines have landed, so an early tap here
-            // skips like a tap anywhere else rather than leaving.
+            onPress={() => (t.value >= ACTIONS_AT ? onShare() : skip())}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.primary, pressed && { opacity: 0.8 }]}
+          >
+            <Text style={styles.primaryText}>Share this night</Text>
+          </Pressable>
+          <Pressable
             onPress={() => (t.value >= ACTIONS_AT ? onDone() : skip())}
             accessibilityRole="button"
-            style={({ pressed }) => [styles.done, pressed && { opacity: 0.8 }]}
+            accessibilityLabel="Done, open this date"
+            style={styles.quiet}
           >
-            <Text style={styles.doneText}>Open the record</Text>
+            <Text style={styles.quietText}>Done</Text>
           </Pressable>
         </Animated.View>
       </Pressable>
@@ -199,7 +214,7 @@ function Reveal({ content, onDone }: Props) {
 const styles = StyleSheet.create({
   overlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, elevation: 10 },
   root: { flex: 1, backgroundColor: Colors.space },
-  stage: { flex: 1, alignItems: "center" },
+  stage: { flexGrow: 1, alignItems: "center" },
   moon: { marginTop: Spacing.xl, marginBottom: Spacing.xl },
   lines: { paddingHorizontal: Spacing.xl, alignItems: "center", gap: Spacing.sm + 4 },
   l1: {
@@ -238,12 +253,14 @@ const styles = StyleSheet.create({
     fontSize: FontSize.label,
     color: Colors.plateMuted,
   },
-  actions: { paddingHorizontal: Spacing.page },
-  done: {
+  actions: { paddingHorizontal: Spacing.page, gap: Spacing.sm },
+  quiet: { padding: Spacing.md, alignItems: "center" },
+  quietText: { fontFamily: FontFamily.medium, fontSize: FontSize.body, color: Colors.plateMuted },
+  primary: {
     backgroundColor: Colors.plateInk,
     borderRadius: Radius.pill,
     paddingVertical: Spacing.md,
     alignItems: "center",
   },
-  doneText: { fontFamily: FontFamily.semibold, fontSize: FontSize.body, color: Colors.plate },
+  primaryText: { fontFamily: FontFamily.semibold, fontSize: FontSize.body, color: Colors.plate },
 });

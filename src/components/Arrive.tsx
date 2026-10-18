@@ -34,7 +34,7 @@ export function Arrive({
   style,
 }: ArriveProps) {
   const entering = FadeInDown.duration(slow ? Motion.durationSlow : Motion.duration)
-    .delay(delay + index * Motion.stagger)
+    .delay(delay + Math.min(index, 8) * Motion.stagger)
     .withInitialValues({
       transform: [{ translateY: slow ? Motion.rise * 1.8 : Motion.rise }],
     })

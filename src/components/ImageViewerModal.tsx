@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: Spacing.page,
     paddingBottom: Spacing.md,
-    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    backgroundColor: Colors.imageScrim,
   },
   headerRow: {
     flexDirection: "row",
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: Spacing.page,
     paddingTop: Spacing.sm,
-    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    backgroundColor: Colors.imageScrim,
     alignItems: "center",
   },
   copyrightText: {
