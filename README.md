@@ -46,7 +46,7 @@ src/
 │   ├── backup/     # The records file, written and read
 │   └── apod/       # NASA's pictures: API, archive pages, cache
 ├── store/          # Zustand store with persistence
-└── data/           # Pre-compiled Yale star catalog, constellations, and Messier data
+└── data/           # Pre-compiled Yale star catalog, constellations, their star labels, the Milky Way's scale
 ```
 
 ---
@@ -102,7 +102,7 @@ For unrestricted use (1,000 requests/hour):
 TRACE uses `tsx` with Node's built-in test runner for unit tests:
 
 ```bash
-# Run the unit tests (215)
+# Run the unit tests (228)
 npm test
 
 # Type check with TypeScript
@@ -115,8 +115,10 @@ npx tsc --noEmit
 
 - **Stars (8,404 to mag 6.5)**: Yale Bright Star Catalog (5th Revised Ed., Public Domain)
 - **Proper Star Names (333)**: IAU Working Group on Star Names (IAU-CSN)
-- **Constellations and Messier objects**: [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD-3-Clause)
+- **Constellation lines**: [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD-3-Clause)
 - **Constellation Illustrations**: Johan Meuris for Stellarium (Free Art License 1.3)
+- **Star colours (B-V)**: Yale Bright Star Catalog via VizieR V/50 (Public Domain)
+- **Milky Way**: [Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851), Ernie Wright, NASA Scientific Visualization Studio (Public Domain)
 - **Astronomy Picture of the Day**: NASA (Public Domain / respective authors)
 
 ---

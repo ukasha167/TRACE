@@ -58,14 +58,18 @@ pulls back toward that shape is a regression.
 
 ## User journey
 
-1. Open the app. Home leads with tonight's moon over the current location, its tools, the soonest
-   anniversary, then the saved records sorted by days left. A first run offers three starts.
-2. Tap "Add a date". Title, type, date, optional place.
-3. Save. The reveal plays the moon of that night, and the record opens under it.
-4. The record leads with the moon, that night in a sentence or two, this year's night with its
-   reminder bell, how uncommon it was, the returns on a timeline with the planets, the star map,
-   life in moons, NASA's picture, and share. The instrument readings sit in a fold at the bottom.
-5. Immersive mode: hold the phone up, scrub from sunset to sunrise, tap a star to name it.
+1. Open the app. Home is two things: tonight's moon over the current location, then the saved
+   dates sorted by days left. Swipe the moon up to thirty days either way. A first run offers three
+   starts.
+2. Tap "Add a date". Title, date, place (the phone's own place filled in when location is already
+   on), an optional note. No type question: the title decides, and "Other" is the fallback.
+3. Save. The reveal plays the moon of that night with Share as its one button, and the date opens
+   under it.
+4. The date page leads with its title and Share, its tappable moon, a description of the night,
+   this year's moon and reminder, and the next return. Rarity and the instrument readings sit in
+   "The numbers" at the bottom. Every year's moon and NASA's pictures have their own page.
+5. Immersive mode: tap the moon, look around by hand or by moving the phone, scrub from sunset to
+   sunrise, tap a star to name it.
 6. Share a card through the native share sheet.
 7. On the night, a notification. All of it works offline after the first picture fetch.
 
@@ -73,10 +77,10 @@ pulls back toward that shape is a regression.
 
 | Screen | Route | Purpose |
 |---|---|---|
-| Home | `/` | Tonight's moon and the any-night dial, tonight's tools, the soonest anniversary, then the records. First run offers three starts. |
-| Add record | `/milestone/new` | Title, type, date, optional location. |
-| Edit record | `/milestone/edit/[id]` | Same form, prefilled. |
-| Record detail | `/milestone/[id]` | The order in the journey above. |
+| Home | `/` | Swipe through thirty days either side of tonight, then saved dates. First run offers three starts. |
+| Add a date | `/milestone/new` | Title, date, place, optional note. |
+| Edit a date | `/milestone/edit/[id]` | Same form, prefilled. |
+| Date page | `/milestone/[id]` | The order in the journey above. |
 | Immersive sky | `/sky/[id]` | Full-screen planetarium for that night, sunset to sunrise. `/sky/tonight` synthesises a record for now. |
 | Life in moons | `/ledger/[id]` | A grid of every anniversary's moon, a card for the year tapped, and the table one tap away. |
 | Share | `/export/[id]` | Night or paper card, story or square, an optional dedication, native share. |
@@ -103,7 +107,7 @@ had one", counted at the same threshold the headline names (DECISIONS 37).
 
 Phases A through H are built, tested, and verified on an iPhone simulator and a Pixel 7 Pro. The
 improvement stages after them (the reveal, coming up and reminders, night facts, the star map, the
-sky scrubber, life in moons, the night card, tonight's tools, backup) are verified on the iPhone
+sky scrubber, life in moons, the night card, backup) are verified on the iPhone
 simulator only.
 
 | Phase | Scope | State |
@@ -130,7 +134,7 @@ Open work, roughly in order of value.
   night and opening its record when tapped, and one release build before judging speed.
 - **An Android home-screen widget** with tonight's moon and the next anniversary. Needs a
   development build instead of Expo Go.
-- **The live moon above the form's date wheel.** Built in the prototype, not picked.
+- **The live moon above the form's expandable date wheel.** Built in the prototype, not picked.
 - **A night appearance** for the reading surfaces. Built in the prototype, not picked; paper was.
 - **Figure artwork for the other 73 constellations.** Fifteen have one. The rest keep lines and a
   name, which is the right trade for now: nobody is looking for Antlia.

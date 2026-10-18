@@ -65,7 +65,7 @@ Rules that follow from that:
 - **Display labels gate on illumination, not on `isTruePhase` alone.** A moon at 99.9% whose exact
   full instant lands at 08:00 the next morning *is* a full moon to any observer. Calling it "Waxing
   Gibbous" understates reality as badly as the bucket overstated it at 96%. `describePhase()` uses a
-  99% threshold (`FULL_ENOUGH`), and `describeSyzygyNote()` then discloses where the exact instant
+  99% threshold (`FULL_ENOUGH`), with "Almost full moon" from 96% and "Half moon" from 45% through 55%, and `describeSyzygyNote()` then discloses where the exact instant
   fell. Both directions of error are bugs.
 - **`isTruePhase` is computed** for the four primary phases. It is true only when the exact syzygy
   instant falls inside the observer's local calendar day. That is the almanac convention and it is
@@ -235,6 +235,16 @@ reproduces the +11 / +19 / +30 structure.
 
 ## Limits, stated plainly
 
-The immersive view shows about 8,400 real stars, the constellations, the Messier catalogue, and the
-solar system bodies, correctly placed for a given time and place. There is no deep-sky catalogue
-beyond Messier, no atmosphere model, no satellites, and no telescope control.
+The immersive view shows about 8,400 real stars, the constellations, and the solar system bodies,
+correctly placed for a given time and place. It draws no deep-sky objects, no satellites, and has no
+telescope control. The atmosphere it models is typical, not that night's: extinction on the colour
+of the sun, moon and planets (`skyView.airLight`) and on star brightness, moonlight scattered into
+the sky by Krisciunas and Schaefer's model (`skyLight.moonSkyBrightness`, coefficient 0.172 mag per
+airmass, dark sky 79 nL), and twilight hiding the Milky Way until the sun is 12 degrees down. None
+of it changes the phase or any printed number.
+
+Sizes are true: the sun and moon from their distances, the planets from IAU radii, flattenings and
+pole directions, Saturn's ring opening from astronomy-engine. Star colours come from catalogued B-V
+through Ballesteros's temperature formula and Mitchell Charity's blackbody table, mixed a third of
+the way back to white, which is a print decision. The Milky Way's brightness does not change with
+zoom, because an extended source's surface brightness is the same at any magnification.
