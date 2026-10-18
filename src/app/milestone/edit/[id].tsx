@@ -24,7 +24,7 @@ export default function EditMilestoneScreen() {
   if (!milestone) {
     return (
       <View style={styles.root}>
-        <Text style={styles.error}>Record not found.</Text>
+        <Text style={styles.error}>Date not found.</Text>
       </View>
     );
   }

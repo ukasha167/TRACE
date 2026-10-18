@@ -11,13 +11,17 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Keyboard,
 } from "react-native";
+import Animated, { FadeIn, LinearTransition, ReduceMotion } from "react-native-reanimated";
+import { ChevronDown, ChevronUp } from "lucide-react-native";
 import DateTimePicker, {
   DateTimePickerChangeEvent,
 } from "@react-native-community/datetimepicker";
 import { WheelDatePicker } from "./WheelDatePicker";
 import * as Location from "expo-location";
 import { useLocationStore } from "@/store/useLocationStore";
+import { inferOccasion } from "@/lib/occasion";
 import {
   MilestoneType,
   type Milestone,
@@ -30,6 +34,7 @@ import {
   FontFamily,
   FontSize,
   Radius,
+  formatLongDate,
 } from "@/constants/theme";
 import {
   toLocalNoon,
@@ -37,22 +42,7 @@ import {
   approximateTimezoneOffsetMin,
 } from "@/lib/astronomy/dateUtils";
 
-/**
- * The record form, shared by create and edit.
- *
- * Both routes render THIS — a second copy for editing would drift from the
- * original within a change or two, and the location handling in particular is
- * too easy to get subtly wrong twice (see the lat/lng-0 bug that made typed
- * places useless for historical dates).
- *
- * No pictograms. Labels are small uppercase Figtree, inputs are underlined
- * rather than boxed, and the selected chip is an ink fill. The emoji that used
- * to sit on the type chips were the single most generic element in the app and
- * rendered as tofu on some devices besides.
- *
- * Chip and button labels are sentence case. They were MONO CAPS, which made a
- * form for recording a birthday read like a terminal prompt.
- */
+/** Create and edit share the form so place resolution cannot drift between them. */
 
 export interface MilestoneFormValues {
   title: string;
@@ -75,12 +65,6 @@ interface MilestoneFormProps {
   onCancel: () => void;
 }
 
-const TYPES: Array<{ value: MilestoneType; label: string }> = [
-  { value: "birthday", label: "Birthday" },
-  { value: "anniversary", label: "Anniversary" },
-  { value: "graduation", label: "Graduation" },
-  { value: "custom", label: "A day to remember" },
-];
 
 export function MilestoneForm({
   initial,
@@ -90,28 +74,39 @@ export function MilestoneForm({
   onCancel,
 }: MilestoneFormProps) {
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [type, setType] = useState<MilestoneType>(initial?.type ?? preset?.type ?? "birthday");
+  // No type question. The title decides when it names one, otherwise the start
+  // button or the saved date does, and "custom" is the neutral fallback.
+  const type: MilestoneType =
+    inferOccasion(title) ?? initial?.type ?? preset?.type ?? "custom";
   const [date, setDate] = useState<Date>(
     toLocalNoon(initial?.date ?? preset?.date ?? toDateString(new Date()))
   );
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [titleError, setTitleError] = useState(false);
+  const [dateExpanded, setDateExpanded] = useState(false);
+  const [notesExpanded, setNotesExpanded] = useState(Boolean(initial?.notes));
 
+  // A new date starts at the phone's last known place, read from the store and
+  // never by asking: most dates people add happened where they live. Only when
+  // permission is already granted, so opening the form never shows a dialog.
+  const [prefill] = useState(() => {
+    if (initial) return null;
+    const { place, permission } = useLocationStore.getState();
+    return permission === "granted" && place ? place : null;
+  });
   const [location, setLocation] = useState<MilestoneLocation | null>(
-    initial?.location ?? null
+    initial?.location ?? prefill
   );
   // Seeded from the saved label so an edit doesn't look like the location was lost.
-  const [placeQuery, setPlaceQuery] = useState(initial?.location?.label ?? "");
+  const [placeQuery, setPlaceQuery] = useState(initial?.location?.label ?? prefill?.label ?? "");
   const [busy, setBusy] = useState<null | "gps" | "lookup" | "save">(null);
   const [lookupFailed, setLookupFailed] = useState(false);
   // The place came from the phone, so the phone's own zone rules are the real
   // offset there; a typed place only has its longitude to go on.
-  const [placeFromDevice, setPlaceFromDevice] = useState(false);
+  const [placeFromDevice, setPlaceFromDevice] = useState(prefill !== null);
 
   // `onValueChange` rather than the legacy `onChange`, which encoded selection
-  // and dismissal in `event.type`. The old prop still works and still warns on
-  // every mount. There is no dismissal to handle any more: both platforms draw
-  // the wheel inline, so nothing opens and nothing closes.
+  // and dismissal in `event.type` and warns on every mount.
   const handleDateSelected = useCallback(
     (_event: DateTimePickerChangeEvent, selected: Date) => {
       setDate(toLocalNoon(toDateString(selected)));
@@ -251,7 +246,7 @@ export function MilestoneForm({
     setLookupFailed(true);
     Alert.alert(
       `Couldn't find "${q}"`,
-      "Save without a place, or change what you typed. Without one the record has no tilt, no night facts and no sky view.",
+      "Save without a place, or change what you typed. Without one, this date has no sky to stand under.",
       [
         { text: "Change it", style: "cancel" },
         { text: "Save without a place", onPress: () => submit(null) },
@@ -278,43 +273,33 @@ export function MilestoneForm({
             setTitle(t);
             if (titleError && t.trim()) setTitleError(false);
           }}
-          placeholder="Name this record"
+          placeholder="Name this date"
           placeholderTextColor={Colors.inkMuted}
           selectionColor={Colors.signal}
           returnKeyType="next"
           maxLength={80}
-          accessibilityLabel="Record title"
+          accessibilityLabel="Title"
         />
         {titleError && <Text style={styles.error}>A title is required.</Text>}
 
-        {/* ---- Type ---- */}
-        <Text style={[styles.label, styles.spaced]}>Type</Text>
-        <View style={styles.chips}>
-          {TYPES.map((t) => {
-            const selected = type === t.value;
-            return (
-              <Pressable
-                key={t.value}
-                style={[styles.chip, selected && styles.chipOn]}
-                onPress={() => setType(t.value)}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: selected }}
-              >
-                <Text style={[styles.chipText, selected && styles.chipTextOn]}>
-                  {t.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
         {/* ---- Date ---- */}
         <Text style={[styles.label, styles.spaced]}>Date</Text>
-        {/* iOS keeps UIDatePicker. Android used to open the Material calendar
-            dialog from the line above, which is a different interaction on a
-            screen that is otherwise one continuous scroll. See WheelDatePicker
-            for why that one is written rather than installed. */}
-        <View style={styles.pickerWrap}>
+        <Pressable onPress={() => { Keyboard.dismiss(); setDateExpanded((open) => !open); }}
+          accessibilityRole="button" accessibilityState={{ expanded: dateExpanded }}
+          accessibilityLabel={`Date, ${formatLongDate(toDateString(date))}`}
+          accessibilityHint={dateExpanded ? "Close the date picker" : "Change the date"}
+          style={styles.dateSummary}>
+          <Text style={styles.dateValue}>{formatLongDate(toDateString(date))}</Text>
+          {dateExpanded ? <ChevronUp color={Colors.signal} size={20} /> : <ChevronDown color={Colors.signal} size={20} />}
+        </Pressable>
+        {/* Closed by default: an open wheel sat in the scroll path, and a swipe
+            meant for the form changed the month without anyone noticing. */}
+        {dateExpanded && (
+          <Animated.View
+            entering={FadeIn.duration(180).reduceMotion(ReduceMotion.System)}
+            layout={LinearTransition.duration(220).reduceMotion(ReduceMotion.System)}
+            style={styles.pickerWrap}
+          >
           {Platform.OS === "ios" ? (
             <DateTimePicker
               value={date}
@@ -334,27 +319,19 @@ export function MilestoneForm({
               maximumYear={2100}
             />
           )}
-        </View>
-
-        {/* ---- Notes ---- */}
-        <Text style={[styles.label, styles.spaced]}>Notes, optional</Text>
-        <TextInput
-          style={[styles.input, styles.multiline]}
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Anything worth remembering"
-          placeholderTextColor={Colors.inkMuted}
-          selectionColor={Colors.signal}
-          multiline
-          maxLength={400}
-          accessibilityLabel="Notes"
-        />
+          <Pressable accessibilityRole="button" onPress={() => setDateExpanded(false)} style={styles.pickerDone}>
+            <Text style={styles.outlineButtonText}>Done</Text>
+          </Pressable>
+        </Animated.View>
+        )}
+        <Text style={styles.help}>The moon on the evening of this date.</Text>
 
         {/* ---- Location ---- */}
-        <Text style={[styles.label, styles.spaced]}>Location, optional</Text>
+        <Text style={[styles.label, styles.spaced]}>Where</Text>
         <Text style={styles.help}>
-          Needed for the moon&apos;s tilt, what that night was like, and the sky
-          view. The rest works without it.
+          {prefill && location === prefill
+            ? "Where you are now. Change it if it happened somewhere else."
+            : "Add a place to see that night's sky."}
         </Text>
 
         <TextInput
@@ -396,27 +373,40 @@ export function MilestoneForm({
             {busy === "gps" ? (
               <ActivityIndicator size="small" color={Colors.ink} />
             ) : (
-              <Text style={styles.outlineButtonText}>Use current</Text>
+              <Text style={styles.outlineButtonText}>Use my location</Text>
             )}
           </TouchableOpacity>
         </View>
 
-        {location && (
-          <View style={styles.resolved}>
-            <Text style={styles.resolvedLabel}>Resolved</Text>
-            <Text style={styles.resolvedValue}>
-              {Math.abs(location.latitude).toFixed(3)}°
-              {location.latitude >= 0 ? "N" : "S"}{"   "}
-              {Math.abs(location.longitude).toFixed(3)}°
-              {location.longitude >= 0 ? "E" : "W"}
-            </Text>
-          </View>
+        {/* The field already shows the name, so this only confirms the find. */}
+        {location && location !== prefill && (
+          <Text style={[styles.resolvedLabel, styles.found]}>Place found</Text>
         )}
         {lookupFailed && (
           <Text style={styles.error}>
             Couldn&apos;t find that place. Try a city and country, or save without
             a location.
           </Text>
+        )}
+        <Pressable onPress={() => setNotesExpanded((open) => !open)} accessibilityRole="button"
+          accessibilityState={{ expanded: notesExpanded }} style={styles.pickerDone}>
+          <Text style={styles.outlineButtonText}>{notesExpanded ? "Hide note" : "Add a note"}</Text>
+        </Pressable>
+        {notesExpanded && (
+          <View>
+            <Text style={[styles.label, styles.spaced]}>Notes, optional</Text>
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Anything worth remembering"
+              placeholderTextColor={Colors.inkMuted}
+              selectionColor={Colors.signal}
+              multiline
+              maxLength={400}
+              accessibilityLabel="Notes"
+            />
+          </View>
         )}
       </ScrollView>
 
@@ -477,23 +467,10 @@ const styles = StyleSheet.create({
   },
   error: { ...Type.small, color: Colors.danger, marginTop: Spacing.sm },
 
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm, marginTop: Spacing.sm },
-  chip: {
-    paddingVertical: Spacing.sm + 2,
-    paddingHorizontal: Spacing.md,
-    borderRadius: Radius.pill,
-    borderWidth: 1,
-    borderColor: Colors.rule,
-  },
-  chipOn: { backgroundColor: Colors.ink, borderColor: Colors.ink },
-  chipText: {
-    fontFamily: FontFamily.medium,
-    fontSize: FontSize.small,
-    color: Colors.inkMuted,
-  },
-  chipTextOn: { color: Colors.paper },
-
-  pickerWrap: { marginTop: Spacing.xs, alignItems: "center" },
+  dateSummary: { flexDirection: "row", alignItems: "center", gap: Spacing.md, minHeight: 54, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.rule },
+  dateValue: { ...Type.heading, flex: 1 },
+  pickerDone: { alignSelf: "flex-end", padding: Spacing.md, minHeight: 44 },
+  pickerWrap: { marginTop: Spacing.xs },
 
   locationActions: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md },
   outlineButton: {
@@ -510,21 +487,8 @@ const styles = StyleSheet.create({
     color: Colors.ink,
   },
 
-  resolved: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "baseline",
-    marginTop: Spacing.md,
-    paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.rule,
-  },
   resolvedLabel: { ...Type.label, color: Colors.signal },
-  resolvedValue: {
-    fontFamily: FontFamily.mono,
-    fontSize: FontSize.small,
-    color: Colors.ink,
-  },
+  found: { marginTop: Spacing.sm },
 
   footer: {
     flexDirection: "row",
