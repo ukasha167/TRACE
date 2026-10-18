@@ -67,8 +67,8 @@ export const Colors = {
   paperDim: "#E6E2D6",
   /** Near-black carrying a trace of the plate's blue. Primary text, never #000. */
   ink: "#15181F",
-  /** Secondary text, captions, resolved values. 4.77:1 on paper. */
-  inkMuted: "#646A76",
+  /** Secondary text with at least 4.5:1 contrast on both paper backgrounds. */
+  inkMuted: "#58616D",
   /** Hairlines between rows. Guides rather than divides. */
   rule: "#D6D2C6",
 
@@ -117,6 +117,8 @@ export const Colors = {
    * own blues toward it and costs roughly a fifth of the apparent saturation.
    */
   space: "#000000",
+  imageScrim: "rgba(0, 0, 0, 0.65)",
+  controlOnSpace: "#626D80",
 
   /**
    * The single accent: the plate colour lifted onto the page.
@@ -171,8 +173,6 @@ export const SkyColors = {
   figure: "#7FB0D0",
   /** The horizon ring, the one line in the view that marks the ground. */
   horizon: "#C9C4B8",
-  /** Messier objects. Green-cyan so a galaxy never reads as another star. */
-  deepSky: "#9BE0C8",
   /** Star and body names. Cool grey-blue, quieter than the stars themselves. */
   label: "#93A7B4",
   /**
@@ -224,7 +224,70 @@ export const SkyColors = {
    */
   umbra: "#8A3A22",
   penumbra: "#BDB8B0",
+
+  /**
+   * The ground under the sky view, at night and with the sun up. Night ground
+   * sits a step above `Colors.space` so the horizon reads as an edge between
+   * two surfaces rather than a line drawn on one; the day ground is a slate
+   * darker than `daylight`, the way land looks under a bright sky. The
+   * renderer mixes them by the sun's altitude, on the same stops as the sky.
+   */
+  groundNight: "#0B0D10",
+  groundDay: "#252C33",
+
+  /**
+   * The Milky Way's light. A cool grey, not a colour: the band is seen by the
+   * rods, which carry no colour, and the slight blue is the Purkinje shift that
+   * every dark-adapted observer reports.
+   */
+  milkyWay: "#DCE3F0",
+  /**
+   * The sky lit by a bright moon, at its strongest. Moonlight is sunlight, so a
+   * moonlit sky is blue for the same reason a day sky is, at about a
+   * four-hundred-thousandth of the brightness; this is that blue at the level
+   * a dark-adapted eye reads it.
+   */
+  moonlitSky: "#101C36",
+  /** The sun's disc. Near white; the air colours it toward the horizon. */
+  sun: "#FFF6E8",
+  /**
+   * Resolved planet discs, by their real colour as seen in a small telescope:
+   * Mercury's grey, Venus's cloud-top cream, Mars's iron oxide, Jupiter's
+   * banded tan, Saturn's pale gold. Labels keep `planet`.
+   */
+  planetDisc: {
+    mercury: "#B9B3AA",
+    venus: "#F2EDDC",
+    mars: "#DE8A62",
+    jupiter: "#E6D7BC",
+    saturn: "#E4D3A6",
+  },
 } as const;
+
+/**
+ * BLACKBODY COLOURS, for star tints from measured B-V
+ * (lib/astronomy/skyLight.bvToKelvin). Mitchell Charity's table, "What color
+ * is a blackbody?" (CIE 1964 10-degree observer, sRGB, D65 white), which is
+ * also what NASA's Deep Star Maps used. Kelvin, then colour.
+ */
+export const Blackbody: readonly (readonly [number, string])[] = [
+  [3000, "#FFB46B"],
+  [3500, "#FFC489"],
+  [4000, "#FFD1A3"],
+  [4500, "#FFDBBA"],
+  [5000, "#FFE4CE"],
+  [5500, "#FFECE0"],
+  [6000, "#FFF3EF"],
+  [6500, "#FFF9FD"],
+  [7000, "#F5F3FF"],
+  [8000, "#E3E9FF"],
+  [9000, "#D6E1FF"],
+  [10000, "#CCDBFF"],
+  [12000, "#BFD3FF"],
+  [15000, "#B3CCFF"],
+  [20000, "#A8C5FF"],
+  [30000, "#9FBFFF"],
+];
 
 // ---- Typography ----
 /**

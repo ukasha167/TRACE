@@ -83,14 +83,33 @@ export interface Star {
   mag: number;      // visual magnitude
   name?: string;    // Bayer/Flamsteed designation from the catalog
   proper?: string;  // IAU-approved proper name, where one exists (333 of them)
+  bv?: number;      // B-V colour index, magnitudes. Absent where the catalogue has none.
 }
 
-export interface SkyBody {
+/** Anything placed on the sky by altitude and azimuth. */
+export interface SkyPoint {
   id: string;
   label: string;
   altitudeDeg: number;
   azimuthDeg: number;   // north-based clockwise
   magnitude: number;
+}
+
+/** A body of the solar system, with what it takes to draw it at its true size. */
+export interface SkyBody extends SkyPoint {
+  /** From the observer, AU. With radiusKm, the body's true angular size. */
+  distanceAu: number;
+  /** Equatorial radius, km. */
+  radiusKm: number;
+  /** Polar flattening, (equatorial - polar) / equatorial. 0 for a sphere. */
+  flattening: number;
+  /** Lit fraction of the disc, 0 to 1, and the Sun-body-observer angle. */
+  phaseFraction: number;
+  phaseAngleDeg: number;
+  /** Where the body's north pole points, horizon frame. Null where none is published. */
+  pole: { altitudeDeg: number; azimuthDeg: number } | null;
+  /** Saturn only: the rings' opening angle seen from Earth, degrees. Positive shows the north face. */
+  ringTiltDeg?: number;
 }
 
 // ---- NASA APOD (cached) ----
@@ -118,4 +137,14 @@ export interface AppSettings {
   hasCompletedOnboarding: boolean;
   /** The sky view's "hold your phone up" hint has been seen once. */
   hasSeenPointHint: boolean;
+  /** The sky view's "drag to look around" tip has been seen once. */
+  hasSeenDragHint: boolean;
+}
+
+export interface MoonCarouselItem {
+  offset: number;
+  date: string;
+  phase: Pick<MoonSnapshot, "phaseFraction" | "phaseName" | "phaseIndex" | "isTruePhase" | "waxing">;
+  brightLimbAngleDeg: number | null;
+  northAngleDeg: number | null;
 }
