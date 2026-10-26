@@ -35,8 +35,9 @@ import {
   getLunarNorthRotation,
 } from "@/lib/astronomy/brightLimb";
 import { getMoonReturns } from "@/lib/astronomy/moonReturn";
-import { toLocalNight, toLocalDayStart, todayDateString } from "@/lib/astronomy/dateUtils";
-import { getNightFacts, headlineSentences, shortPlace } from "@/lib/astronomy/nightFacts";
+import { toLocalNight, todayDateString } from "@/lib/astronomy/dateUtils";
+import { placeOf } from "@/lib/astronomy/place";
+import { nightFactsFor, headlineSentences, shortPlace } from "@/lib/astronomy/nightFacts";
 import { daysBetween } from "@/lib/astronomy/anniversary";
 import { ExportCardCanvas, CARD_SIZES, type CardFormat } from "@/components/ExportCardCanvas";
 import { NightCardCanvas } from "@/components/NightCardCanvas";
@@ -67,18 +68,14 @@ export default function ExportScreen() {
     const tz = milestone.location?.timezoneOffsetMin;
     const all = getMoonReturns(milestone.date, { tzOffsetMin: tz });
     const night = toLocalNight(milestone.date, tz);
-    // A place stored without coordinates is not a place — spec §10.
-    const place =
-      milestone.location && milestone.location.latitude !== 0
-        ? milestone.location
-        : null;
+    const place = placeOf(milestone.location);
     return {
-      moonPhase: getMoonPhase(night, toLocalDayStart(milestone.date, tz)),
+      moonPhase: getMoonPhase(night),
       brightLimbAngleDeg: place ? getBrightLimbAngle(night, place) : null,
       northAngleDeg: place ? getLunarNorthRotation(night, place) : null,
       moonReturns:
         milestone.type === "birthday" ? all.filter((r) => r.age > 0) : all,
-      fact: place ? headlineSentences(getNightFacts(milestone.date, place, tz))[0] ?? null : null,
+      fact: place ? headlineSentences(nightFactsFor(milestone.date, place, tz))[0] ?? null : null,
     };
   }, [milestone]);
 
@@ -109,8 +106,10 @@ export default function ExportScreen() {
       const image = await canvasRef.current.makeImageSnapshotAsync();
       const base64Data = image.encodeToBase64(ImageFormat.PNG, 100);
 
-      // Write to a temp file
-      const filename = `trace-${milestone?.title?.replace(/\s+/g, "-").toLowerCase() ?? id}-${style}-${format}.png`;
+      // Safe characters only. A "/" in the title made the name a path into a
+      // folder that does not exist, and "%", "#" or "?" break the file URL.
+      const slug = milestone?.title?.toLowerCase().replace(/[^a-z0-9]+/g, "-") || id;
+      const filename = `trace-${slug}-${style}-${format}.png`;
       const fileUri = `${FileSystem.cacheDirectory}${filename}`;
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
         encoding: FileSystem.EncodingType.Base64,
@@ -150,7 +149,7 @@ export default function ExportScreen() {
     ahead.length === 0
       ? null
       : `The moon comes back in ${ahead.map((r) => r.year).join(" and ")}.`;
-  const loc = milestone.location && milestone.location.latitude !== 0 ? milestone.location : null;
+  const loc = placeOf(milestone.location);
   const coords = loc
     ? `${Math.abs(loc.latitude).toFixed(2)}° ${loc.latitude >= 0 ? "N" : "S"}, ${Math.abs(loc.longitude).toFixed(2)}° ${loc.longitude >= 0 ? "E" : "W"}`
     : null;
