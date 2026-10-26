@@ -11,7 +11,7 @@ test("the eclipse night reveals as full, with the eclipse as its fact", () => {
   assert.equal(r.line1, "Evening of 27 September 2015 · Greenwich");
   assert.match(r.line2, /^Full moon, 99\.\d+%\slit$/);
   assert.match(r.line3!, /^A total lunar eclipse peaked/);
-  assert.match(r.line4!, /^1 in \d+ days has a moon at least [\d.]+% lit\./);
+  assert.match(r.line4!, /^1 in \d+\.\d days has a moon at least [\d.]+% lit\./);
 });
 
 test("without a place there is no night fact and no tilt, and nothing is invented", () => {
@@ -32,4 +32,11 @@ test("a place saved as 0, 0 before decision 4 gets no sky, as on the card", () =
   assert.equal(r.moon.brightLimbAngleDeg, null);
   assert.equal(r.line3, null);
   assert.equal(r.line1, "Evening of 27 September 2015");
+});
+
+test("a date still ahead gives the frequency and no '0 of 0' count", () => {
+  // Home's "Save this date" saves any of the next 30 nights.
+  const r = revealContent({ date: "2027-01-21", type: "custom", location: null }, "2026-10-23");
+  assert.ok(r.moon.phaseFraction >= 0.99, `setup: expected >=99%, got ${r.moon.phaseFraction}`);
+  assert.match(r.line4!, /^1 in \d+\.\d days has a moon at least [\d.]+% lit\.$/);
 });

@@ -1,6 +1,6 @@
 import { getMoonPhase } from "./moonPhase";
 import { getBrightLimbAngle, getLunarNorthRotation } from "./brightLimb";
-import { toLocalNight, toLocalDayStart } from "./dateUtils";
+import { toLocalNight } from "./dateUtils";
 import { addDays } from "./anniversary";
 import type { MilestoneLocation, MoonCarouselItem } from "@/types";
 
@@ -20,7 +20,7 @@ export function moonCarouselItems(today: string, offset: number, location: Miles
     items.push({
       offset: day,
       date,
-      phase: getMoonPhase(at, toLocalDayStart(date, location?.timezoneOffsetMin)),
+      phase: getMoonPhase(at),
       brightLimbAngleDeg: location ? getBrightLimbAngle(at, location) : null,
       northAngleDeg: location ? getLunarNorthRotation(at, location) : null,
     });

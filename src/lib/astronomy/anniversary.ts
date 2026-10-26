@@ -1,7 +1,7 @@
 import type { Milestone, MoonReturn } from "@/types";
-import { getMoonPhase } from "./moonPhase";
-import { getMoonReturns } from "./moonReturn";
-import { parseDateString, toLocalNight, toLocalDayStart } from "./dateUtils";
+import { getMoonPhase, FULL_ENOUGH, NEW_ENOUGH } from "./moonPhase";
+import { getMoonReturnIn } from "./moonReturn";
+import { anniversaryOn, parseDateString, toLocalNight } from "./dateUtils";
 
 /**
  * THE NEXT TIME THE DATE COMES ROUND, and the moon it will bring.
@@ -32,10 +32,6 @@ export interface Anniversary {
   moonReturn: MoonReturn | null;
 }
 
-function isLeapYear(year: number): boolean {
-  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-}
-
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Whole calendar days from `from` to `to`, both "YYYY-MM-DD". */
@@ -59,16 +55,10 @@ export function anniversaryDate(
   const source = parseDateString(milestone.date);
   const now = parseDateString(today);
 
-  // Feb 29 skips common years, the same rule getMoonReturns follows. Sliding
-  // to Mar 1 would forecast a different sky and call it the anniversary.
-  const exists = (year: number) =>
-    !(source.month === 2 && source.day === 29 && !isLeapYear(year));
-
   let year = Math.max(now.year, source.year);
-  const dateIn = (y: number) => `${y}-${pad(source.month)}-${pad(source.day)}`;
-  while (!exists(year) || daysBetween(today, dateIn(year)) < 0) year++;
+  let date = anniversaryOn(milestone.date, year);
+  while (date === null || daysBetween(today, date) < 0) date = anniversaryOn(milestone.date, ++year);
 
-  const date = dateIn(year);
   return { date, year, daysLeft: daysBetween(today, date), age: year - source.year };
 }
 
@@ -83,15 +73,8 @@ export function nextAnniversary(
   const source = parseDateString(milestone.date);
   const tzOffsetMin = milestone.location?.timezoneOffsetMin;
   const { date, year, daysLeft, age } = anniversaryDate(milestone, today);
-  const phase = getMoonPhase(
-    toLocalNight(date, tzOffsetMin),
-    toLocalDayStart(date, tzOffsetMin)
-  );
-
-  const moonReturn =
-    year === source.year
-      ? null
-      : getMoonReturns(milestone.date, { tzOffsetMin }).find((r) => r.year === year) ?? null;
+  const phase = getMoonPhase(toLocalNight(date, tzOffsetMin));
+  const moonReturn = getMoonReturnIn(milestone.date, year, { tzOffsetMin });
 
   return { date, year, daysLeft, age, phase, moonReturn };
 }
@@ -111,8 +94,8 @@ export function describeComingMoon(
   phase: Pick<ReturnType<typeof getMoonPhase>, "phaseFraction" | "waxing">,
   formatted: string
 ): string {
-  if (phase.phaseFraction >= 0.99) return `The moon will be full, ${formatted} lit.`;
-  if (phase.phaseFraction <= 0.01) return `The moon will be new, ${formatted} lit.`;
+  if (phase.phaseFraction >= FULL_ENOUGH) return `The moon will be full, ${formatted} lit.`;
+  if (phase.phaseFraction <= NEW_ENOUGH) return `The moon will be new, ${formatted} lit.`;
   return `The moon will be ${formatted} lit, ${phase.waxing ? "waxing" : "waning"}.`;
 }
 

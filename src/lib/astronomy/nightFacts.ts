@@ -1,6 +1,7 @@
 import * as Astronomy from "astronomy-engine";
 import type { MilestoneLocation } from "@/types";
 import { parseDateString, toLocalNight } from "./dateUtils";
+import { lru } from "@/lib/memo";
 
 /**
  * THAT NIGHT, IN WORDS.
@@ -72,6 +73,30 @@ function joinNames(names: string[]): string {
 /** The place's name without its region, for a sentence: "Lisbon", not "Lisbon, Portugal". */
 export function shortPlace(label: string): string {
   return label.split(",")[0].trim();
+}
+
+const factsCache = lru<NightFacts>(16);
+
+/**
+ * getNightFacts, once per date and place. Its eclipse search and five-minute
+ * moon walk were most of the pause after Save: the reveal and the record screen
+ * under it ran it in the same commit, and the share card ran it again. The
+ * result is frozen because every caller shares it. Tests call getNightFacts.
+ */
+export function nightFactsFor(
+  dateString: string,
+  location: Pick<MilestoneLocation, "latitude" | "longitude" | "label">,
+  tzOffsetMin?: number
+): NightFacts {
+  const key = `${dateString}|${location.latitude}|${location.longitude}|${location.label}|${tzOffsetMin ?? ""}`;
+  return factsCache.through(key, () => {
+    const facts = getNightFacts(dateString, location, tzOffsetMin);
+    // One level down too: a caller pushing onto `rows` would grow it per render.
+    Object.freeze(facts.rows);
+    Object.freeze(facts.sentences);
+    Object.freeze(facts.planetsUpAtMidnight);
+    return Object.freeze(facts);
+  });
 }
 
 export function getNightFacts(
