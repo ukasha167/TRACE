@@ -4,7 +4,7 @@ import { Linking, Platform } from "react-native";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { useMilestonesStore, useMilestonesHydrated } from "@/store/useMilestonesStore";
 import { useRemindersStore } from "@/store/useRemindersStore";
-import { planReminders, reminderBody, REMINDER_HOUR } from "@/lib/reminders/planReminders";
+import { diffReminders, planReminders, reminderBody, REMINDER_HOUR } from "@/lib/reminders/planReminders";
 import { anniversaryDate } from "@/lib/astronomy/anniversary";
 import { todayDateString, parseDateString } from "@/lib/astronomy/dateUtils";
 
@@ -31,20 +31,7 @@ const Notifications: NotificationsModule | null = (() => {
 
 export const remindersAvailable = Notifications !== null;
 
-/**
- * Every pending notification this app owns carries this prefix, and nothing
- * else is ever cancelled. The rest of the identifier is the record, the year
- * and a hash of the words, so an edit that changes the text changes the id and
- * the old request is replaced rather than left to fire with yesterday's title.
- */
-const PREFIX = "trace:";
 const CHANNEL = "anniversaries";
-
-function hash(s: string): string {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  return (h >>> 0).toString(36);
-}
 
 Notifications?.setNotificationHandler({
   handleNotification: async () => ({
@@ -69,25 +56,21 @@ async function sync(): Promise<void> {
         return new Date(year, month - 1, day, REMINDER_HOUR).getTime() > now;
       })
     : [];
-  const wanted = new Map(plan.map((p) => [`${PREFIX}${p.key}:${hash(p.title + p.body)}`, p]));
-
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  const have = new Set<string>();
-  for (const req of scheduled) {
-    if (!req.identifier.startsWith(PREFIX)) continue;
-    if (wanted.has(req.identifier)) have.add(req.identifier);
-    else await Notifications.cancelScheduledNotificationAsync(req.identifier);
-  }
+  const { cancel, schedule } = diffReminders(
+    scheduled.map((req) => req.identifier),
+    plan
+  );
+  for (const identifier of cancel) await Notifications.cancelScheduledNotificationAsync(identifier);
 
-  if (Platform.OS === "android" && wanted.size > 0) {
+  if (Platform.OS === "android" && plan.length > 0) {
     await Notifications.setNotificationChannelAsync(CHANNEL, {
       name: "Anniversaries",
       importance: Notifications.AndroidImportance.DEFAULT,
     });
   }
 
-  for (const [identifier, p] of wanted) {
-    if (have.has(identifier)) continue;
+  for (const { identifier, reminder: p } of schedule) {
     const { year, month, day } = parseDateString(p.date);
     await Notifications.scheduleNotificationAsync({
       identifier,

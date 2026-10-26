@@ -1,13 +1,9 @@
 import type { Milestone } from "@/types";
-import { getMoonPhase, formatIllumination } from "@/lib/astronomy/moonPhase";
+import { getMoonPhase, formatIllumination, FULL_ENOUGH, NEW_ENOUGH } from "@/lib/astronomy/moonPhase";
 import { getMoonReturns } from "@/lib/astronomy/moonReturn";
 import { daysBetween } from "@/lib/astronomy/anniversary";
 import { shortPlace } from "@/lib/astronomy/nightFacts";
-import {
-  parseDateString,
-  toLocalNight,
-  toLocalDayStart,
-} from "@/lib/astronomy/dateUtils";
+import { anniversaryOn, parseDateString, toLocalNight } from "@/lib/astronomy/dateUtils";
 
 /**
  * WHAT THE PHONE SAYS ON THE DAY. Pure, so the words can be tested before any
@@ -36,14 +32,10 @@ export const REMINDER_HOUR = 19;
 /** Leaves room under iOS's 64 for anything else the app schedules. */
 export const REMINDER_LIMIT = 60;
 
-function isLeapYear(year: number): boolean {
-  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-}
-
 /** The figure always ships with the name (CLAUDE.md, rule 1). */
 function pastTense(fraction: number): string {
-  if (fraction >= 0.99) return `full, ${formatIllumination(fraction)} lit`;
-  if (fraction <= 0.01) return `new, ${formatIllumination(fraction)} lit`;
+  if (fraction >= FULL_ENOUGH) return `full, ${formatIllumination(fraction)} lit`;
+  if (fraction <= NEW_ENOUGH) return `new, ${formatIllumination(fraction)} lit`;
   return `${formatIllumination(fraction)} lit`;
 }
 
@@ -59,10 +51,10 @@ export function reminderBody(
 ): string {
   const tz = milestone.location?.timezoneOffsetMin;
   const source = parseDateString(milestone.date);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const date = `${year}-${pad(source.month)}-${pad(source.day)}`;
+  // Callers pass only years that have the date (planReminders, nextAnniversary).
+  const date = `${year}${milestone.date.slice(4)}`;
 
-  const tonight = getMoonPhase(toLocalNight(date, tz), toLocalDayStart(date, tz));
+  const tonight = getMoonPhase(toLocalNight(date, tz));
   const where = milestone.location ? ` over ${shortPlace(milestone.location.label)}` : "";
   const lead = `Tonight's moon${where} is ${formatIllumination(tonight.phaseFraction)} lit.`;
   if (year === source.year) return lead;
@@ -91,7 +83,6 @@ export function planReminders(
   limit = REMINDER_LIMIT
 ): PlannedReminder[] {
   const enabled = new Set(enabledIds);
-  const pad = (n: number) => String(n).padStart(2, "0");
   const plan: PlannedReminder[] = [];
   const now = parseDateString(today);
 
@@ -105,9 +96,8 @@ export function planReminders(
     let added = 0;
     // A Feb 29 record needs up to eight calendar years to find three leap ones.
     for (let guard = 0; added < yearsAhead && guard < yearsAhead * 4 + 8; guard++, year++) {
-      if (source.month === 2 && source.day === 29 && !isLeapYear(year)) continue;
-      const date = `${year}-${pad(source.month)}-${pad(source.day)}`;
-      if (daysBetween(today, date) < 0) continue;
+      const date = anniversaryOn(m.date, year);
+      if (date === null || daysBetween(today, date) < 0) continue;
       plan.push({
         key: `${m.id}:${year}`,
         milestoneId: m.id,
@@ -121,4 +111,46 @@ export function planReminders(
 
   plan.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return plan.slice(0, limit);
+}
+
+/**
+ * Every pending notification this app owns carries this prefix, and nothing
+ * else is ever cancelled. The rest of the identifier is the record, the year
+ * and a hash of the words, so an edit that changes the text changes the id and
+ * the old request is replaced rather than left to fire with yesterday's title.
+ */
+export const REMINDER_PREFIX = "trace:";
+
+function hash(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+export function reminderId(p: PlannedReminder): string {
+  return `${REMINDER_PREFIX}${p.key}:${hash(p.title + p.body)}`;
+}
+
+/**
+ * What to cancel and what to schedule to bring the phone's pending requests in
+ * line with the plan. Pure so it can be tested: an identifier that drifted
+ * between runs once cancelled and rescheduled every reminder on every launch,
+ * and the only symptom was reminders that never arrived.
+ */
+export function diffReminders(
+  scheduledIds: readonly string[],
+  plan: readonly PlannedReminder[]
+): { cancel: string[]; schedule: { identifier: string; reminder: PlannedReminder }[] } {
+  const wanted = new Map(plan.map((p) => [reminderId(p), p]));
+  const have = new Set<string>();
+  const cancel: string[] = [];
+  for (const id of scheduledIds) {
+    if (!id.startsWith(REMINDER_PREFIX)) continue;
+    if (wanted.has(id)) have.add(id);
+    else cancel.push(id);
+  }
+  const schedule = [...wanted]
+    .filter(([id]) => !have.has(id))
+    .map(([identifier, reminder]) => ({ identifier, reminder }));
+  return { cancel, schedule };
 }
