@@ -38,7 +38,7 @@ Read DECISIONS.md before changing anything in `lib/astronomy/`, `hooks/useSkyOri
 
 ```bash
 npx expo start          # then i for iOS simulator, a for Android
-npm test                # 260 tests, tsx + node:test. NOT jest.
+npm test                # 262 tests, tsx + node:test. NOT jest.
 npx tsc --noEmit
 ```
 
@@ -52,7 +52,7 @@ src/
 ├── components/     Presentation. No astronomy, no network.
 │   ├── detail/     The record detail sections.
 │   ├── moon/       The moon's SkSL lighting shader, its uniforms and textures, the star field.
-│   └── sky/        The Milky Way and moonlit-sky shader; true-size sun and planet discs.
+│   └── sky/        The Milky Way shader, the landscape shader; true-size sun and planet discs.
 ├── hooks/          Stateful glue.
 ├── store/          Zustand + AsyncStorage.
 ├── lib/
@@ -122,7 +122,7 @@ haptics belong to save, the reveal landing, the bell and the details fold. Decis
 **The sky view draws everything at its true size.** The sun, moon and planets subtend their real
 angle through the frame's focal length; nothing is enlarged so it can be seen, which is why the zoom
 reaches 0.1 degrees. The Milky Way keeps its brightness under zoom because surface brightness does
-not change with magnification. Read DECISIONS 55 to 58 before changing `components/sky/`.
+not change with magnification. Read DECISIONS 55 to 58 and 64 before changing `components/sky/`.
 
 **Sensors on Android need `HIGH_SAMPLING_RATE_SENSORS`.** Expo Go has it; a standalone build
 without it samples every sensor at 5 Hz whatever `setUpdateInterval` asks for, and the sky moves in
@@ -146,6 +146,6 @@ come back. Do not narrate what the next line does.
 Phases A through H are built, tested, and verified on an iPhone simulator and a Pixel 7 Pro. The
 improvement stages after them (the reveal, reminders, night facts, star map, sky scrubber, life in
 moons, the night card, backup) are verified on the iPhone simulator only. `npm test`
-is green at 260 tests and `npx tsc --noEmit` is clean.
+is green at 262 tests and `npx tsc --noEmit` is clean.
 
 Open work is listed at the end of PRD.md.

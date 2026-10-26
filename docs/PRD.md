@@ -40,7 +40,7 @@ pulls back toward that shape is a regression.
 | Rarity, computed | Core | Measured frequencies, never adjectives. |
 | Immersive sky | Core | The sky over *that place* on *that night*, held up in the hand. |
 | Bright-limb tilt | Supporting | Folds into the moon glyph and the sky render. |
-| Constellation figures | Supporting | Lines and names for all 88, drawn artwork for the 15 people look for. |
+| Constellation figures | Supporting | Lines, names and drawn artwork for 25: the zodiac and thirteen people find without a chart. |
 | NASA APOD per date | Supporting | A secondary card, never the hero. |
 | The reveal | Core | Saving a record plays the moon of that night rising, with four lines. The moment the app exists for. |
 | Coming up and reminders | Core | The next anniversary and its moon, and a notification at 19:00 on the night. The reason to open the app twice. |
@@ -136,5 +136,3 @@ Open work, roughly in order of value.
   development build instead of Expo Go.
 - **The live moon above the form's expandable date wheel.** Built in the prototype, not picked.
 - **A night appearance** for the reading surfaces. Built in the prototype, not picked; paper was.
-- **Figure artwork for the other 73 constellations.** Fifteen have one. The rest keep lines and a
-  name, which is the right trade for now: nobody is looking for Antlia.
