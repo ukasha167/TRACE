@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planReminders, reminderBody } from "@/lib/reminders/planReminders";
+import { diffReminders, planReminders, reminderBody, reminderId } from "@/lib/reminders/planReminders";
 
 const greenwich = { latitude: 51.4779, longitude: 0, label: "Greenwich, United Kingdom", timezoneOffsetMin: 0 };
 const eclipse = { id: "e", title: "Eclipse night", date: "2015-09-28", location: greenwich };
@@ -53,4 +53,24 @@ test("a full moon in the text carries its figure", () => {
 
 test("reminder text never prints a clock time", () => {
   for (const p of planReminders([eclipse, leap], ["e", "l"], "2026-01-01")) assert.doesNotMatch(p.body, CLOCK);
+});
+
+test("a second sync over an unchanged plan cancels and schedules nothing", () => {
+  const plan = planReminders([eclipse, leap], ["e", "l"], "2026-10-01");
+  const first = diffReminders([], plan);
+  assert.equal(first.schedule.length, plan.length);
+  const second = diffReminders(first.schedule.map((s) => s.identifier), plan);
+  assert.deepEqual(second, { cancel: [], schedule: [] });
+});
+
+test("an edited title replaces exactly the edited record's ids, and leaves other apps' alone", () => {
+  const before = planReminders([eclipse, leap], ["e", "l"], "2026-10-01");
+  const after = planReminders([{ ...eclipse, title: "Blood moon" }, leap], ["e", "l"], "2026-10-01");
+  const scheduled = [...before.map(reminderId), "someone-else:1"];
+  const { cancel, schedule } = diffReminders(scheduled, after);
+  const edited = before.filter((p) => p.milestoneId === "e").map(reminderId);
+  assert.ok(edited.length > 0);
+  assert.deepEqual(cancel.sort(), edited.sort());
+  assert.equal(schedule.length, edited.length);
+  assert.ok(schedule.every((s) => s.reminder.title === "Blood moon"));
 });
