@@ -11,6 +11,10 @@
       "icon": "./assets/images/icon.png"
     },
     "android": {
+      "package": "com.trace.app",
+      "permissions": [
+        "android.permission.HIGH_SAMPLING_RATE_SENSORS"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
