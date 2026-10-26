@@ -10,7 +10,7 @@
 | Storage | `@react-native-async-storage/async-storage` | MMKV would force an EAS dev build on day one for a data volume nowhere near AsyncStorage's limits. |
 | Sun and moon | `suncalc` 2.0.1 | Returns **degrees**. Read ASTRONOMY.md before touching any angle. |
 | Planets, cross-checks | `astronomy-engine` | Also the independent implementation `skyTransform` is validated against. |
-| Sensors | `expo-sensors` | Accelerometer, Magnetometer, Gyroscope. Expo Go compatible. |
+| Sensors | `expo-sensors` | Accelerometer, Magnetometer, Gyroscope. Expo Go compatible. Outside Expo Go, Android needs `HIGH_SAMPLING_RATE_SENSORS` or every sensor runs at 5 Hz (DECISIONS 60). |
 | Rendering | `@shopify/react-native-skia` | Sky render, moon glyph, export card. |
 | Location | `expo-location` | Coordinates and magnetic declination. |
 | Dates | `lib/astronomy/dateUtils.ts` | Four helpers own every conversion between a calendar date and an instant. See ASTRONOMY.md. |
@@ -19,7 +19,7 @@
 | Sharing | `expo-sharing` + `expo-file-system` | The card, and the records backup. |
 | Restore | `expo-document-picker` | Picks a backup file. Expo Go compatible. |
 | Reminders | `expo-notifications` | Local notifications only. Nothing remote, no push token. |
-| Haptics | `expo-haptics` | Save, the reveal's landing, the bell, scrubber hours, the details fold. |
+| Haptics | `expo-haptics` | Save, the reveal's landing, the bell, the details fold. Nothing that moves under a finger ticks (DECISIONS 62). |
 | Icons | `lucide-react-native` | A few: share, edit, close, bell, compass, hand, chevrons. |
 
 ### Why not Jest
@@ -97,6 +97,7 @@ into it.
 | `useCurrentLocation` | The phone's place, from `store/useLocationStore`: remembered across launches, refreshed quietly once a session, and never the reason a permission dialog opens. `request()` does that, from a tap. |
 | `useReminders` | Keeps pending notifications in step with the records and bells, opens a record from a tapped reminder, and sends the test one. |
 | `useBackup` | Saves the records file through the share sheet and restores one. |
+| `useSkyPrewarm` | At idle, builds what the sky would open on: its images and font, the star sphere (`skyCache.ts`) and the moon image. Home and the record screen call it. |
 
 ### `lib/apod/`
 
@@ -120,7 +121,8 @@ This is the one place where the ordinary React model is deliberately abandoned.
    reused buffer (three dot products per star, zero allocation), and records geometry **and text**
    into a single `SkPicture`.
 3. The picture is handed to Skia through a Reanimated shared value. React re-renders only for things
-   a person changes (mode, the end of a pinch, a scrubber step) and a 4 Hz text label.
+   a person changes (mode, the end of a pinch, a scrubber step at most 30 times a second) and a
+   heading label that changes only when the view crosses a compass sector or the horizon.
 4. Nothing a finger moves is drawn where the finger put it. Drag, pinch and the time scrubber set a
    target and the frame loop glides toward it (`lib/glide.ts`), so uneven touch events arrive as
    even motion, and a flick coasts. The home carousel runs the same glide in a Reanimated frame
@@ -177,7 +179,9 @@ Labels claim rectangles as they are drawn, and a later label that would overlap 
 runs solar system, named stars, a lit figure's stars, constellation names. While the ground is
 solid, nothing under it is labelled.
 
-Measured cost of the per-frame maths is 0.05 ms against a 16.7 ms budget.
+The star projection costs 0.135 ms a frame with a JIT and 0.70 ms in Node with `--jitless`, the
+closer stand-in for Hermes. At 120 Hz the whole frame gets 8.3 ms, shared with every React render,
+touch and sensor reading on the JS thread. Decision 59.
 
 ## Storage and caching
 
@@ -199,10 +203,14 @@ rebuilt from the records on every sync, so an edit can never leave a stale notif
 the first frame.
 
 **Moon textures.** Decoded once per run in `components/moon/moonTextures.ts` and shared by every
-glyph. Calling `useImage` per glyph decoded both 1024px maps again for every moon on screen.
+glyph. Calling `useImage` per glyph decoded both 1024px maps again for every moon on screen. They
+decode to raster at launch, and the splash waits for them for up to a second.
 
-**Sky and moon data is never cached.** It is pure computation from bundled data, and recomputing is
-cheaper than storing.
+**Sky and moon data is never written to disk.** It is pure computation from bundled data, and
+recomputing is cheaper than reading it back. Results are kept in memory instead, in small LRUs
+(`lib/memo.ts`): the sky's assets, sphere and moon image, `nightFactsFor`, `planetReturnsFor`, the
+star field picture and the card fonts. DECISIONS 63 lists them and why tonight's moon is drawn for a
+20 minute step.
 
 **Offline-first.** The detail screen renders completely with no network. APOD and the place lookups
 are the only network use, and APOD is cached.
@@ -298,7 +306,7 @@ auditable. Four stars with independently known J2000 positions are asserted in t
 ## Non-functional
 
 **Performance.** `hdurl` only in the export render and the single active full-screen viewer. List
-screens never block on network. The immersive view targets 60 fps.
+screens never block on network. The immersive view targets 120 fps on a ProMotion iPhone.
 
 **Privacy.** No telemetry, no analytics, no accounts. Records never leave the device except as a
 backup file the person sends themselves. Place lookups go to the phone's geocoder, and dates go to

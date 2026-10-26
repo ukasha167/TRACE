@@ -934,6 +934,111 @@ back to white, because the eye sees a point's colour less saturated than the sam
 area. And stars fainter than magnitude 4 are white: there the rods do the seeing, and every
 observer reports the faint field as colourless whatever its spectra.
 
+### 59. A 120 Hz frame is 8.3 ms, and anything counted in frames runs twice as fast
+
+The sky view was tuned at 60 Hz. On a ProMotion iPhone the frame halves, and an audit replayed the
+frame loop in Node with `--jitless` to stand in for Hermes. What it found, and what changed:
+
+- The heading label published every 15 frames on a 1 degree turn, 8 full renders of the sky screen
+  a second. It now publishes only when "Facing SE" or "Below the horizon" would change, unless the
+  debug panel is open.
+- Scrubbing redrew the 2048 px moon each 20 minutes of the night, each one a 16 MB copy off the GPU.
+  The redraw now waits until the scrubbed time has rested for 250 ms, so the moon holds its phase
+  and tilt during a drag.
+- The gyro reads at 120 Hz. At 60 Hz the view jumped on one frame and stalled on the next. The
+  accelerometer and magnetometer stay at 60, because their smoothing factors are per reading.
+- The figure fade and the compass's drift correction took a fixed fraction per frame. Both are now
+  against elapsed time (270 ms and 470 ms), which matches the old feel at 60 Hz. Decision 50 is the
+  same bug.
+- The scrubber hands a step to the screen at most every 33 ms, not every frame, and the three
+  gestures are memoised so a render does not re-register them with Gesture Handler mid-drag.
+- `projectSphere` works out airmass after the screen checks: 1.38 ms to 0.70 ms a frame, jitless.
+  The sphere build rotates each star by `toEquatorial` instead of calling `equatorialToHorizontal`
+  (5.7 ms to 2.0 ms, agreeing to 0.02 arcseconds), and no longer computes planets nobody read.
+- Uniform slots and label widths are read from Skia once, not every frame.
+
+If a profiled build on the Pixel 7 Pro still drops frames after this, the next step is moving the
+frame loop onto the UI thread.
+
+### 60. The release build sampled every sensor at 5 Hz
+
+Expo Go requests `HIGH_SAMPLING_RATE_SENSORS`; the app's own manifest did not. Without it,
+`expo-sensors` registers on Android with `SENSOR_DELAY_NORMAL`, 200 ms, whatever `setUpdateInterval`
+asks for (`SensorSubscription.kt`). The first standalone release on the Pixel 7 Pro integrated one
+gyro reading per 200 ms, and the accelerometer and magnetometer filters, tuned per reading at 60 Hz,
+lagged by seconds. Point mode moved in steps and settled in the wrong place. The permission is now in
+`app.json` and in `android/app/src/main/AndroidManifest.xml`. It is granted at install, with no
+prompt.
+
+A second fault hid under the first. `useSkyOrientation` timed each gyro reading by `Date.now()` on
+arrival. Readings reach JS in bunches, so the later ones in a bunch got a `dt` of 0 or 1 ms and their
+rotation was dropped. The view under-turned and the drift correction pulled it the rest of the way.
+`dt` now comes from `g.timestamp`, the sensor's own clock in seconds on both platforms
+(`GyroscopeModule.kt` divides `SensorEvent.timestamp` by 1e9; iOS uses `CMLogItem.timestamp`).
+
+### 61. The carousel switched its own loop off before the first drag
+
+The frame callback ran only while something moved: touch-down switched it on through JS, and it
+switched itself off once settled. Its first frame ran before the pan activated at 10 px, found nothing
+moving, and switched itself off. The whole first swipe then moved `target` with no loop to follow it,
+and the next touch restarted the loop with `target` a day away, so the moons jumped. The inline
+worklet was also a new function on every render, so `useFrameCallback` re-registered it at each date
+handover and each location update.
+
+The loop now runs while Home is mounted and returns at once when idle. A `touching` shared value,
+set in `onBegin` and cleared in `onFinalize`, holds it while a finger rests short of the threshold.
+The worklet is a stable `useCallback`, and `onChange` is reached through a ref. Each `OrbitMoon` is
+keyed by its slot (`offset mod 5`), so at a handover the moon leaving one edge becomes the moon
+entering the other, both at opacity 0, instead of a Skia canvas being torn down and another built
+mid-coast. `activeOffsetX` is 8, Android's touch slop, so a swipe wins against the page's scroll.
+
+### 62. One curve, and haptics only for discrete actions
+
+Every timed animation uses `lenis` from `lib/glide.ts`, Lenis's own easing
+(`1.001 - 2^(-10t)`, clamped). Entrances, fades, layout moves, the scrubber settle, the image
+viewer and the sky's entrance zoom used five different curves, one of them a spring. Motion a finger
+drives keeps `glide()`, which is the same law against elapsed time. Native stack transitions and
+native scroll physics stay as the OS draws them.
+
+The carousel, the scrubber and the Android date wheel ticked the haptic motor once per detent. A
+flick through a year column on the Pixel buzzed for every row. Haptics now fire on save, the reveal
+landing, the bell and the details fold, and nowhere else.
+
+### 63. What is cached, where, and why none of it is on disk
+
+Everything this app computes about a night is a pure function of the date and the place, so it is
+cached in memory and rebuilt on the next run. Rebuilding takes milliseconds, and reading a cold file
+back takes longer. NASA's pictures are the only disk cache (`cachePolicy="memory-disk"`), because
+they come over the network.
+
+- Moon maps, sky images and the sky's label font decode once per run to raster
+  (`makeNonTextureImage`, which RN Skia implements with `makeRasterImage`), on the JS thread, not on
+  the UI thread at first draw. The sky gets its three assets together, so its frame loop starts once.
+  It used to restart as each one arrived, resetting the figure fades and the eye's adaptation.
+- The sky's 2048 px moon image: the last four, keyed by place and instant (`skyMoonImage.tsx`).
+- The star sphere: the last four, keyed by place and anchor (`hooks/skyCache.ts`).
+- `nightFactsFor` and `planetReturnsFor`: small LRUs over the pure functions, results frozen. The
+  reveal, the record and the share card ran `getNightFacts` three times for one save.
+- The star field behind the moon: one `SkPicture` per size.
+- The share cards' fonts: loaded once per run (`components/cardFonts.ts`).
+
+Home, the record screen and the form fill these at idle (`useSkyPrewarm`, the form's 500 ms prewarm),
+so the sky's entrance starts on its first frame and the reveal starts as Save is tapped.
+
+**Tonight's moon is drawn for a 20 minute step.** For the cache to hit, the image Home draws ahead of
+time and the one the sky asks for must share a key, and "the moment the view opened" never repeats.
+So tonight's moon image and star sphere use the 20 minute step around that moment, the step scrubbing
+already used. The sphere loses nothing: it is a pure rotation of the catalogue about the pole, and the
+sky turns it by `siderealDelta(step, now)` (decision 34). The moon image can be up to 10 minutes of
+terminator drift away from exact, on a disc 25 px across at the eye's field of view. The phase label
+stays exact. Records and the carousel's other days open on a deterministic night, so they cache as-is.
+
+A GPS refresh that lands within 0.01 degrees, with the same label and offset, keeps the old place
+object. A new object for the same spot rebuilt the open sky and re-rendered Home.
+
+The entrance and exit zoom advance at most 20 ms per frame instead of by wall time, so a slow first
+frame delays the zoom rather than skipping part of it.
+
 ## Decisions
 
 **The mineral colour is real, and that is the only reason it is allowed.**
@@ -1066,7 +1171,8 @@ same method caught bug 13.
 
 **Measure before optimising.** At one point the immersive view was slow enough that porting to
 Flutter looked reasonable. Benchmarking settled it: the per-frame maths costs 0.05 ms against a
-16.7 ms budget, and only about 275 stars are on screen at once after culling. A flagship phone
+16.7 ms budget, and only about 275 stars are on screen at once after culling. (That was a JIT figure
+from before air extinction existed. Decision 59 has the 120 Hz numbers.) A flagship phone
 cannot fail to draw 275 dots. The framework was never the bottleneck, the render path was, and
 moving it off React fixed it without a rewrite.
 
