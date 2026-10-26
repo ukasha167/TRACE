@@ -22,7 +22,8 @@ import {
 } from "@/constants/theme";
 import { useMilestone } from "@/store/useMilestonesStore";
 import { getLifeLedger, brightestYears, type LedgerYear } from "@/lib/astronomy/lifeLedger";
-import { formatIllumination, describePhase } from "@/lib/astronomy/moonPhase";
+import { formatIllumination, describePhase, FULL_ENOUGH } from "@/lib/astronomy/moonPhase";
+import { FIRST_APOD_DATE } from "@/lib/apod/apodClient";
 import { daysBetween, occasionLabel } from "@/lib/astronomy/anniversary";
 import { todayDateString } from "@/lib/astronomy/dateUtils";
 import { LedgerRow } from "@/components/LedgerRow";
@@ -81,14 +82,15 @@ export default function LedgerScreen() {
   }
 
   const label = milestone.type === "birthday" ? "birthdays" : "anniversaries";
-  const full = past.filter((r) => r.phaseFraction >= 0.99);
+  const full = past.filter((r) => r.phaseFraction >= FULL_ENOUGH);
   const [brightest] = brightestYears(past, 1);
   const returns = rows.filter((r) => r.isReturn && r.age > 0);
   const lastPastReturn = [...returns].reverse().find((r) => daysBetween(r.date, today) >= 0);
   const nextReturn = returns.find((r) => daysBetween(r.date, today) < 0);
 
   const summary = [
-    `Full on ${full.length} of the ${past.length} ${label} so far.`,
+    // A date still ahead has no anniversaries yet, and "0 of the 0" says nothing.
+    past.length > 0 ? `Full on ${full.length} of the ${past.length} ${label} so far.` : "",
     brightest ? `The brightest was ${brightest.year}, at ${formatIllumination(brightest.phaseFraction)}.` : "",
     lastPastReturn || nextReturn
       ? `The moon came back to its first phase${lastPastReturn ? ` in ${lastPastReturn.year}` : ""}${
@@ -167,7 +169,7 @@ export default function LedgerScreen() {
                 waxing: r.waxing,
                 brightLimbAngleDeg: r.brightLimbAngleDeg,
                 northAngleDeg: r.northAngleDeg,
-                full: r.phaseFraction >= 0.99,
+                full: r.phaseFraction >= FULL_ENOUGH,
                 ring: r.isReturn && r.age > 0,
                 future: daysBetween(r.date, today) < 0,
                 accessibilityLabel: `${r.year}, ${formatIllumination(r.phaseFraction)} lit${r.isReturn && r.age > 0 ? ", a return" : ""}`,
@@ -209,14 +211,14 @@ export default function LedgerScreen() {
               )}
               {shownApod?.kind === "photograph" ? (
                 <Pressable onPress={() => setActiveApod(shownApod)} accessibilityRole="imagebutton" accessibilityLabel={`NASA's picture for that day: ${shownApod.title}`}>
-                  <Image source={{ uri: shownApod.url }} style={styles.apod} contentFit="cover" transition={200} />
+                  <Image source={{ uri: shownApod.url }} style={styles.apod} contentFit="cover" transition={{ duration: 200, timing: "ease-out" }} cachePolicy="memory-disk" recyclingKey={shownApod.url} />
                   <Text style={styles.apodCaption}>{shownApod.title}</Text>
                 </Pressable>
               ) : (
                 <Text style={styles.apodNone}>
                   {shownFuture
                     ? "NASA's picture for this date is still to come."
-                    : shown.year < 1995 || (shown.year === 1995 && shown.date < "1995-06-16")
+                    : shown.date < FIRST_APOD_DATE
                       ? "NASA's daily pictures begin in June 1995."
                       : shownApod
                         ? "NASA's pick that day was not a photograph."

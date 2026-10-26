@@ -15,7 +15,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { useReducedMotion } from "react-native-reanimated";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { StatusBar } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Colors, FontFamily, FontSize } from "@/constants/theme";
@@ -26,7 +26,9 @@ import { RevealHost } from "@/components/Reveal";
 SplashScreen.preventAutoHideAsync();
 
 // Decode the moon's maps while the fonts load, so the hero has them waiting.
-preloadMoonTextures();
+const moonTexturesLoaded = preloadMoonTextures();
+/** The splash waits this long for the moon's maps at most, then shows Home anyway. */
+const TEXTURE_WAIT_MS = 1000;
 
 /**
  * Headers stay near-silent: paper ground, the screen's name set small in the
@@ -59,12 +61,23 @@ export default function RootLayout() {
     [FontFamily.monoMedium]: JetBrainsMono_500Medium,
   });
 
+  // The hero's moon showed a frame or two without its maps, so the splash holds
+  // for them too.
+  const [texturesReady, setTexturesReady] = useState(false);
   useEffect(() => {
-    if (fontsLoaded || fontError) SplashScreen.hideAsync();
-  }, [fontsLoaded, fontError]);
+    const done = () => setTexturesReady(true);
+    moonTexturesLoaded.then(done);
+    const cap = setTimeout(done, TEXTURE_WAIT_MS);
+    return () => clearTimeout(cap);
+  }, []);
+
+  const ready = (fontsLoaded || !!fontError) && texturesReady;
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync();
+  }, [ready]);
 
   // Nothing renders in a fallback face and then pops.
-  if (!fontsLoaded && !fontError) return null;
+  if (!ready) return null;
 
   return (
     // GestureHandlerRootView must wrap the whole app, or any GestureDetector
