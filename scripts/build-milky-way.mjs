@@ -17,16 +17,27 @@
  * 0h with right ascension increasing to the left: the same frame as the star
  * catalogue, so the renderer needs no galactic transform.
  *
- * WHAT IS KEPT. Luminance only. The naked-eye Milky Way is seen by the rods,
- * which see no colour, so its colour channels would be a claim about how it
- * looks that the eye does not make. The EXR is linear, so luminance is summed
- * light, and the 8-bit file stores it through a 1/2.2 power so the faint
- * outskirts keep their levels; src/data/milkyWay.json carries the reference
+ * WHAT IS KEPT. All three channels. The colour is Gaia's measured starlight,
+ * and it is warm where the band is bright: dust reddens the core toward
+ * Sagittarius, so red over green runs from 1.06 in the faint band to 1.5 in
+ * the brightest clouds. The naked eye sees none of that, because the rods do
+ * the seeing at this brightness; the view draws it anyway, the way a
+ * long-exposure photograph does (DECISIONS 64).
+ *
+ * WHITE BALANCE. A camera balances on the scene, and so does this: the band's
+ * own average (the 90th to 99th percentile of luminance) is made neutral. The
+ * core then reads gold and the faint arms blue-white, the look of a Milky Way
+ * photograph, and the ratios between any two parts of the band are the
+ * measured ones.
+ *
+ * The EXR is linear, so each channel is summed light, and the 8-bit file
+ * stores each one over the same luminance reference through a 1/2.2 power so
+ * the faint outskirts keep their levels; src/data/milkyWay.json carries what
  * the renderer needs to undo that and recover relative radiance.
  *
  * OUTPUT
- *   assets/sky/milkyway.png    2048 x 1024 greyscale
- *   src/data/milkyWay.json     { width, height, gamma, reference }
+ *   assets/sky/milkyway.png    2048 x 1024 RGB
+ *   src/data/milkyWay.json     { width, height, gamma, reference, floor }
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -48,6 +59,15 @@ const GAMMA = 2.2;
  * leave the whole band in the bottom tenth of the range.
  */
 const REFERENCE_PERCENTILE = 0.9995;
+/**
+ * The radiance the renderer takes as black. The map has light everywhere,
+ * because Gaia's faint stars are everywhere, and drawn as it is that floor put
+ * a grey wash over the whole sky, band or not. The median sky pixel is the
+ * floor: half the sky is away from the band, and that half draws black.
+ */
+const FLOOR_PERCENTILE = 0.5;
+/** The luminance range the white balance is taken over: the band, not the dark sky. */
+const BALANCE_RANGE = [0.9, 0.99];
 
 function halfToFloat(h) {
   const s = h & 0x8000 ? -1 : 1;
@@ -127,35 +147,58 @@ const main = () => {
 
   const fx = img.width / OUT_W;
   const fy = img.height / OUT_H;
-  const lum = new Float32Array(OUT_W * OUT_H);
+  const n = OUT_W * OUT_H;
+  const ch = [new Float32Array(n), new Float32Array(n), new Float32Array(n)];
+  const lum = new Float32Array(n);
   for (let y = 0; y < OUT_H; y++) {
     for (let x = 0; x < OUT_W; x++) {
-      let sum = 0;
+      let r = 0, g = 0, b = 0;
       for (let dy = 0; dy < fy; dy++) {
         for (let dx = 0; dx < fx; dx++) {
           const i = (y * fy + dy) * img.width + x * fx + dx;
-          // Rec. 709 luminance of linear light.
-          sum += 0.2126 * img.R[i] + 0.7152 * img.G[i] + 0.0722 * img.B[i];
+          r += img.R[i];
+          g += img.G[i];
+          b += img.B[i];
         }
       }
-      lum[y * OUT_W + x] = Math.max(0, sum / (fx * fy));
+      const o = y * OUT_W + x;
+      const k = fx * fy;
+      ch[0][o] = Math.max(0, r / k);
+      ch[1][o] = Math.max(0, g / k);
+      ch[2][o] = Math.max(0, b / k);
+      // Rec. 709 luminance of linear light.
+      lum[o] = 0.2126 * ch[0][o] + 0.7152 * ch[1][o] + 0.0722 * ch[2][o];
     }
   }
 
   const sorted = Float32Array.from(lum).sort();
   const at = (q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
   const reference = at(REFERENCE_PERCENTILE);
+  const floor = at(FLOOR_PERCENTILE) / reference;
   console.log(`luminance p10 ${at(0.1).toExponential(3)} p50 ${at(0.5).toExponential(3)} p99 ${at(0.99).toExponential(3)} ref ${reference.toExponential(3)} max ${sorted.at(-1).toExponential(3)}`);
 
-  const png = new PNG({ width: OUT_W, height: OUT_H, colorType: 0, inputColorType: 0, inputHasAlpha: false, bitDepth: 8 });
-  const data = Buffer.alloc(OUT_W * OUT_H);
-  for (let i = 0; i < lum.length; i++) {
-    data[i] = Math.round(255 * Math.min(1, Math.pow(lum[i] / reference, 1 / GAMMA)));
+  // Each channel's gain that makes the band's average neutral, at unchanged luminance.
+  const [lo, hi] = BALANCE_RANGE.map(at);
+  const mean = [0, 0, 0];
+  for (let i = 0; i < n; i++) {
+    if (lum[i] < lo || lum[i] > hi) continue;
+    for (let c = 0; c < 3; c++) mean[c] += ch[c][i];
+  }
+  const meanLum = 0.2126 * mean[0] + 0.7152 * mean[1] + 0.0722 * mean[2];
+  const balance = mean.map((m) => meanLum / m);
+  console.log(`balance r ${balance[0].toFixed(3)} g ${balance[1].toFixed(3)} b ${balance[2].toFixed(3)}, floor ${floor.toExponential(3)} of the reference`);
+
+  const png = new PNG({ width: OUT_W, height: OUT_H, colorType: 2, inputColorType: 2, inputHasAlpha: false, bitDepth: 8 });
+  const data = Buffer.alloc(n * 3);
+  for (let i = 0; i < n; i++) {
+    for (let c = 0; c < 3; c++) {
+      data[i * 3 + c] = Math.round(255 * Math.min(1, Math.pow((ch[c][i] * balance[c]) / reference, 1 / GAMMA)));
+    }
   }
   png.data = data;
   fs.mkdirSync(path.dirname(OUT_PNG), { recursive: true });
-  fs.writeFileSync(OUT_PNG, PNG.sync.write(png, { colorType: 0, inputColorType: 0, inputHasAlpha: false }));
-  fs.writeFileSync(OUT_JSON, JSON.stringify({ width: OUT_W, height: OUT_H, gamma: GAMMA, reference }, null, 1) + "\n");
+  fs.writeFileSync(OUT_PNG, PNG.sync.write(png, { colorType: 2, inputColorType: 2, inputHasAlpha: false }));
+  fs.writeFileSync(OUT_JSON, JSON.stringify({ width: OUT_W, height: OUT_H, gamma: GAMMA, reference, floor }, null, 1) + "\n");
   console.log(`wrote ${OUT_PNG} (${(fs.statSync(OUT_PNG).size / 1024).toFixed(0)} KB) and ${OUT_JSON}`);
 };
 

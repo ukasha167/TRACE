@@ -225,29 +225,6 @@ export const SkyColors = {
   umbra: "#8A3A22",
   penumbra: "#BDB8B0",
 
-  /**
-   * The ground under the sky view, at night and with the sun up. Night ground
-   * sits a step above `Colors.space` so the horizon reads as an edge between
-   * two surfaces rather than a line drawn on one; the day ground is a slate
-   * darker than `daylight`, the way land looks under a bright sky. The
-   * renderer mixes them by the sun's altitude, on the same stops as the sky.
-   */
-  groundNight: "#0B0D10",
-  groundDay: "#252C33",
-
-  /**
-   * The Milky Way's light. A cool grey, not a colour: the band is seen by the
-   * rods, which carry no colour, and the slight blue is the Purkinje shift that
-   * every dark-adapted observer reports.
-   */
-  milkyWay: "#DCE3F0",
-  /**
-   * The sky lit by a bright moon, at its strongest. Moonlight is sunlight, so a
-   * moonlit sky is blue for the same reason a day sky is, at about a
-   * four-hundred-thousandth of the brightness; this is that blue at the level
-   * a dark-adapted eye reads it.
-   */
-  moonlitSky: "#101C36",
   /** The sun's disc. Near white; the air colours it toward the horizon. */
   sun: "#FFF6E8",
   /**
