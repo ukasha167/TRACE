@@ -14,21 +14,13 @@ import {
   Skia,
   BlurStyle,
   BlendMode,
-  Fill,
   FilterMode,
   MipmapMode,
   TileMode,
-  Group,
-  ImageShader,
-  Shader,
-  drawAsImage,
-  useFont,
-  useImage,
   type SkImage,
   type SkPicture,
 } from "@shopify/react-native-skia";
 import * as Astronomy from "astronomy-engine";
-import { JetBrainsMono_400Regular } from "@expo-google-fonts/jetbrains-mono";
 import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { X, Compass, Hand } from "lucide-react-native";
@@ -46,7 +38,6 @@ import {
 } from "@/constants/theme";
 import { useMilestone } from "@/store/useMilestonesStore";
 import {
-  buildSkySphere,
   cameraBasisFromAxes,
   projectSphere,
   projectVector,
@@ -72,7 +63,7 @@ import {
 } from "@/lib/astronomy/skyNight";
 import { getSolarSystemSky } from "@/lib/astronomy/skyBodies";
 import { getMoonPhase, describePhase, formatIllumination } from "@/lib/astronomy/moonPhase";
-import { getBrightLimbAngle, getLunarNorthRotation } from "@/lib/astronomy/brightLimb";
+import { moonLightAt } from "@/lib/astronomy/brightLimb";
 import { formatDuration } from "@/lib/astronomy/nightFacts";
 import { eyeFieldOfView, groundOpacity, groundRegion, moonSkyLight, airLight } from "@/lib/astronomy/skyView";
 import {
@@ -88,31 +79,18 @@ import { angularRadiusDeg } from "@/lib/astronomy/skyBodies";
 import { skyEffect, packUniforms, MILKY_WAY_PEAK } from "@/components/sky/skyShader";
 import { drawDisc, drawRinged, resolved, screenDirection, type Rgb } from "@/components/sky/drawBodies";
 import milkyWayMap from "@/data/milkyWay.json";
-import { GLIDE, glide } from "@/lib/glide";
+import { GLIDE, glide, lenis } from "@/lib/glide";
 import { useMoonTextures } from "@/components/moon/moonTextures";
 import { moonEffect } from "@/components/moon/moonShader";
-import { moonUniforms } from "@/components/moon/moonUniforms";
+import { useSkyAssets } from "@/components/sky/skyAssets";
+import { MOON_IMG, MOON_IMG_DISC, cachedSkyMoonImage, drawSkyMoonImage, skyMoonKey } from "@/components/sky/skyMoonImage";
 import { MoonPhaseGlyph } from "@/components/MoonPhaseGlyph";
 import { TimeScrubber } from "@/components/TimeScrubber";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useSkyOrientation } from "@/hooks/useSkyOrientation";
-import catalogJson from "@/data/bsc.json";
-import type { Star, Milestone, SkyBody } from "@/types";
-
-const CATALOG = catalogJson as Star[];
-
-/**
- * STAR DENSITY: the 75th percentile of the bundled catalogue.
- *
- * The catalogue runs to magnitude 6.5 and 8,404 stars, which is roughly what a
- * perfect eye sees from a perfect site. On a phone that reads as noise: the
- * faintest quarter carries no shape a person can recognise, and it fogs the
- * bright stars that make the sky legible as constellations. Cutting at 6.2
- * keeps 6,331 of them, exactly 75%, and leaves every star anyone has a name
- * for. The catalogue keeps the rest, so raising this line brings them back.
- */
-const MAG_LIMIT = 6.2;
+import { CATALOG, MAG_LIMIT, moonStepOf, skySphereFor } from "@/hooks/skyCache";
+import type { Milestone, SkyBody } from "@/types";
 
 /**
  * Zoom limits. The view opens at the normal lens (skyView.eyeFieldOfView),
@@ -123,6 +101,8 @@ const MAG_LIMIT = 6.2;
  * degree Saturn's rings are only four points across.
  */
 const FOV_MIN = 0.1;
+/** The most one frame advances the entrance or exit: a dropped frame waits, it does not jump. */
+const ENTRANCE_STEP_MS = 20;
 const FOV_MAX = 100;
 const DEG = Math.PI / 180;
 
@@ -142,8 +122,11 @@ const FIGURE_BASE_ALPHA = 0.05;
 const FIGURE_FOCUS_ALPHA = 0.34;
 /** Fraction of the half-field that counts as "looking at it". */
 const FIGURE_FOCUS_CONE = 0.6;
-/** Per-frame easing. 0.06 at 60fps is about 0.8s to settle. */
-const FIGURE_FADE_RATE = 0.06;
+/**
+ * Fade time constant, in ms. 270 ms is the old 0.06 a frame at 60 Hz, which a
+ * 120 Hz screen ran twice as fast.
+ */
+const FIGURE_FADE_MS = 270;
 
 /**
  * FIGURE ARTWORK.
@@ -159,7 +142,6 @@ const FIGURE_FADE_RATE = 0.06;
  * which is the thing the user actually came to see.
  */
 const ART_ALPHA = 0.22;
-const ART_SHEET = require("../../../assets/constellations/figures.png");
 
 /**
  * Height kept clear above the bottom edge for the time and mode controls,
@@ -168,19 +150,6 @@ const ART_SHEET = require("../../../assets/constellations/figures.png");
  * middle, and a lit figure there drew with none of its stars named.
  */
 const CONTROLS_CLEARANCE = 330;
-
-/**
- * The moon's offscreen image: its size in pixels, and the disc's radius within it.
- *
- * 2048 so a moon zoomed to fill the screen still has a pixel of shading per
- * device pixel; it samples the full 1024px maps. It was 768 drawn from the 256px thumbnail
- * pair, which put a 256px texture across a 550px disc: the relief that makes a
- * moon read as a sphere was blurred out before the disc was even shrunk onto
- * the sky. It is drawn down through mipmaps, so the large image costs nothing
- * in sharpness at the small sizes the sky usually shows it at.
- */
-const MOON_IMG = 2048;
-const MOON_IMG_DISC = 0.33;
 
 /**
  * THE SKY'S OWN GROUND as the sun rises through the scrubber. Night is black;
@@ -214,8 +183,6 @@ const rgbOf = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2)
 const GROUND_NIGHT = rgbOf(SkyColors.groundNight);
 const GROUND_DAY = rgbOf(SkyColors.groundDay);
 const unit = (hex: string) => rgbOf(hex).map((v) => v / 255) as unknown as Rgb;
-
-const MILKY_WAY = require("../../../assets/sky/milkyway.png");
 
 /**
  * STAR COLOUR. A bin's colour is the blackbody at its temperature, read from
@@ -290,15 +257,18 @@ export default function ImmersiveSkyScreen() {
       ? { x: left + diameter / 2, y: top + diameter / 2, radius: diameter / 2 } : null;
   });
   const [skyReady, setSkyReady] = useState(false);
-  const entryStarted = useRef<number | null>(null);
-  const exitStarted = useRef<number | null>(null);
+  // Milliseconds of entrance and exit played so far. Advanced per frame by at
+  // most ENTRANCE_STEP_MS, so a slow frame delays the zoom instead of skipping
+  // part of it, which is what a wall clock did on a cold first frame.
+  const entryMs = useRef<number | null>(null);
+  const exitMs = useRef<number | null>(null);
   const entryProgress = useRef(0);
   const exitFrom = useRef(1);
   const closeSky = () => {
     if (!entry || reduced || !skyReady) router.back();
-    else if (exitStarted.current == null) {
+    else if (exitMs.current == null) {
       exitFrom.current = entryProgress.current;
-      exitStarted.current = performance.now();
+      exitMs.current = 0;
     }
   };
   const isTonight = id === "tonight";
@@ -333,9 +303,6 @@ export default function ImmersiveSkyScreen() {
   const [fov, setFov] = useState(eyeFov);
   const [showHelp, setShowHelp] = useState(true);
   const [showDebug, setShowDebug] = useState(false);
-  const [showPointHint, setShowPointHint] = useState(false);
-  const hasSeenPointHint = useSettingsStore((s) => s.hasSeenPointHint);
-  const setHasSeenPointHint = useSettingsStore((s) => s.setHasSeenPointHint);
   // The drag tip shows until the first drag or tap, once per install. Every
   // visit repeated it, which is a sentence nobody needs twice.
   const hasSeenDragHint = useSettingsStore((s) => s.hasSeenDragHint);
@@ -364,10 +331,14 @@ export default function ImmersiveSkyScreen() {
 
   // The stars are computed ONCE, for the anchor. Scrubbing turns the camera
   // about the pole instead of moving six thousand vectors (skyNight.siderealCamera).
-  const sphere = useMemo(() => {
-    if (!place || !anchor) return null;
-    return buildSkySphere(CATALOG, place, anchor, MAG_LIMIT);
-  }, [place, anchor]);
+  // Tonight's sphere is built for the twenty-minute step around the opening
+  // moment, so the one Home built ahead of time is the one used here; the
+  // sidereal delta below is taken from that step and is exact (skyCache.ts).
+  const sphereAnchorMs = anchor ? (isTonight ? moonStepOf(anchor.getTime()) : anchor.getTime()) : null;
+  const sphere = useMemo(
+    () => (place && sphereAnchorMs != null ? skySphereFor(place, sphereAnchorMs) : null),
+    [place, sphereAnchorMs]
+  );
 
   const night = useMemo(
     () => (place && anchor ? nightWindow(anchor, place) : null),
@@ -409,46 +380,43 @@ export default function ImmersiveSkyScreen() {
   );
 
   // The moon as itself. Its phase and tilt drift slowly through a night, so the
-  // image is redrawn per twenty minutes of scrubbing, offscreen, once each.
-  const moonStep = Math.round(timeMs / 1_200_000);
-  const moonTime = scrubMs == null ? timeMs : moonStep * 1_200_000;
+  // image is redrawn per twenty minutes of scrubbing, offscreen, once each, and
+  // not until the finger rests: each redraw shades 2048 px on this thread and
+  // copies 16 MB off the GPU, and one drag across a night made 42 of them.
+  // Tonight's image is drawn for the step around the opening moment too, so
+  // Home's prewarmed image is a cache hit. That is at most ten minutes of
+  // terminator drift on a disc 25 px across at the eye's field of view; the
+  // label below stays exact.
+  const moonTime = scrubMs != null || isTonight ? moonStepOf(timeMs) : timeMs;
   const moonLight = useMemo(() => {
     if (!place) return null;
-    const at = new Date(moonTime);
-    const phase = getMoonPhase(at);
+    const phase = getMoonPhase(new Date(timeMs));
     return {
-      phaseFraction: phase.phaseFraction,
-      waxing: phase.waxing,
-      brightLimbAngleDeg: getBrightLimbAngle(at, place),
-      northAngleDeg: getLunarNorthRotation(at, place),
+      ...moonLightAt(new Date(moonTime), place),
       label: `${describePhase(phase)}, ${formatIllumination(phase.phaseFraction)} lit`,
     };
-  }, [place, moonTime]);
+  }, [place, moonTime, timeMs]);
+  const moonKey = place ? skyMoonKey(place, moonTime) : null;
   const moonTextures = useMoonTextures(MOON_IMG);
-  const [moonImage, setMoonImage] = useState<SkImage | null>(null);
+  const [moonImage, setMoonImage] = useState<SkImage | null>(() => (moonKey ? cachedSkyMoonImage(moonKey) : null));
   useEffect(() => {
-    if (!moonLight || !moonTextures || !moonEffect) return;
+    if (!moonKey || !moonLight || !moonTextures) return;
+    const hit = cachedSkyMoonImage(moonKey);
+    if (hit) {
+      setMoonImage(hit);
+      return;
+    }
     let alive = true;
-    const c = MOON_IMG / 2;
-    const r = MOON_IMG * MOON_IMG_DISC;
-    const rect = { x: c - r, y: c - r, width: r * 2, height: r * 2 };
-    drawAsImage(
-      <Group>
-        <Fill>
-          <Shader source={moonEffect} uniforms={moonUniforms(moonLight, c, c, r, "hero", 1 / r)}>
-            <ImageShader image={moonTextures.albedo} fit="fill" rect={rect} tx="clamp" ty="clamp" />
-            <ImageShader image={moonTextures.normal} fit="fill" rect={rect} tx="clamp" ty="clamp" />
-          </Shader>
-        </Fill>
-      </Group>,
-      { width: MOON_IMG, height: MOON_IMG }
-    ).then((img) => {
-      if (alive && img) setMoonImage(img);
-    });
+    const timer = setTimeout(() => {
+      drawSkyMoonImage(moonKey, moonLight, moonTextures).then((img) => {
+        if (alive && img) setMoonImage(img);
+      });
+    }, scrubMs == null ? 0 : 250);
     return () => {
       alive = false;
+      clearTimeout(timer);
     };
-  }, [moonLight, moonTextures]);
+  }, [moonKey, moonTextures]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Everything the frame loop needs that changes with the scrubber, in one ref.
@@ -466,14 +434,14 @@ export default function ImmersiveSkyScreen() {
   useEffect(() => {
     skyRef.current = {
       lat: place?.latitude ?? 0,
-      delta: anchor ? siderealDelta(anchor, new Date(timeMs)) : 0,
+      delta: sphereAnchorMs != null ? siderealDelta(new Date(sphereAnchorMs), new Date(timeMs)) : 0,
       bodies,
       sunAlt,
       shadow,
       moonImage,
       version: skyRef.current.version + 1,
     };
-  }, [place, anchor, timeMs, bodies, sunAlt, shadow, moonImage]);
+  }, [place, sphereAnchorMs, timeMs, bodies, sunAlt, shadow, moonImage]);
 
   // Last frame's named things, for tap-to-identify.
   const pickRef = useRef<Pickable[]>([]);
@@ -590,23 +558,21 @@ export default function ImmersiveSkyScreen() {
     setPicked({ name: best.kind === "Moon" ? "The Moon" : best.name, kind: best.kind, detail });
   };
 
-  const tapGesture = Gesture.Tap()
-    .maxDistance(12)
-    .onEnd((e) => identify(e.x, e.y))
-    .runOnJS(true);
-
-  const gesture = Gesture.Race(tapGesture, Gesture.Simultaneous(panGesture, pinchGesture));
-
-  // POINTING BY DEFAULT, once the phone says it can. The view used to open in
-  // drag mode with pointing behind a toggle, which hid the best thing it does.
-  // The hint shows once per install.
-  const autoPointed = useRef(false);
-  useEffect(() => {
-    if (focus === "moon" || autoPointed.current || !orientation.canPoint) return;
-    autoPointed.current = true;
-    orientation.setMode("sensor");
-    if (!hasSeenPointHint) setShowPointHint(true);
-  }, [orientation.canPoint, orientation, hasSeenPointHint, focus]);
+  const identifyRef = useRef(identify);
+  identifyRef.current = identify;
+  // Memoised so a render does not hand Gesture Handler a new gesture to
+  // re-register, which the label and scrubber renders did mid-drag.
+  const gesture = useMemo(
+    () =>
+      Gesture.Race(
+        Gesture.Tap()
+          .maxDistance(12)
+          .onEnd((e) => identifyRef.current(e.x, e.y))
+          .runOnJS(true),
+        Gesture.Simultaneous(panGesture, pinchGesture)
+      ),
+    [panGesture, pinchGesture]
+  );
 
   // A dragged view opens facing the moon when it is up, not due south.
   const facedMoon = useRef(false);
@@ -648,16 +614,17 @@ export default function ImmersiveSkyScreen() {
       return r.finishRecordingAsPicture();
     })()
   );
-  const labelFont = useFont(JetBrainsMono_400Regular, 11);
-  const artSheet = useImage(ART_SHEET);
-  const milkyWay = useImage(MILKY_WAY);
+  // All three or none, decoded once per run, so the frame loop below starts once
+  // rather than once per asset as each arrived (skyAssets.ts).
+  const assets = useSkyAssets();
   const drawnRef = useRef(0);
   const [drawn, setDrawn] = useState(0);
   const showDebugRef = useRef(showDebug);
   showDebugRef.current = showDebug;
 
   useEffect(() => {
-    if (!focused || !sphere || !labelFont) return;
+    if (!focused || !sphere || !assets) return;
+    const { labelFont, artSheet, milkyWay } = assets;
     let raf = 0;
     let frames = 0;
 
@@ -810,6 +777,14 @@ export default function ImmersiveSkyScreen() {
     const arrowPaint = mk(Colors.plateInk, 0.9);
     const skyPaint = Skia.Paint(); skyPaint.setAntiAlias(true);
     const groundPaint = Skia.Paint(); groundPaint.setAntiAlias(true);
+    // The same few dozen names are measured every frame, and each measure is a
+    // native call. The effect re-runs when the font changes, so the cache does too.
+    const widths = new Map<string, number>();
+    const textWidth = (text: string) => {
+      let w = widths.get(text);
+      if (w === undefined) widths.set(text, (w = labelFont.measureText(text).width));
+      return w;
+    };
     const up0 = { forward: { x: 0, y: 0, z: 1 }, right: { x: 1, y: 0, z: 0 }, up: { x: 0, y: 1, z: 0 } };
 
     let ready = false;
@@ -821,15 +796,19 @@ export default function ImmersiveSkyScreen() {
       const now = performance.now();
       const targetSky = skyRef.current;
       if (entry && moonEffect && !targetSky.moonImage) return;
+      const firstFrame = !ready;
       if (!ready) {
         ready = true;
-        entryStarted.current ??= now;
+        entryMs.current ??= 0;
         setSkyReady(true);
       }
-      const leaving = exitStarted.current != null;
-      const elapsed = leaving ? (now - exitStarted.current!) / 520 : (now - entryStarted.current!) / 720;
+      const leaving = exitMs.current != null;
+      const step = firstFrame ? 0 : Math.min(now - lastTick, ENTRANCE_STEP_MS);
+      if (leaving) exitMs.current! += step;
+      else entryMs.current! += step;
+      const elapsed = leaving ? exitMs.current! / 520 : entryMs.current! / 720;
       const raw = reduced || !entry ? 1 : Math.min(1, elapsed);
-      const eased = raw * raw * (3 - 2 * raw);
+      const eased = lenis(raw);
       const progress = leaving ? exitFrom.current * (1 - eased) : eased;
       entryProgress.current = progress;
       if (leaving && raw >= 1) {
@@ -929,7 +908,7 @@ export default function ImmersiveSkyScreen() {
           ? moonIntensity(moonB.phaseAngleDeg) * Math.pow(10, -0.4 * KS_EXTINCTION * ksAirmass(moonZenith))
           : 0;
         const M = sphere.toEquatorial;
-        skyLightPaint.setShader(skyEffect.makeShaderWithChildren(packUniforms(skyEffect, {
+        skyLightPaint.setShader(skyEffect.makeShaderWithChildren(packUniforms({
           uSize: [width, height],
           uFocal: cam.focal,
           uF: [cam.fx, cam.fy, cam.fz],
@@ -980,8 +959,7 @@ export default function ImmersiveSkyScreen() {
         const dot =
           c[0] * skyAxes.forward.x + c[1] * skyAxes.forward.y + c[2] * skyAxes.forward.z;
         const target = dot >= focusCos ? FIGURE_FOCUS_ALPHA : FIGURE_BASE_ALPHA;
-        let alpha =
-          figureAlpha[ci] + (target - figureAlpha[ci]) * FIGURE_FADE_RATE;
+        let alpha = glide(figureAlpha[ci], target, dt, FIGURE_FADE_MS);
         // Land exactly on the target once the step is too small to see. An
         // exponential ease never arrives on its own, and a fade that never
         // finishes would keep a still sky redrawing forever.
@@ -1256,7 +1234,7 @@ export default function ImmersiveSkyScreen() {
         const pt = projectVector(horizonVector(0, az), ground, width, height);
         const floor = (controlsTop.current ?? height - CONTROLS_CLEARANCE) - 26;
         if (!pt || pt.x < 12 || pt.x > width - 12 || pt.y < 40 || pt.y > floor) continue;
-        const w = labelFont.measureText(name).width;
+        const w = textWidth(name);
         cv.drawText(name, pt.x - w / 2, pt.y + 18, name.length === 1 ? cardinalPaint : cardinalMinor, labelFont);
       }
 
@@ -1288,7 +1266,7 @@ export default function ImmersiveSkyScreen() {
         arrow.lineTo(px - ca * 6 + sa * 7, py - sa * 6 - ca * 7);
         arrow.close();
         cv.drawPath(arrow.detach(), arrowPaint);
-        const w = labelFont.measureText("Moon").width;
+        const w = textWidth("Moon");
         const lx = px - ca * 20 - w / 2;
         const ly = py - sa * 20 + 4;
         cv.drawText("Moon", lx, ly, arrowPaint, labelFont);
@@ -1328,7 +1306,7 @@ export default function ImmersiveSkyScreen() {
       // drawn tens of points across and its name used to print on its face.
       const label = (x: number, y: number, text: string, paint: any, gap = 11) => {
         if (y < 40 || y > height - 40 || x < -20 || x > width + 20) return;
-        const w = labelFont.measureText(text).width;
+        const w = textWidth(text);
         const left = x + gap + w > width - 6;
         const lx = left ? x - gap - w : x + gap;
         const ly = y + 4;
@@ -1372,7 +1350,7 @@ export default function ImmersiveSkyScreen() {
       // unnamed for a frame while you are reading a star.
       for (const c of conNames) {
         if (c.y < 40 || c.y > height - 40 || hidden(c.below)) continue;
-        const w = labelFont.measureText(c.text).width;
+        const w = textWidth(c.text);
         const cx = c.x - w / 2;
         if (cx < 8 || cx + w > width - 8) continue;
         // Sat 14pt below the centroid: the centre of a figure is exactly where
@@ -1406,7 +1384,7 @@ export default function ImmersiveSkyScreen() {
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [sphere, labelFont, artSheet, milkyWay, width, height, insetTop, picture, focused, entry, reduced]);
+  }, [sphere, assets, width, height, insetTop, picture, focused, entry, reduced]);
 
   if (!milestone?.location) {
     return (
@@ -1495,25 +1473,6 @@ export default function ImmersiveSkyScreen() {
         <X size={24} color={Colors.plateInk} strokeWidth={2} />
       </TouchableOpacity>
 
-      {showPointHint && (
-        <View style={[styles.card, { top: insets.top + 110 }]}>
-          <Text style={styles.cardTitle}>Hold your phone up to the sky.</Text>
-          <Text style={styles.cardBody}>
-            Turn your phone to look around this night. Tap "Use my finger" to move the sky by hand. The sun, the moon and the planets are drawn at their true size, so pinch to zoom in on them.
-          </Text>
-          <TouchableOpacity
-            onPress={() => {
-              setShowPointHint(false);
-              setHasSeenPointHint(true);
-            }}
-            accessibilityRole="button"
-            style={styles.cardButton}
-          >
-            <Text style={styles.cardButtonText}>Got it</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       {picked && (
         <TouchableOpacity
           style={[styles.card, { top: insets.top + 110 }]}
@@ -1527,7 +1486,7 @@ export default function ImmersiveSkyScreen() {
         </TouchableOpacity>
       )}
 
-      {showHelp && !hasSeenDragHint && orientation.mode === "drag" && !showPointHint && (
+      {showHelp && !hasSeenDragHint && orientation.mode === "drag" && (
         <View style={styles.help} pointerEvents="none">
           <Text style={styles.helpText}>Drag to look around. Pinch to zoom.</Text>
         </View>

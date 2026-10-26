@@ -171,7 +171,8 @@ export function useSkyOrientation(
    */
   const axesRef = useRef<WorldCameraAxes>(cameraAxesFromAngles(initialAzimuth, 25, 0));
   const rollRef = useRef(0);
-  // Throttled copy, for the on-screen labels only (~4Hz).
+  // Throttled copy, for the on-screen labels only. Changes per compass
+  // sector unless the debug panel is open.
   const [label, setLabel] = useState({ az: initialAzimuth, alt: 25 });
   const [mode, setMode] = useState<OrientationMode>("drag");
 
@@ -199,6 +200,7 @@ export function useSkyOrientation(
 
   /** Fused look direction, world frame. The gyro drives it, accel/mag corrects it. */
   const look = useRef<Vec3 | null>(null);
+  /** Sensor clock of the last gyro reading, seconds. */
   const lastGyroAt = useRef(0);
   const smoothed = useRef({ az: initialAzimuth, alt: 25 });
   const modeRef = useRef(mode);
@@ -254,10 +256,13 @@ export function useSkyOrientation(
       }
       if (cancelled || !available) return;
 
+      // The accelerometer and magnetometer smooth per reading, so their rate
+      // is part of their tuning. The gyro integrates real elapsed time, and at
+      // 60 Hz a 120 Hz screen gets a new heading only every other frame.
       const HZ = 1000 / 60;
       Accelerometer.setUpdateInterval(HZ);
       Magnetometer.setUpdateInterval(HZ);
-      Gyroscope.setUpdateInterval(HZ);
+      Gyroscope.setUpdateInterval(1000 / 120);
 
       subs.push(
         Accelerometer.addListener((a) => {
@@ -293,8 +298,13 @@ export function useSkyOrientation(
           // after it — smoothing a noisy absolute reading hard enough to look
           // calm necessarily makes it lag, and that trade is what the
           // complementary filter escapes.
-          const now = Date.now();
-          const dt = lastGyroAt.current ? (now - lastGyroAt.current) / 1000 : 0;
+          //
+          // dt comes from the sensor's own clock, in seconds. Readings reach JS
+          // in bunches, so arrival time gave the later ones in a bunch a dt of
+          // 0 or 1 ms, their turn was dropped, and the drift correction pulled
+          // the view the rest of the way in a visible step.
+          const now = g.timestamp;
+          const dt = lastGyroAt.current ? now - lastGyroAt.current : 0;
           lastGyroAt.current = now;
           if (dt <= 0 || dt > 0.25) return; // first sample, or app was backgrounded
 
@@ -345,6 +355,10 @@ export function useSkyOrientation(
           setHeadingAccuracy(h.accuracy);
           setHeadingAvailable(true);
         });
+        // The view closed or went back to dragging while the watch was being
+        // set up. Cleanup already ran and found nothing to remove, so the watch
+        // would run until the app was killed.
+        if (cancelled) { sub.remove(); sub = null; }
       } catch {
         if (!cancelled) setHeadingAvailable(false);
       }
@@ -363,6 +377,16 @@ export function useSkyOrientation(
     // published only when the view has turned far enough to change it.
     const shown = { az: NaN, alt: NaN };
     const publishLabel = (az: number, alt: number) => {
+      // With the debug panel shut the only text this feeds is "Facing SE" or
+      // "Below the horizon", so a 1 degree turn re-rendering the whole screen
+      // 8 times a second at 120 Hz bought nothing.
+      if (
+        !diagnosticsRef.current &&
+        Math.round(az / 45) % 8 === Math.round(shown.az / 45) % 8 &&
+        alt < -2 === shown.alt < -2
+      ) {
+        return;
+      }
       if (
         Math.abs(angleDelta(az, shown.az)) < 1 &&
         Math.abs(alt - shown.alt) < 1
@@ -420,9 +444,10 @@ export function useSkyOrientation(
       if (abs) {
         const absVec = lookVector(abs.relativeAzimuthDeg, abs.altitudeDeg);
         // CORRECT. Small factor: trust the gyro between corrections, and let
-        // accel/mag quietly cancel its drift.
+        // accel/mag quietly cancel its drift. Against elapsed time, so a 120 Hz
+        // screen does not pull twice as hard; 470 ms is 0.035 a frame at 60 Hz.
         look.current = look.current
-          ? blendToward(look.current, absVec, 0.035)
+          ? blendToward(look.current, absVec, 1 - Math.exp(-Math.min(dt, 100) / 470))
           : absVec;
       }
       if (!look.current) return;
