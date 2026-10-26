@@ -4,11 +4,15 @@ import {
   EYE_DIAGONAL_FOV_DEG,
   eyeFieldOfView,
   groundOpacity,
-  groundRegion,
+  groundBounds,
+  type ScreenRect,
+  landscapeLight,
+  LANDSCAPE_NIGHT,
+  moonGlare,
   airmass,
   moonSkyLight,
 } from "../skyView";
-import { makeCameraBasis, projectVector } from "../skySphere";
+import { makeCameraBasis, projectVector, type CameraBasis } from "../skySphere";
 import { glide, settled } from "../../glide";
 
 const W = 393;
@@ -37,27 +41,85 @@ test("the ground is solid looking up and gone looking down", () => {
   for (let a = -5; a < 12; a += 0.5) assert.ok(groundOpacity(a + 0.5) >= groundOpacity(a), "never flickers");
 });
 
-test("a level view puts the horizon across the middle and the ground below it", () => {
-  const cam = makeCameraBasis(180, 0, 60, W);
-  const g = groundRegion(cam, W, H)!;
-  assert.ok(g);
-  const ys = g.points.filter((_, i) => i % 2 === 1);
-  assert.ok(Math.abs(Math.min(...ys) - H / 2) < 1e-6);
-  assert.equal(Math.max(...ys), H);
-  assert.ok(g.edge && Math.abs(g.edge.y - H / 2) < 1e-6 && g.edge.ny > 0.999, "ground lies down the screen");
-});
+// The landscape panorama's top row (src/data/landscape.json).
+const TREELINE = 18.6;
+const rect = (): ScreenRect => ({ x: NaN, y: NaN, width: NaN, height: NaN });
 
-test("the ground's edge sits exactly on the projected horizon", () => {
-  const cam = makeCameraBasis(97, 23, 40, W);
-  const g = groundRegion(cam, W, H)!;
-  const p = projectVector([Math.sin(97 * Math.PI / 180), Math.cos(97 * Math.PI / 180), 0], cam, W, H)!;
-  assert.ok(Math.abs(p.y - g.edge!.y) < 1e-6, "the horizon straight ahead is where the edge is");
+/** The altitude of the ray through screen point (x, y), as the landscape shader rebuilds it. */
+function altitudeAt(cam: CameraBasis, x: number, y: number): number {
+  const ox = x - W / 2, oy = y - H / 2;
+  const dx = cam.focal * cam.fx + ox * cam.rx - oy * cam.ux;
+  const dy = cam.focal * cam.fy + ox * cam.ry - oy * cam.uy;
+  const dz = cam.focal * cam.fz + ox * cam.rz - oy * cam.uz;
+  return (Math.asin(dz / Math.hypot(dx, dy, dz)) * 180) / Math.PI;
+}
+
+/** makeCameraBasis turned about its own forward axis, as a phone held at an angle turns it. */
+function rolled(cam: CameraBasis, rollDeg: number): CameraBasis {
+  const c = Math.cos((rollDeg * Math.PI) / 180), s = Math.sin((rollDeg * Math.PI) / 180);
+  return {
+    ...cam,
+    rx: cam.rx * c + cam.ux * s, ry: cam.ry * c + cam.uy * s, rz: cam.rz * c + cam.uz * s,
+    ux: cam.ux * c - cam.rx * s, uy: cam.uy * c - cam.ry * s, uz: cam.uz * c - cam.rz * s,
+  };
+}
+
+test("a level view's ground runs the full width, from the bottom edge to above the centre", () => {
+  const r = rect();
+  assert.ok(groundBounds(makeCameraBasis(180, 0, 60, W), W, H, TREELINE, r));
+  assert.equal(r.x, 0);
+  assert.equal(r.width, W);
+  assert.equal(r.y + r.height, H);
+  assert.ok(r.y > 0, "the top of the screen is sky, so the pass does not cover it");
+  assert.ok(r.y < H / 2, "the treeline stands above the horizon, which is the centre line");
 });
 
 test("looking straight up shows no ground, straight down shows only ground", () => {
-  assert.equal(groundRegion(makeCameraBasis(0, 89, 60, W), W, H), null);
-  const down = groundRegion(makeCameraBasis(0, -89, 60, W), W, H)!;
-  assert.equal(down.points.length, 8, "the whole screen");
+  const r = rect();
+  assert.equal(groundBounds(makeCameraBasis(0, 89, 60, W), W, H, TREELINE, r), false);
+  assert.ok(Number.isNaN(r.x), "the rectangle is left alone when there is no ground");
+  assert.ok(groundBounds(makeCameraBasis(0, -89, 60, W), W, H, TREELINE, r));
+  assert.deepEqual(r, { x: 0, y: 0, width: W, height: H });
+});
+
+test("no pixel below the treeline falls outside the ground's rectangle, at any angle, roll or zoom", () => {
+  // A fixed sequence, so a failure names the same camera every run.
+  let seed = 7;
+  const next = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  const r = rect();
+  for (let n = 0; n < 150; n++) {
+    const fov = [eyeFieldOfView(W, H), 46, 100][n % 3];
+    const az = next() * 360, alt = next() * 178 - 89, roll = next() * 360 - 180;
+    const cam = rolled(makeCameraBasis(az, alt, fov, W), roll);
+    const any = groundBounds(cam, W, H, TREELINE, r);
+    for (let y = 0; y <= H; y += 6) {
+      for (let x = 0; x <= W; x += 6) {
+        if (altitudeAt(cam, x, y) >= TREELINE) continue;
+        const where = `az ${az.toFixed(1)} alt ${alt.toFixed(1)} roll ${roll.toFixed(1)} fov ${fov.toFixed(1)}, pixel ${x},${y}`;
+        assert.ok(any, `ground missed entirely: ${where}`);
+        assert.ok(x >= r.x - 1e-9 && x <= r.x + r.width + 1e-9 && y >= r.y - 1e-9 && y <= r.y + r.height + 1e-9, `outside the rectangle: ${where}`);
+      }
+    }
+  }
+});
+
+test("the field is darkest on a moonless night and fully lit by a high sun", () => {
+  assert.equal(landscapeLight(-30, -10, 1), LANDSCAPE_NIGHT);
+  assert.equal(landscapeLight(85, -10, 0), 1);
+  assert.ok(landscapeLight(-30, 60, 1) > landscapeLight(-30, 60, 0.1), "a full moon lights it more than a crescent");
+  assert.ok(landscapeLight(0, -10, 0) > LANDSCAPE_NIGHT, "some light at sunset");
+  for (let a = -20; a < 60; a += 1) assert.ok(landscapeLight(a + 1, -10, 0) >= landscapeLight(a, -10, 0), "rises with the sun");
+});
+
+test("a small full moon glares, a zoomed one is drawn as the shader made it", () => {
+  const small = moonGlare(5, 1);
+  assert.ok(small.alpha > 0.45 && small.exposure > 1.5);
+  assert.ok(small.radius >= 26, "the glare does not shrink with the disc");
+  const big = moonGlare(80, 1);
+  assert.equal(big.alpha, 0);
+  assert.equal(big.exposure, 1);
+  assert.ok(moonGlare(5, 0.05).alpha < small.alpha / 3, "a thin crescent glares far less");
+  assert.equal(moonGlare(5, 0).alpha, 0, "a new moon has no glare");
 });
 
 test("airmass is one overhead and finite on the horizon", () => {

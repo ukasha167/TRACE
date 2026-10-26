@@ -30,7 +30,7 @@ const FIGURE_STARS = constellationStars as unknown as Record<string, FigureStarS
  */
 
 /**
- * A drawn figure pinned to the sky, for the 85 constellations that have one.
+ * A drawn figure pinned to the sky. Every constellation the view draws has one.
  *
  * Stellarium's anchor scheme: three points in the illustration are tied to three
  * real stars, and an affine map from those three pairs places the whole image.

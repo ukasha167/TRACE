@@ -49,64 +49,94 @@ export function groundOpacity(viewAltitudeDeg: number): number {
   return smoothstep(-2, 10, viewAltitudeDeg);
 }
 
-export interface GroundRegion {
-  /** The ground's outline on screen: x, y pairs, clockwise, three to five corners. */
-  points: number[];
-  /**
-   * The horizon's nearest point to the screen centre, and the unit direction
-   * on screen that points into the ground. Null when the horizon is not on
-   * screen, so there is no edge to soften.
-   */
-  edge: { x: number; y: number; nx: number; ny: number } | null;
+export interface ScreenRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Samples along each screen edge in groundBounds. The rectangle can run up to one step past the ground. */
+const EDGE_STEPS = 16;
+/** The screen's corners as fractions of its size, clockwise from the top left. */
+const CORNERS = [0, 0, 1, 0, 1, 1, 0, 1];
+
+/** Whether the ray through screen offset (x, y) from the centre, y down, is below the altitude whose sine is s. */
+function looksBelow(cam: CameraBasis, x: number, y: number, s: number): boolean {
+  const dx = cam.focal * cam.fx + x * cam.rx - y * cam.ux;
+  const dy = cam.focal * cam.fy + x * cam.ry - y * cam.uy;
+  const dz = cam.focal * cam.fz + x * cam.rz - y * cam.uz;
+  return dz < s * Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 /**
- * The part of the screen that looks at the ground, through a camera that is
- * NOT turned by the sidereal scrubber (the ground does not turn with the sky).
+ * The rectangle of the screen that holds every pixel looking below
+ * `altitudeDeg`, through a camera that is NOT turned by the sidereal scrubber,
+ * written into `out`. False, with `out` untouched, when no pixel looks that low.
+ * `altitudeDeg` must be above zero.
  *
- * The projection is gnomonic, and a gnomonic projection draws every great
- * circle as a straight line. The horizon is a great circle, so the ground is a
- * half-plane of the screen and the outline is the screen rectangle cut by one
- * line. The ray through screen point (x, y) is
+ * The landscape shader rebuilds a ray for every pixel it covers. Drawn over the
+ * whole screen, each pixel above the treeline paid for a ray, an arcsine and a
+ * blend to draw nothing. Now the pass is skipped when this is false and covers
+ * only this rectangle when it is true.
  *
- *   focal * forward + (x - w/2) * right - (y - h/2) * up
- *
- * and its height above the horizon is the z of that, which is linear in x and
- * y. Every pixel where it is negative is ground.
- *
- * @returns null when no pixel looks below the horizon.
+ * Why the screen's edges are enough. Above a positive altitude the sky is a cap
+ * round the zenith, narrower than a hemisphere, and the projection is
+ * gnomonic, which draws great circles as straight lines, so the cap's share of
+ * the screen is convex. The ground, the rest of the rectangle, then reaches
+ * furthest in any direction on the rectangle's own border: a line across the
+ * screen whose two ends were both in the cap would be all cap, so a ground
+ * pixel inside has ground level with it on an edge. Convexity also means the
+ * cap covers at most one run of each edge, so widening each run of ground
+ * samples by one sample at either end takes in every crossing.
  */
-export function groundRegion(cam: CameraBasis, width: number, height: number): GroundRegion | null {
-  const cx = width / 2;
-  const cy = height / 2;
-  const up = (x: number, y: number) => cam.focal * cam.fz + (x - cx) * cam.rz - (y - cy) * cam.uz;
-
-  const corners = [0, 0, width, 0, width, height, 0, height];
-  const points: number[] = [];
-  for (let i = 0; i < 4; i++) {
-    const ax = corners[i * 2], ay = corners[i * 2 + 1];
-    const bx = corners[((i + 1) % 4) * 2], by = corners[((i + 1) % 4) * 2 + 1];
-    const za = up(ax, ay), zb = up(bx, by);
-    if (za < 0) points.push(ax, ay);
-    // Sutherland-Hodgman against one plane: an edge that crosses the horizon
-    // contributes the crossing point.
-    if ((za < 0) !== (zb < 0)) {
-      const t = za / (za - zb);
-      points.push(ax + (bx - ax) * t, ay + (by - ay) * t);
+export function groundBounds(cam: CameraBasis, width: number, height: number, altitudeDeg: number, out: ScreenRect): boolean {
+  const s = Math.sin(altitudeDeg * DEG);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const grow = (x: number, y: number) => {
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (y < y0) y0 = y;
+    if (y > y1) y1 = y;
+  };
+  for (let e = 0; e < 4; e++) {
+    const ax = CORNERS[e * 2] * width, ay = CORNERS[e * 2 + 1] * height;
+    const bx = CORNERS[((e + 1) % 4) * 2] * width, by = CORNERS[((e + 1) % 4) * 2 + 1] * height;
+    let wasBelow = false, px = 0, py = 0;
+    for (let k = 0; k <= EDGE_STEPS; k++) {
+      const t = k / EDGE_STEPS;
+      const x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+      const below = looksBelow(cam, x - width / 2, y - height / 2, s);
+      if (below || wasBelow) grow(x, y);
+      if (below && !wasBelow && k > 0) grow(px, py);
+      wasBelow = below;
+      px = x;
+      py = y;
     }
   }
-  if (points.length < 6) return null;
+  if (x0 > x1) return false;
+  out.x = x0;
+  out.y = y0;
+  out.width = x1 - x0;
+  out.height = y1 - y0;
+  return true;
+}
 
-  // The gradient of `up` on screen is (rz, -uz). Ground lies against it.
-  const gx = cam.rz, gy = -cam.uz;
-  const g2 = gx * gx + gy * gy;
-  let edge: GroundRegion["edge"] = null;
-  if (g2 > 1e-12) {
-    const z0 = up(cx, cy);
-    const len = Math.sqrt(g2);
-    edge = { x: cx - (z0 * gx) / g2, y: cy - (z0 * gy) / g2, nx: -gx / len, ny: -gy / len };
-  }
-  return { points, edge };
+/**
+ * How lit the landscape is, 0 to 1, from the sun and the moon.
+ *
+ * Stellarium's shape: the sun's term is the sine of its altitude plus 8
+ * degrees, so the field keeps some light through civil twilight and is fully
+ * lit only with the sun high; the moon adds up to 0.4 at full and overhead.
+ * Stellarium's own floor is 1%, which on a phone draws the field as black on
+ * black; 10% keeps the treeline readable against the stars. The floor and the
+ * moon's share are print decisions.
+ */
+export const LANDSCAPE_NIGHT = 0.1;
+export function landscapeLight(sunAltitudeDeg: number, moonAltitudeDeg: number, moonFraction: number): number {
+  const sun = Math.max(0, Math.sin(Math.min(90, sunAltitudeDeg + 8) * DEG));
+  const moon = 0.4 * Math.max(0, Math.min(1, moonFraction)) * Math.sqrt(Math.max(0, Math.sin(moonAltitudeDeg * DEG)));
+  return Math.min(1, LANDSCAPE_NIGHT + sun + moon);
 }
 
 /**
@@ -178,4 +208,40 @@ export function airLight(altitudeDeg: number): MoonSkyLight {
   const peak = Math.max(t[0], t[1], t[2]);
   const brightness = Math.max(0.35, Math.pow(t[1], 0.3));
   return { r: (t[0] / peak) * brightness, g: (t[1] / peak) * brightness, b: (t[2] / peak) * brightness };
+}
+
+export interface MoonGlare {
+  /** The glare's radius on screen, canvas units. */
+  radius: number;
+  /** Its opacity at the centre, 0-1. Zero once the disc is large enough to carry its own glow. */
+  alpha: number;
+  /** Gain on the disc's own light, 1 or more. */
+  exposure: number;
+}
+
+/**
+ * The light round a small moon, and how far its disc is lifted.
+ *
+ * At the eye's field the true moon is about ten points across, and drawn as
+ * the shader made it, a full moon was a dull sticker: maria and all, at the
+ * brightness of a grey card. Outside it is the brightest thing in the night
+ * sky, and the eye sees a glare round it that has nothing to do with its
+ * size. Stellarium draws that glare as a halo scaled by the moon's
+ * brightness; so does this, by the square root of the lit fraction, so a thin
+ * crescent gets a little and a full moon a lot. The disc is lifted by up to
+ * 60% while it is small, which pushes the bright highlands toward white as
+ * the eye does.
+ *
+ * Both fade out as the zoom grows the disc: by 120 points across the image's
+ * own limb glow is doing the job, and the moon is drawn exactly as the shader
+ * made it. None of this changes the disc's size, its phase or its tilt. It is
+ * a print decision, as the star glow is.
+ */
+export function moonGlare(discRadius: number, litFraction: number): MoonGlare {
+  const small = 1 - smoothstep(10, 60, discRadius);
+  return {
+    radius: Math.max(discRadius * 5, 40),
+    alpha: 0.5 * Math.sqrt(Math.max(0, Math.min(1, litFraction))) * small,
+    exposure: 1 + 0.6 * small,
+  };
 }

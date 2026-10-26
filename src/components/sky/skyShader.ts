@@ -1,7 +1,7 @@
-import { Skia, type SkRuntimeEffect } from "@shopify/react-native-skia";
+import { Skia, type SkRuntimeEffect, type SkShader } from "@shopify/react-native-skia";
 
 /**
- * THE MILKY WAY, AND THE SKY THE MOON LIGHTS.
+ * THE MILKY WAY.
  *
  * One pass over the screen. For each pixel the shader rebuilds the ray the
  * camera sees through it, the same ray the stars are projected along, turns it
@@ -23,16 +23,26 @@ import { Skia, type SkRuntimeEffect } from "@shopify/react-native-skia";
  *   - the air: extinction over the line of sight, so the band thins toward
  *     the horizon (lib/astronomy/skyLight.ts, K&S airmass);
  *   - the moon: Krisciunas and Schaefer's model of moonlight scattered by the
- *     air, so a full moon washes the band out, most of all near the moon, and
- *     lights the sky itself a dark blue around it;
+ *     air, so a full moon washes the band out, most of all near the moon;
  *   - twilight and the eye's adaptation, applied as one exposure per frame.
+ *
+ * THE NIGHT SKY ITSELF IS BLACK. The same model used to light the sky round a
+ * bright moon toward a dark blue, which is what a moonlit sky is, and on a
+ * phone it read as a grey-blue screen with the stars on it. The moonlight
+ * still takes the band's contrast away; it no longer paints the ground. The
+ * map's own floor, the light of the faint stars that is everywhere, is taken
+ * off as a black point for the same reason (DECISIONS 64).
+ *
+ * THE BAND IS IN COLOUR: Gaia's measured light, white-balanced on the band
+ * and saturated by uSaturation, which is a print decision like the star tint
+ * (scripts/build-milky-way.mjs).
  *
  * Output is light, to be ADDED to the sky ground (BlendMode.Plus). Radiance is
  * linear in the map and converted to display values here, so the band's
  * contrast against the sky is the measured one.
  */
 const SOURCE = `
-uniform shader uMap;        // milkyway.png, greyscale, plate carree RA/Dec
+uniform shader uMap;        // milkyway.png, RGB, plate carree RA/Dec
 uniform float2 uSize;       // screen, canvas units
 uniform float  uFocal;      // camera focal length, canvas units
 uniform float3 uF;          // sky camera forward, sphere frame
@@ -45,13 +55,12 @@ uniform float3 uEq2;
 uniform float2 uMapSize;    // map pixels
 uniform float  uGamma;      // the map's encoding power
 uniform float  uExposure;   // linear display value at the map's reference radiance
-uniform float3 uTint;       // the band's grey, 0-1
+uniform float  uFloor;      // the radiance drawn as black, relative to the map's reference
+uniform float  uSaturation; // chroma gain about each pixel's luminance
 uniform float3 uMoonDir;    // sphere frame
 uniform float  uMoonTerm;   // moon intensity x its own extinction; 0 with the moon down
 uniform float  uK;          // extinction, magnitudes per airmass
 uniform float  uDarkNl;     // natural sky at the zenith, nL
-uniform float3 uGlow;       // the moonlit sky's colour at full strength
-uniform float  uGlowOn;     // how much of the night is the moon's to light, 0-1
 uniform float  uBelow;      // how strongly the sky under the horizon is drawn
 
 const float LN10 = 2.302585093;
@@ -69,8 +78,10 @@ half4 main(float2 p) {
   float dec = asin(clamp(e.z, -1.0, 1.0));
   float u = fract(0.5 - ra / 6.283185307);
   float v = clamp(0.5 - dec / 3.141592654, 0.0, 1.0);
-  float g = uMap.eval(float2(u * uMapSize.x, clamp(v * uMapSize.y, 0.5, uMapSize.y - 0.5))).r;
-  float radiance = pow(g, uGamma);
+  float3 g = uMap.eval(float2(u * uMapSize.x, clamp(v * uMapSize.y, 0.5, uMapSize.y - 0.5))).rgb;
+  float3 rgb = pow(g, float3(uGamma));
+  float lum = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+  float3 radiance = max(lum + (rgb - lum) * uSaturation, 0.0) * (max(lum - uFloor, 0.0) / max(lum, 1e-6));
 
   // The air between: extinction, and the natural sky's own glow behind.
   float ext = exp(-0.4 * LN10 * uK * (X - 1.0));
@@ -84,15 +95,13 @@ half4 main(float2 p) {
   float contrast = dark / (dark + moonNl);
 
   float seen = mix(ext * contrast, uBelow, below);
-  float lin = radiance * uExposure * seen;
-  float3 band = uTint * pow(max(lin, 0.0), 1.0 / 2.2);
+  float3 lin = radiance * (uExposure * seen);
+  float3 col = pow(max(lin, 0.0), float3(1.0 / 2.2));
 
-  float lit = clamp(log(1.0 + moonNl / dark) / LN10 / 2.0, 0.0, 1.25) * uGlowOn * (1.0 - below);
   // Dither by half an 8-bit step. The band's faint outskirts sit a few levels
   // above black, and magnified, the steps between those levels drew as
   // contour rings across the screen.
   float n = fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453) - 0.5;
-  float3 col = band + uGlow * lit;
   col += step(0.0005, col.g) * n / 255.0;
   return half4(half3(max(col, 0.0)), 1.0);
 }
@@ -100,29 +109,58 @@ half4 main(float2 p) {
 
 export const skyEffect: SkRuntimeEffect | null = Skia.RuntimeEffect.Make(SOURCE);
 
-// The layout never changes, and reading it per frame was about 65 native calls.
-const LAYOUT = skyEffect
-  ? Array.from({ length: skyEffect.getUniformCount() }, (_, i) => ({
-      name: skyEffect.getUniformName(i),
-      slot: skyEffect.getUniform(i).slot,
-    }))
-  : [];
-const FLOATS = skyEffect?.getUniformFloatCount() ?? 0;
+export interface UniformShader {
+  /** Writes one to three floats at a uniform, by its name in the source. */
+  set(name: string, x: number, y?: number, z?: number): void;
+  /** The shader for the values as they stand, made again only if one has changed. */
+  shader(): SkShader;
+}
 
 /**
- * Packs named uniforms into the flat array Skia wants, by each uniform's own
- * slot rather than by assuming a layout.
+ * One runtime effect's shader, kept between frames.
+ *
+ * react-native-skia 2.6 reports every SkShader made from JS to Hermes as a
+ * megabyte of native memory (JsiSkShader.h), whatever it really holds, so one
+ * shader a frame tells the garbage collector of 120 MB a second at 120 Hz
+ * (DECISIONS 65). Here the values are written in place into one array, by each
+ * uniform's own slot, and the shader is made again only when one of them has
+ * changed. A shader's uniforms cannot be changed once it is made, so a moving
+ * camera still costs one a frame; a still camera, a fading figure or a
+ * finished entrance costs none.
  */
-export function packUniforms(values: Record<string, number | readonly number[]>): number[] {
-  const out = new Array<number>(FLOATS).fill(0);
-  for (const { name, slot } of LAYOUT) {
-    const v = values[name];
-    if (v == null) throw new Error(`sky shader: no value for ${name}`);
-    if (typeof v === "number") out[slot] = v;
-    else for (let k = 0; k < v.length; k++) out[slot + k] = v[k];
-  }
-  return out;
+export function uniformShader(effect: SkRuntimeEffect, children: SkShader[]): UniformShader {
+  const slots = new Map<string, number>();
+  for (let i = 0; i < effect.getUniformCount(); i++) slots.set(effect.getUniformName(i), effect.getUniform(i).slot);
+  const values = new Array<number>(effect.getUniformFloatCount()).fill(0);
+  // A uniform never written would draw as zero, silently. The first shader() refuses instead.
+  const unset = new Set(slots.keys());
+  let made: SkShader | null = null;
+  const put = (slot: number, v: number) => {
+    if (values[slot] !== v) {
+      values[slot] = v;
+      made = null;
+    }
+  };
+  return {
+    set(name, x, y, z) {
+      const slot = slots.get(name);
+      if (slot === undefined) throw new Error(`sky shader: no uniform ${name}`);
+      unset.delete(name);
+      put(slot, x);
+      if (y !== undefined) put(slot + 1, y);
+      if (z !== undefined) put(slot + 2, z);
+    },
+    shader() {
+      if (made) return made;
+      if (unset.size > 0) throw new Error(`sky shader: no value for ${[...unset].join(", ")}`);
+      made = effect.makeShaderWithChildren(values, children);
+      return made;
+    },
+  };
 }
 
 /** The band at its brightest, as a display value, before anything hides it. A print decision. */
-export const MILKY_WAY_PEAK = 0.24;
+export const MILKY_WAY_PEAK = 0.3;
+
+/** How much of the band's measured colour is drawn, as chroma gain. A print decision, like the star tint. */
+export const MILKY_WAY_SATURATION = 2;

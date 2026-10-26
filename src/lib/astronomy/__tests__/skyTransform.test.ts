@@ -360,11 +360,14 @@ const NIGHT = new Date("2015-09-27T15:00:00Z");
 test("constellation figures are grouped and named", () => {
   const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
 
-  // 89 entries for 88 constellations: Serpens is drawn as two figures, because
-  // Ophiuchus splits it across the sky. Both halves take the name "Serpens".
-  assert.equal(sphere.figures.length, 89);
-  assert.equal(new Set(sphere.figures.map((c) => c.id)).size, 88);
-  assert.equal(sphere.figures.filter((c) => c.id === "Ser").length, 2);
+  // The twelve of the zodiac and thirteen more, one figure each
+  // (scripts/build-sky-data.mjs). Nothing else is drawn.
+  assert.equal(sphere.figures.length, 25);
+  assert.equal(new Set(sphere.figures.map((c) => c.id)).size, 25);
+  for (const id of ["Ari", "Tau", "Gem", "Cnc", "Leo", "Vir", "Lib", "Sco", "Sgr", "Cap", "Aqr", "Psc"]) {
+    assert.ok(sphere.figures.some((c) => c.id === id), `${id} is in the zodiac`);
+  }
+  assert.ok(!sphere.figures.some((c) => c.id === "Ant"), "Antlia is not drawn");
 
   const orion = sphere.figures.find((c) => c.id === "Ori");
   assert.ok(orion, "Orion must be present");
@@ -379,8 +382,8 @@ test("constellation figures are grouped and named", () => {
       Math.abs(len - 1) < 1e-5,
       `${con.id} centroid is not a unit vector (length ${len})`
     );
-    // Ara and Leo are their own full names, so compare against the map rather
-    // than asserting the name differs from the abbreviation.
+    // Leo is its own full name, so compare against the map rather than
+    // asserting the name differs from the abbreviation.
     assert.equal(
       con.name,
       CONSTELLATION_NAMES[con.id],
@@ -420,7 +423,7 @@ test("the centroid lands inside the figure it names", () => {
 test("every star a figure is drawn through carries a name, and sits on a vertex", () => {
   const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
   const ids = new Set(sphere.figures.map((f) => f.id));
-  assert.equal(ids.size, 88);
+  assert.equal(ids.size, 25);
 
   for (const id of ids) {
     const parts = sphere.figures.filter((f) => f.id === id);
@@ -445,11 +448,9 @@ test("every star a figure is drawn through carries a name, and sits on a vertex"
   }
 });
 
-test("the illustrations cover the whole pack", () => {
+test("every figure drawn has its illustration", () => {
   const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
-  const without = sphere.figures.filter((f) => !f.art).map((f) => f.id);
-  // Stellarium draws Puppis and Vela inside Argo Navis, and Serpens has none.
-  assert.deepEqual([...new Set(without)].sort(), ["Pup", "Ser", "Vel"]);
+  assert.deepEqual(sphere.figures.filter((f) => !f.art).map((f) => f.id), []);
 });
 
 test("the star density cut keeps three quarters of the catalogue", () => {
@@ -479,7 +480,7 @@ test("artwork data is well formed and fits its sheet", () => {
   const sphere = buildSkySphere(STARS, TOKYO, NIGHT, 6.2);
   const withArt = sphere.figures.filter((c) => c.art);
 
-  assert.equal(withArt.length, 85, "every illustration in the pack");
+  assert.equal(withArt.length, 25, "one illustration per figure");
   const rows = Math.ceil(withArt.length / CONSTELLATION_ART_COLS);
 
   const seen = new Set<string>();

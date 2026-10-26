@@ -21,12 +21,25 @@ if (!linesPath || !csnPath) {
 }
 
 // ---- Constellation figures ----
+/**
+ * THE FIGURES THE SKY VIEW DRAWS: the twelve of the zodiac, and the thirteen
+ * that people find without a chart. All 88 used to draw, and the sky read as a
+ * net of faint lines over stars nobody could name; Antlia and Microscopium
+ * were as loud as Orion. The art sheet and the star labels are built from
+ * this file, so they follow it (build-constellation-art.mjs,
+ * build-constellation-stars.mjs).
+ */
+const DRAWN = new Set([
+  "Ari", "Tau", "Gem", "Cnc", "Leo", "Vir", "Lib", "Sco", "Sgr", "Cap", "Aqr", "Psc",
+  "Ori", "UMa", "UMi", "Cas", "Cyg", "Lyr", "Aql", "And", "Per", "Peg", "CMa", "Cru", "Boo",
+]);
 const geo = JSON.parse(fs.readFileSync(linesPath, "utf8"));
 const constellations = [];
 let segmentCount = 0;
 let pointCount = 0;
 
 for (const f of geo.features) {
+  if (!DRAWN.has(f.id)) continue;
   const lines = [];
   for (const seg of f.geometry.coordinates) {
     // Flatten to [ra, dec, ra, dec, ...] — half the JSON size of nested pairs,

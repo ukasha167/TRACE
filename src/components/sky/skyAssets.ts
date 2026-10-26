@@ -11,17 +11,19 @@ import { rasterImage } from "@/components/moon/moonTextures";
  * off disk again, and the first draw decoded them on the UI thread. Each one
  * arriving was also a new dependency of the frame loop, so the loop started up
  * to four times on an open, and each restart reset the figure fades and the
- * eye's adaptation. Now the three load together, decode to raster here on the
+ * eye's adaptation. Now they load together, decode to raster here on the
  * JS thread, and the sky gets all of them or none.
  */
 const ART_SHEET = require("../../../assets/constellations/figures.png");
 const MILKY_WAY = require("../../../assets/sky/milkyway.png");
+const LANDSCAPE = require("../../../assets/sky/landscape.png");
 const LABEL_SIZE = 11;
 
 export interface SkyAssets {
   labelFont: SkFont;
   artSheet: SkImage;
   milkyWay: SkImage;
+  landscape: SkImage;
 }
 
 let ready: SkyAssets | null = null;
@@ -35,13 +37,14 @@ export function preloadSkyAssets(): Promise<SkyAssets | null> {
     loadData(JetBrainsMono_400Regular, (d) => Skia.Typeface.MakeFreeTypeFaceFromData(d)),
     loadData<SkImage>(ART_SHEET, rasterImage),
     loadData<SkImage>(MILKY_WAY, rasterImage),
+    loadData<SkImage>(LANDSCAPE, rasterImage),
   ])
-    .then(([typeface, artSheet, milkyWay]) => {
-      if (!typeface || !artSheet || !milkyWay) {
+    .then(([typeface, artSheet, milkyWay, landscape]) => {
+      if (!typeface || !artSheet || !milkyWay || !landscape) {
         inFlight = null;
         return null;
       }
-      ready = { labelFont: Skia.Font(typeface, LABEL_SIZE), artSheet, milkyWay };
+      ready = { labelFont: Skia.Font(typeface, LABEL_SIZE), artSheet, milkyWay, landscape };
       return ready;
     })
     .catch(() => {
@@ -52,7 +55,7 @@ export function preloadSkyAssets(): Promise<SkyAssets | null> {
 }
 
 /**
- * All three, or null until they have loaded. After the first load every caller
+ * All of them, or null until they have loaded. After the first load every caller
  * gets them on its first render, so the frame loop starts once.
  */
 export function useSkyAssets(): SkyAssets | null {

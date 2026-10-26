@@ -17,8 +17,10 @@ import {
   FilterMode,
   MipmapMode,
   TileMode,
+  type SkColorFilter,
   type SkImage,
   type SkPicture,
+  type SkShader,
 } from "@shopify/react-native-skia";
 import * as Astronomy from "astronomy-engine";
 import { useReducedMotion, useSharedValue } from "react-native-reanimated";
@@ -65,7 +67,7 @@ import { getSolarSystemSky } from "@/lib/astronomy/skyBodies";
 import { getMoonPhase, describePhase, formatIllumination } from "@/lib/astronomy/moonPhase";
 import { moonLightAt } from "@/lib/astronomy/brightLimb";
 import { formatDuration } from "@/lib/astronomy/nightFacts";
-import { eyeFieldOfView, groundOpacity, groundRegion, moonSkyLight, airLight } from "@/lib/astronomy/skyView";
+import { eyeFieldOfView, groundOpacity, groundBounds, landscapeLight, moonGlare, moonSkyLight, airLight, type ScreenRect } from "@/lib/astronomy/skyView";
 import {
   STAR_TINT_KELVIN,
   KS_EXTINCTION,
@@ -76,9 +78,11 @@ import {
   adapt,
 } from "@/lib/astronomy/skyLight";
 import { angularRadiusDeg } from "@/lib/astronomy/skyBodies";
-import { skyEffect, packUniforms, MILKY_WAY_PEAK } from "@/components/sky/skyShader";
+import { skyEffect, uniformShader, MILKY_WAY_PEAK, MILKY_WAY_SATURATION } from "@/components/sky/skyShader";
+import { landscapeEffect } from "@/components/sky/landscapeShader";
 import { drawDisc, drawRinged, resolved, screenDirection, type Rgb } from "@/components/sky/drawBodies";
 import milkyWayMap from "@/data/milkyWay.json";
+import landscapeMap from "@/data/landscape.json";
 import { GLIDE, glide, lenis } from "@/lib/glide";
 import { useMoonTextures } from "@/components/moon/moonTextures";
 import { moonEffect } from "@/components/moon/moonShader";
@@ -180,8 +184,6 @@ function skyGround(sunAlt: number): number[] {
 }
 
 const rgbOf = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-const GROUND_NIGHT = rgbOf(SkyColors.groundNight);
-const GROUND_DAY = rgbOf(SkyColors.groundDay);
 const unit = (hex: string) => rgbOf(hex).map((v) => v / 255) as unknown as Rgb;
 
 /**
@@ -624,7 +626,7 @@ export default function ImmersiveSkyScreen() {
 
   useEffect(() => {
     if (!focused || !sphere || !assets) return;
-    const { labelFont, artSheet, milkyWay } = assets;
+    const { labelFont, artSheet, milkyWay, landscape } = assets;
     let raf = 0;
     let frames = 0;
 
@@ -697,11 +699,72 @@ export default function ImmersiveSkyScreen() {
     // The Milky Way's map as a shader, wrapping in right ascension.
     const mapShader = milkyWay ? milkyWay.makeShaderOptions(TileMode.Repeat, TileMode.Clamp, FilterMode.Linear, MipmapMode.None) : null;
     const skyLightPaint = Skia.Paint(); skyLightPaint.setBlendMode(BlendMode.Plus);
+    // The ground's panorama, wrapping in azimuth.
+    const landShader = landscape.makeShaderOptions(TileMode.Repeat, TileMode.Clamp, FilterMode.Linear, MipmapMode.None);
+    // NATIVE OBJECTS ARE MADE HERE, NOT IN THE FRAME. react-native-skia reports
+    // each shader and each picture recorder to Hermes as a megabyte, so the
+    // frame below used to tell the garbage collector of up to four megabytes a
+    // frame, 480 MB a second at 120 Hz (DECISIONS 65). The two full-screen passes keep
+    // their shader and are given only what moved; what never moves for this
+    // sky is written once here.
+    const rec = Skia.PictureRecorder();
+    const screen = Skia.XYWHRect(0, 0, width, height);
+    const band = skyEffect && mapShader ? uniformShader(skyEffect, [mapShader]) : null;
+    if (band) {
+      const M = sphere.toEquatorial;
+      band.set("uSize", width, height);
+      band.set("uEq0", M[0], M[1], M[2]);
+      band.set("uEq1", M[3], M[4], M[5]);
+      band.set("uEq2", M[6], M[7], M[8]);
+      band.set("uMapSize", milkyWayMap.width, milkyWayMap.height);
+      band.set("uGamma", milkyWayMap.gamma);
+      band.set("uFloor", milkyWayMap.floor);
+      band.set("uSaturation", MILKY_WAY_SATURATION);
+      band.set("uK", KS_EXTINCTION);
+      band.set("uDarkNl", DARK_SKY_NL);
+      band.set("uBelow", 0.22);
+    }
+    const field = landscapeEffect ? uniformShader(landscapeEffect, [landShader]) : null;
+    if (field) {
+      field.set("uSize", width, height);
+      field.set("uMapSize", landscapeMap.width, landscapeMap.height);
+      field.set("uTop", landscapeMap.top);
+      field.set("uPxPerDeg", landscapeMap.pxPerDeg);
+    }
+    const fieldRect: ScreenRect = { x: 0, y: 0, width: 0, height: 0 };
+    // The glare round the sun and a small moon: one gradient each, made at unit
+    // size, placed and sized by the canvas, coloured by a filter and faded by
+    // the paint's alpha. Built per frame at the body's position, each was a new
+    // shader on every frame the camera turned.
+    const unitGlare = (alphas: number[], stops: number[]) =>
+      Skia.Shader.MakeRadialGradient({ x: 0, y: 0 }, 1, alphas.map((a) => Skia.Color([1, 1, 1, a])), stops, TileMode.Clamp);
+    const moonGlarePaint = Skia.Paint(); moonGlarePaint.setBlendMode(BlendMode.Plus);
+    moonGlarePaint.setShader(unitGlare([1, 0.4, 0.1, 0], [0, 0.16, 0.42, 1]));
+    const sunGlarePaint = Skia.Paint(); sunGlarePaint.setBlendMode(BlendMode.Plus);
+    sunGlarePaint.setShader(unitGlare([0.55, 0.12, 0], [0, 0.25, 1]));
+    // A colour filter is a native object as well. Each of these keeps the last
+    // one it made and makes another only when the colour moves, which is a
+    // scrub or a zoom, not a turn of the phone.
+    const scaleFilter = () => {
+      let r0 = NaN, g0 = NaN, b0 = NaN;
+      let filter: SkColorFilter | null = null;
+      return (r: number, g: number, b: number): SkColorFilter => {
+        if (!filter || r !== r0 || g !== g0 || b !== b0) {
+          r0 = r; g0 = g; b0 = b;
+          filter = Skia.ColorFilter.MakeMatrix([r, 0, 0, 0, 0, 0, g, 0, 0, 0, 0, 0, b, 0, 0, 0, 0, 0, 1, 0]);
+        }
+        return filter;
+      };
+    };
+    const moonAirFilter = scaleFilter();
+    const moonGlareTint = scaleFilter();
+    const sunGlareTint = scaleFilter();
+    const moonSrc = Skia.XYWHRect(0, 0, MOON_IMG, MOON_IMG);
+    const moonDst = Skia.XYWHRect(-MOON_IMG / 2, -MOON_IMG / 2, MOON_IMG, MOON_IMG);
+    const artTile = Skia.XYWHRect(0, 0, CONSTELLATION_ART_TILE, CONSTELLATION_ART_TILE);
     const bodyPaint = Skia.Paint(); bodyPaint.setAntiAlias(true);
-    const glarePaint = Skia.Paint(); glarePaint.setBlendMode(BlendMode.Plus);
-    const MW_TINT = unit(SkyColors.milkyWay);
-    const MOONLIT = unit(SkyColors.moonlitSky);
     const SUN = unit(SkyColors.sun);
+    const MOONLIGHT = unit(Colors.moonlight);
     const DISC = SkyColors.planetDisc as Record<string, string>;
     // The eye's adaptation to the dark, from 0 when the view opens.
     let adaptation = reduced ? 1 : 0;
@@ -738,6 +801,23 @@ export default function ImmersiveSkyScreen() {
     const penumbraColor = Skia.Color(SkyColors.penumbra);
     // Modulate by one is no change: the arithmetic identity, not a colour.
     const noShadow = Skia.Color([1, 1, 1, 1]);
+    // Unit size, like the glare. Only the umbra's share of the shadow shapes
+    // the gradient, and that moves with the moon's distance, not with the camera.
+    let shadowInner = NaN;
+    let shadowUnit: SkShader | null = null;
+    const shadowShader = (inner: number): SkShader => {
+      if (!shadowUnit || inner !== shadowInner) {
+        shadowInner = inner;
+        shadowUnit = Skia.Shader.MakeRadialGradient(
+          { x: 0, y: 0 },
+          1,
+          [umbraColor, umbraColor, penumbraColor, noShadow],
+          [0, inner * 0.97, Math.min(0.999, inner * 1.03), 1],
+          TileMode.Clamp
+        );
+      }
+      return shadowUnit;
+    };
     const glowPaint = Skia.Paint();
     glowPaint.setColor(Skia.Color(Colors.moonlight));
     glowPaint.setAlphaf(0.42);
@@ -776,7 +856,7 @@ export default function ImmersiveSkyScreen() {
     const cardinalMinor = mk(Colors.plateMuted, 0.8);
     const arrowPaint = mk(Colors.plateInk, 0.9);
     const skyPaint = Skia.Paint(); skyPaint.setAntiAlias(true);
-    const groundPaint = Skia.Paint(); groundPaint.setAntiAlias(true);
+    const groundPaint = Skia.Paint();
     // The same few dozen names are measured every frame, and each measure is a
     // native call. The effect re-runs when the font changes, so the cache does too.
     const widths = new Map<string, number>();
@@ -885,18 +965,16 @@ export default function ImmersiveSkyScreen() {
       const labelMaxAngleDeg = (f / 2) * 0.75;
       const minLabelCos = Math.cos((labelMaxAngleDeg * Math.PI) / 180);
 
-      const rec = Skia.PictureRecorder();
       const cv = rec.beginRecording();
 
       // The sky's own colour, from the sun's altitude at the scrubbed instant.
       const g = skyGround(sky.sunAlt);
       skyPaint.setColor(Skia.Color(`rgb(${g[0]},${g[1]},${g[2]})`));
-      cv.drawRect(Skia.XYWHRect(0, 0, width, height), skyPaint);
+      cv.drawRect(screen, skyPaint);
 
-      // ---- The Milky Way, and the sky the moon lights (components/sky/skyShader.ts) ----
-      const glowOn = Math.min(1, Math.max(0, (-sky.sunAlt - 6) / 6)) * progress;
+      // ---- The Milky Way, hidden by the moon and the air (components/sky/skyShader.ts) ----
       const mwExposure = Math.pow(MILKY_WAY_PEAK, 2.2) * adaptation * progress;
-      if (skyEffect && mapShader && (mwExposure > 1e-5 || glowOn > 0.01)) {
+      if (band && mwExposure > 1e-5) {
         const moonB = sky.bodies.find((b) => b.kind === "moon");
         // The moon is placed in the current horizon frame; the shader works in
         // the sphere's, so it is turned back by the same sidereal rotation.
@@ -907,30 +985,16 @@ export default function ImmersiveSkyScreen() {
         const moonTerm = moonB && moonZenith < 90
           ? moonIntensity(moonB.phaseAngleDeg) * Math.pow(10, -0.4 * KS_EXTINCTION * ksAirmass(moonZenith))
           : 0;
-        const M = sphere.toEquatorial;
-        skyLightPaint.setShader(skyEffect.makeShaderWithChildren(packUniforms({
-          uSize: [width, height],
-          uFocal: cam.focal,
-          uF: [cam.fx, cam.fy, cam.fz],
-          uR: [cam.rx, cam.ry, cam.rz],
-          uU: [cam.ux, cam.uy, cam.uz],
-          uZenith: [zenith.x, zenith.y, zenith.z],
-          uEq0: [M[0], M[1], M[2]],
-          uEq1: [M[3], M[4], M[5]],
-          uEq2: [M[6], M[7], M[8]],
-          uMapSize: [milkyWayMap.width, milkyWayMap.height],
-          uGamma: milkyWayMap.gamma,
-          uExposure: mwExposure,
-          uTint: MW_TINT,
-          uMoonDir: [moonSky.x, moonSky.y, moonSky.z],
-          uMoonTerm: moonTerm,
-          uK: KS_EXTINCTION,
-          uDarkNl: DARK_SKY_NL,
-          uGlow: MOONLIT,
-          uGlowOn: glowOn,
-          uBelow: 0.22,
-        }), [mapShader]));
-        cv.drawRect(Skia.XYWHRect(0, 0, width, height), skyLightPaint);
+        band.set("uFocal", cam.focal);
+        band.set("uF", cam.fx, cam.fy, cam.fz);
+        band.set("uR", cam.rx, cam.ry, cam.rz);
+        band.set("uU", cam.ux, cam.uy, cam.uz);
+        band.set("uZenith", zenith.x, zenith.y, zenith.z);
+        band.set("uExposure", mwExposure);
+        band.set("uMoonDir", moonSky.x, moonSky.y, moonSky.z);
+        band.set("uMoonTerm", moonTerm);
+        skyLightPaint.setShader(band.shader());
+        cv.drawRect(screen, skyLightPaint);
       }
 
       // ---- Sphere scaffolding ----
@@ -999,7 +1063,7 @@ export default function ImmersiveSkyScreen() {
                 CONSTELLATION_ART_TILE,
                 CONSTELLATION_ART_TILE
               ),
-              Skia.XYWHRect(0, 0, CONSTELLATION_ART_TILE, CONSTELLATION_ART_TILE),
+              artTile,
               artPaint
             );
             cv.restore();
@@ -1093,14 +1157,22 @@ export default function ImmersiveSkyScreen() {
           const angle = toward ? Math.atan2(toward.x - pt.x, -(toward.y - pt.y)) / DEG : 0;
           const scale = rr / (MOON_IMG * MOON_IMG_DISC);
           const moonAir = moonSkyLight(Math.asin(Math.max(-1, Math.min(1, v[2]))) / DEG, sky.sunAlt);
-          moonLayer.setColorFilter(Skia.ColorFilter.MakeMatrix([
-            moonAir.r, 0, 0, 0, 0,
-            0, moonAir.g, 0, 0, 0,
-            0, 0, moonAir.b, 0, 0,
-            0, 0, 0, 1, 0,
-          ]));
+          // A small moon is lifted and given the eye's glare (skyView.moonGlare).
+          const flare = moonGlare(rr, (1 + Math.cos(body.phaseAngleDeg * DEG)) / 2);
+          const ex = flare.exposure;
+          moonLayer.setColorFilter(moonAirFilter(moonAir.r * ex, moonAir.g * ex, moonAir.b * ex));
           // Hide what is behind the disc, in the sky's own colour.
           cv.drawCircle(pt.x, pt.y, rr, skyPaint);
+          if (flare.alpha > 0.005) {
+            const m = MOONLIGHT;
+            moonGlarePaint.setColorFilter(moonGlareTint(m[0] * moonAir.r, m[1] * moonAir.g, m[2] * moonAir.b));
+            moonGlarePaint.setAlphaf(flare.alpha * progress);
+            cv.save();
+            cv.translate(pt.x, pt.y);
+            cv.scale(flare.radius, flare.radius);
+            cv.drawCircle(0, 0, 1, moonGlarePaint);
+            cv.restore();
+          }
           const reach = rr * (0.5 / MOON_IMG_DISC) * 1.05;
           cv.saveLayer(moonLayer, Skia.XYWHRect(pt.x - reach, pt.y - reach, reach * 2, reach * 2));
           cv.save();
@@ -1111,8 +1183,8 @@ export default function ImmersiveSkyScreen() {
           // plain linear sampling would read one texel in ten and shimmer.
           cv.drawImageRectOptions(
             sky.moonImage,
-            Skia.XYWHRect(0, 0, MOON_IMG, MOON_IMG),
-            Skia.XYWHRect(-MOON_IMG / 2, -MOON_IMG / 2, MOON_IMG, MOON_IMG),
+            moonSrc,
+            moonDst,
             FilterMode.Linear,
             MipmapMode.Linear,
             moonPaint
@@ -1136,14 +1208,12 @@ export default function ImmersiveSkyScreen() {
               // anything to darken.
               const outer = sh.penumbraRadiusDeg * pxPerDeg * k;
               const inner = Math.min(0.999, sh.umbraRadiusDeg / sh.penumbraRadiusDeg);
-              shadowPaint.setShader(Skia.Shader.MakeRadialGradient(
-                { x: cx, y: cy },
-                outer,
-                [umbraColor, umbraColor, penumbraColor, noShadow],
-                [0, inner * 0.97, Math.min(0.999, inner * 1.03), 1],
-                TileMode.Clamp
-              ));
-              cv.drawCircle(cx, cy, outer, shadowPaint);
+              shadowPaint.setShader(shadowShader(inner));
+              cv.save();
+              cv.translate(cx, cy);
+              cv.scale(outer, outer);
+              cv.drawCircle(0, 0, 1, shadowPaint);
+              cv.restore();
             }
           }
           cv.restore();
@@ -1153,10 +1223,12 @@ export default function ImmersiveSkyScreen() {
           // photosphere is. The air reddens both toward the horizon.
           const c = lit(SUN);
           const glareR = Math.max(28, rr * 5);
-          glarePaint.setShader(Skia.Shader.MakeRadialGradient(pt, glareR,
-            [Skia.Color([c[0], c[1], c[2], 0.55]), Skia.Color([c[0], c[1], c[2], 0.12]), Skia.Color([c[0], c[1], c[2], 0])],
-            [0, 0.25, 1], TileMode.Clamp));
-          cv.drawCircle(pt.x, pt.y, glareR, glarePaint);
+          sunGlarePaint.setColorFilter(sunGlareTint(c[0], c[1], c[2]));
+          cv.save();
+          cv.translate(pt.x, pt.y);
+          cv.scale(glareR, glareR);
+          cv.drawCircle(0, 0, 1, sunGlarePaint);
+          cv.restore();
           drawDisc(cv, { x: pt.x, y: pt.y, r: Math.max(1.5, rr), pole: null, poleAcross: 0, flattening: 0, sun: { x: 1, y: 0 }, phaseAngleDeg: 0 }, c, 1, bodyPaint, 0.4);
         } else {
           // A planet: a point of light until the zoom resolves its disc.
@@ -1194,34 +1266,33 @@ export default function ImmersiveSkyScreen() {
 
       // ---- The ground ----
       //
-      // Like Stellarium's: solid while the view looks up, so the sky has a
-      // floor, and dissolving as the view tips to the horizon so what is under
-      // your feet can still be looked at (skyView.groundOpacity). It covers the
-      // stars, lines and bodies below the horizon, which is why it is drawn
-      // after them and before every label.
+      // Stellarium's field at Guereins (components/sky/landscapeShader.ts):
+      // solid while the view looks up, so the sky has a floor, and dissolving
+      // as the view tips to the horizon so what is under your feet can still be
+      // looked at (skyView.groundOpacity). It covers the stars, lines and bodies
+      // below and just above the horizon, which is why it is drawn after them
+      // and before every label.
       const viewAlt = Math.asin(Math.max(-1, Math.min(1, axes.forward.z))) / DEG;
       const groundAlpha = groundOpacity(viewAlt) * progress;
-      if (groundAlpha > 0.003) {
-        const region = groundRegion(ground, width, height);
-        if (region) {
-          const day = 1 - Math.min(1, Math.max(0, (-sky.sunAlt - 1) / 11));
-          const gc = GROUND_NIGHT.map((v, c) => Math.round(v + (GROUND_DAY[c] - v) * day));
-          const groundColor = Skia.Color(`rgb(${gc[0]},${gc[1]},${gc[2]})`);
-          const outline = Skia.PathBuilder.Make();
-          outline.moveTo(region.points[0], region.points[1]);
-          for (let i = 2; i < region.points.length; i += 2) outline.lineTo(region.points[i], region.points[i + 1]);
-          outline.close();
-          // The last stretch of ground before the horizon takes the sky's
-          // colour, the haze that keeps the edge from reading as a cut-out.
-          const e = region.edge;
-          const haze = height * 0.06;
-          groundPaint.setShader(e
-            ? Skia.Shader.MakeLinearGradient({ x: e.x, y: e.y }, { x: e.x + e.nx * haze, y: e.y + e.ny * haze }, [Skia.Color(`rgb(${g[0]},${g[1]},${g[2]})`), groundColor], null, TileMode.Clamp)
-            : null);
-          groundPaint.setColor(groundColor);
-          groundPaint.setAlphaf(groundAlpha);
-          cv.drawPath(outline.detach(), groundPaint);
-        }
+      // Nothing on screen below the treeline, or nothing left of the ground to
+      // see, and the pass is skipped with everything it reads. Otherwise it
+      // covers the treeline's rectangle and not the screen (skyView.groundBounds).
+      if (field && groundAlpha > 0.003 && groundBounds(ground, width, height, landscapeMap.top, fieldRect)) {
+        const moonG = sky.bodies.find((b) => b.kind === "moon");
+        const light = landscapeLight(
+          sky.sunAlt,
+          moonG ? Math.asin(Math.max(-1, Math.min(1, moonG.vec[2]))) / DEG : -90,
+          moonG ? (1 + Math.cos(moonG.phaseAngleDeg * DEG)) / 2 : 0
+        );
+        field.set("uFocal", ground.focal);
+        field.set("uF", ground.fx, ground.fy, ground.fz);
+        field.set("uR", ground.rx, ground.ry, ground.rz);
+        field.set("uU", ground.ux, ground.uy, ground.uz);
+        field.set("uLight", light);
+        field.set("uSky", g[0] / 255, g[1] / 255, g[2] / 255);
+        groundPaint.setShader(field.shader());
+        groundPaint.setAlphaf(groundAlpha);
+        cv.drawRect(fieldRect, groundPaint);
       }
       // Below this, a thing under the horizon is hidden while the ground is.
       const hidden = (below: boolean) => below && groundAlpha > 0.5;
@@ -1229,6 +1300,9 @@ export default function ImmersiveSkyScreen() {
       // The horizon and the compass belong to the ground, so they use its camera.
       const horizon = Skia.PathBuilder.Make();
       addPolyline(horizon, horizonLine, ground);
+      // Over the photographed field the line reads as a crack in it, so it
+      // fades to a trace while the ground is solid and returns as it dissolves.
+      horizonPaint.setAlphaf(0.32 * (1 - 0.8 * groundAlpha));
       cv.drawPath(horizon.detach(), horizonPaint);
       for (const [name, az] of [["N", 0], ["NE", 45], ["E", 90], ["SE", 135], ["S", 180], ["SW", 225], ["W", 270], ["NW", 315]] as const) {
         const pt = projectVector(horizonVector(0, az), ground, width, height);
