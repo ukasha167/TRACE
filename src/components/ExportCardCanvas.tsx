@@ -2,8 +2,6 @@ import React from "react";
 import {
   Canvas,
   useCanvasRef,
-  useFont,
-  useFonts,
   BlurMask,
   Circle,
   Rect,
@@ -21,15 +19,7 @@ import {
   type SkParagraph,
   type SkTypefaceFontProvider,
 } from "@shopify/react-native-skia";
-import {
-  Newsreader_500Medium,
-  Newsreader_600SemiBold,
-} from "@expo-google-fonts/newsreader";
-import { Figtree_400Regular } from "@expo-google-fonts/figtree";
-import {
-  JetBrainsMono_400Regular,
-  JetBrainsMono_500Medium,
-} from "@expo-google-fonts/jetbrains-mono";
+import { useExportCardFonts } from "./cardFonts";
 import type { Milestone, MoonReturn } from "@/types";
 import { Colors } from "@/constants/theme";
 import {
@@ -173,18 +163,14 @@ const ExportCardCanvas = React.forwardRef<
   const scale = previewWidth / w;
   const isStory = format === "story";
 
-  // The name and the place wrap, so they are set as paragraphs, which need the
-  // typefaces registered with a provider rather than loaded as single fonts.
-  const paragraphFonts = useFonts({
-    Newsreader: [Newsreader_600SemiBold],
-    Figtree: [Figtree_400Regular],
-  });
   // The phase name is a name, so it takes the serif like every other name in
   // the app. Cycle labels below stay in Figtree, since those are interface text.
-  const headFont = useFont(Newsreader_500Medium, 46);
-  const bodyFont = useFont(Figtree_400Regular, 32);
-  const monoFont = useFont(JetBrainsMono_500Medium, 34);
-  const monoSmall = useFont(JetBrainsMono_400Regular, 26);
+  const fonts = useExportCardFonts();
+  const paragraphFonts = fonts?.paragraphs ?? null;
+  const headFont = fonts?.head ?? null;
+  const bodyFont = fonts?.body ?? null;
+  const monoFont = fonts?.mono ?? null;
+  const monoSmall = fonts?.monoSmall ?? null;
   // The card is drawn at its full output width whatever the preview shows, so it
   // always samples the full-size maps.
   const textures = useMoonTextures(w);

@@ -2,7 +2,6 @@ import React from "react";
 import {
   Canvas,
   useCanvasRef,
-  useFonts,
   BlurMask,
   Circle,
   Fill,
@@ -18,13 +17,7 @@ import {
   type SkParagraph,
   type SkTypefaceFontProvider,
 } from "@shopify/react-native-skia";
-import {
-  Newsreader_400Regular,
-  Newsreader_400Regular_Italic,
-  Newsreader_600SemiBold,
-} from "@expo-google-fonts/newsreader";
-import { Figtree_400Regular } from "@expo-google-fonts/figtree";
-import { JetBrainsMono_400Regular } from "@expo-google-fonts/jetbrains-mono";
+import { useNightCardFonts } from "./cardFonts";
 import { Colors } from "@/constants/theme";
 import {
   CORE_BLUR,
@@ -115,11 +108,7 @@ export const NightCardCanvas = React.forwardRef<
   const scale = previewWidth / w;
   const isStory = format === "story";
 
-  const fonts = useFonts({
-    Newsreader: [Newsreader_400Regular, Newsreader_600SemiBold, Newsreader_400Regular_Italic],
-    Figtree: [Figtree_400Regular],
-    JetBrainsMono: [JetBrainsMono_400Regular],
-  });
+  const fonts = useNightCardFonts();
   const textures = useMoonTextures(w);
 
   if (!fonts) {
