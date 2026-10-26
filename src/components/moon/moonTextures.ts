@@ -44,7 +44,23 @@ const SMALL_MAX_PX = 384;
 const ready = new Map<MoonTextureTier, MoonTextures>();
 const inFlight = new Map<MoonTextureTier, Promise<MoonTextures | null>>();
 
-const decode = (data: SkData) => Skia.Image.MakeImageFromEncoded(data);
+/**
+ * Decodes now rather than at first draw. `MakeImageFromEncoded` returns a lazy
+ * image that Skia decodes when something first samples it, which is the UI
+ * thread mid-frame: Home's hero decoded two 1024px maps in its first frame.
+ * RN Skia's `makeNonTextureImage` calls `makeRasterImage`
+ * (cpp/api/JsiSkImage.h), which forces the decode on the calling thread.
+ */
+export function rasterImage(data: SkData): SkImage | null {
+  const lazy = Skia.Image.MakeImageFromEncoded(data);
+  if (!lazy) return null;
+  try {
+    return lazy.makeNonTextureImage() ?? lazy;
+  } catch {
+    // No GPU context yet. The lazy image still draws; it decodes late.
+    return lazy;
+  }
+}
 
 function load(tier: MoonTextureTier): Promise<MoonTextures | null> {
   const existing = inFlight.get(tier);
@@ -52,8 +68,8 @@ function load(tier: MoonTextureTier): Promise<MoonTextures | null> {
 
   const source = SOURCES[tier];
   const promise = Promise.all([
-    loadData<SkImage>(source.albedo, decode),
-    loadData<SkImage>(source.normal, decode),
+    loadData<SkImage>(source.albedo, rasterImage),
+    loadData<SkImage>(source.normal, rasterImage),
   ])
     .then(([albedo, normal]) => {
       if (!albedo || !normal) {
@@ -74,15 +90,24 @@ function load(tier: MoonTextureTier): Promise<MoonTextures | null> {
   return promise;
 }
 
+/** The pair for `sizePt`, decoded, for code that draws outside a component. */
+export function loadMoonTextures(sizePt: number): Promise<MoonTextures | null> {
+  const tier = moonTextureTier(sizePt);
+  const decoded = ready.get(tier);
+  return decoded ? Promise.resolve(decoded) : load(tier);
+}
+
 /** Which pair a moon drawn `sizePt` points across should sample. */
 export function moonTextureTier(sizePt: number): MoonTextureTier {
   return sizePt * PixelRatio.get() <= SMALL_MAX_PX ? "small" : "full";
 }
 
-/** Starts both decodes. Called once at launch so the first moon has its maps waiting. */
-export function preloadMoonTextures(): void {
-  load("full");
-  load("small");
+/**
+ * Starts both decodes. Called once at launch so the first moon has its maps
+ * waiting; the splash holds for the returned promise, up to a cap.
+ */
+export function preloadMoonTextures(): Promise<void> {
+  return Promise.all([load("full"), load("small")]).then(() => undefined);
 }
 
 /**

@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, StyleSheet, type LayoutChangeEvent } from "react-native";
-import { BlurMask, Canvas, Circle, Group } from "@shopify/react-native-skia";
+import { BlurStyle, Canvas, Picture, Skia, type SkPicture } from "@shopify/react-native-skia";
+import { lru } from "@/lib/memo";
 import {
   CORE_BLUR,
   GLOW_ALPHA,
@@ -24,10 +25,15 @@ import {
  * a later one would put the stars over the moon.
  *
  * TWO PASSES, ONE BLUR EACH. The halo goes down first and the core sits on it,
- * and both take the mask filter from their group rather than carrying one
- * apiece, so the whole field is four draw calls' worth of state rather than two
- * per star. See `starGrain.ts` for why the spread is the same for every star,
- * and for why the field itself never changes.
+ * each pass with one mask filter for every star. See `starGrain.ts` for why the
+ * spread is the same for every star, and for why the field itself never changes.
+ *
+ * RECORDED ONCE PER SIZE. The field was about 290 `<Circle>` elements, and the
+ * reveal, the record plate and the hero each reconciled all of them on mount.
+ * Now the circles go into one SkPicture, kept per size for the run, and the
+ * canvas draws that. The mask filter is the one the declarative `<BlurMask>`
+ * makes (`MaskFilter.MakeBlur(style, blur, respectCTM = true)`, see
+ * sksg/Recorder/commands/ImageFilters.ts), so the pixels are the same.
  *
  * MEMOISED, and it takes no props so that is absolute. Blurred draws are the one
  * genuinely non-trivial thing on this canvas, and there is no reason to repeat
@@ -48,43 +54,38 @@ export const StarField = React.memo(function StarField() {
     );
   }, []);
 
-  const stars = useMemo(
-    () => (size ? generateStarField({ width: size.w, height: size.h }) : []),
-    [size]
-  );
+  const picture = useMemo(() => (size ? starFieldPicture(size.w, size.h) : null), [size]);
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none" onLayout={onLayout}>
-      {size && (
+      {size && picture && (
         <Canvas style={{ width: size.w, height: size.h }}>
-          <Group>
-            <BlurMask blur={GLOW_BLUR} style="normal" />
-            {stars.map((s, i) => (
-              <Circle
-                key={i}
-                cx={s.x}
-                cy={s.y}
-                r={s.r * GLOW_RADIUS}
-                color={s.color}
-                opacity={s.a * GLOW_ALPHA}
-              />
-            ))}
-          </Group>
-          <Group>
-            <BlurMask blur={CORE_BLUR} style="normal" />
-            {stars.map((s, i) => (
-              <Circle
-                key={i}
-                cx={s.x}
-                cy={s.y}
-                r={s.r}
-                color={s.color}
-                opacity={s.a}
-              />
-            ))}
-          </Group>
+          <Picture picture={picture} />
         </Canvas>
       )}
     </View>
   );
 });
+
+const pictures = lru<SkPicture>(6);
+
+function starFieldPicture(width: number, height: number): SkPicture {
+  return pictures.through(`${width.toFixed(1)}x${height.toFixed(1)}`, () => {
+    const stars = generateStarField({ width, height });
+    const recorder = Skia.PictureRecorder();
+    const canvas = recorder.beginRecording(Skia.XYWHRect(0, 0, width, height));
+    const paint = Skia.Paint();
+    paint.setAntiAlias(true);
+    const pass = (blur: number, radius: number, alpha: number) => {
+      paint.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, blur, true));
+      for (const s of stars) {
+        paint.setColor(Skia.Color(s.color));
+        paint.setAlphaf(paint.getAlphaf() * s.a * alpha);
+        canvas.drawCircle(s.x, s.y, s.r * radius, paint);
+      }
+    };
+    pass(GLOW_BLUR, GLOW_RADIUS, GLOW_ALPHA);
+    pass(CORE_BLUR, 1, 1);
+    return recorder.finishRecordingAsPicture();
+  });
+}
