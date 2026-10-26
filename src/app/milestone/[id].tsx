@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -20,11 +20,14 @@ import {
 } from "@/constants/theme";
 import { useMilestone, useMilestonesStore } from "@/store/useMilestonesStore";
 import { useRevealStore } from "@/store/useRevealStore";
-import { getMoonPhase } from "@/lib/astronomy/moonPhase";
+import { getMoonPhase, syzygyFallsInDay } from "@/lib/astronomy/moonPhase";
+import { RARITY_THRESHOLDS } from "@/lib/astronomy/revealLines";
+import { placeOf } from "@/lib/astronomy/place";
+import { TYPE_LABELS } from "@/lib/occasion";
 import { getMoonReturns } from "@/lib/astronomy/moonReturn";
 import { getRarityStat } from "@/lib/astronomy/rarity";
-import { getNightFacts, headlineSentences } from "@/lib/astronomy/nightFacts";
-import { planetReturns } from "@/lib/astronomy/planetReturns";
+import { nightFactsFor, headlineSentences } from "@/lib/astronomy/nightFacts";
+import { planetReturnsFor } from "@/lib/astronomy/planetReturns";
 import {
   getBrightLimbAngle,
   getLunarNorthRotation,
@@ -35,6 +38,8 @@ import {
   todayDateString,
 } from "@/lib/astronomy/dateUtils";
 import { useOpenSky } from "@/hooks/useOpenSky";
+import { useSkyPrewarm } from "@/hooks/useSkyPrewarm";
+import { preloadCardFonts } from "@/components/cardFonts";
 import { Arrive } from "@/components/Arrive";
 import { MoonSection } from "@/components/detail/MoonSection";
 import { ComingUpCard } from "@/components/detail/ComingUpCard";
@@ -43,15 +48,6 @@ import { DetailsFold } from "@/components/detail/DetailsFold";
 
 const route = (path: string) => path as Href;
 
-const TYPE_LABELS: Record<string, string> = {
-  birthday: "Birthday",
-  anniversary: "Anniversary",
-  graduation: "Graduation",
-  custom: "A day to remember",
-};
-
-/** Thresholds tried high-to-low; the first one the moon clears is the one shown. */
-const RARITY_THRESHOLDS = [99.5, 99];
 
 export default function MilestoneDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -59,6 +55,12 @@ export default function MilestoneDetailScreen() {
   // Subscribed, not read once. See useMilestone.
   const milestone = useMilestone(id);
   const { moonRef, openSky } = useOpenSky(id);
+  useSkyPrewarm(milestone?.location ?? null, milestone?.date ?? null);
+  // The share card's fonts, so it opens with its text rather than a blank card.
+  useEffect(() => {
+    const task = requestIdleCallback(preloadCardFonts);
+    return () => cancelIdleCallback(task);
+  }, []);
 
   const tzOffsetMin = milestone?.location?.timezoneOffsetMin;
   const today = todayDateString();
@@ -69,13 +71,14 @@ export default function MilestoneDetailScreen() {
     // "That night" is local midnight ENDING the date, in the milestone's own
     // timezone where known (spec §6.1).
     const night = toLocalNight(milestone.date, tzOffsetMin);
-    const phase = getMoonPhase(night, toLocalDayStart(milestone.date, tzOffsetMin));
-
-    // A place stored without coordinates is not a place, spec §10.
-    const place =
-      milestone.location && milestone.location.latitude !== 0
-        ? milestone.location
-        : null;
+    const base = getMoonPhase(night);
+    // The syzygy scan runs here and nowhere else: this page alone says where
+    // the exact full or new instant fell (describeSyzygyNote).
+    const phase = {
+      ...base,
+      isTruePhase: syzygyFallsInDay(toLocalDayStart(milestone.date, tzOffsetMin), base.phaseIndex),
+    };
+    const place = placeOf(milestone.location);
 
     const allReturns = getMoonReturns(milestone.date, { tzOffsetMin });
     const returns =
@@ -85,7 +88,7 @@ export default function MilestoneDetailScreen() {
 
     // Only claim rarity when something uncommon actually happened.
     const threshold = RARITY_THRESHOLDS.find((t) => phase.phaseFraction * 100 >= t);
-    const facts = place ? getNightFacts(milestone.date, place, tzOffsetMin) : null;
+    const facts = place ? nightFactsFor(milestone.date, place, tzOffsetMin) : null;
     const brightLimbAngleDeg = place ? getBrightLimbAngle(night, place) : null;
     const rarity =
       threshold !== undefined
@@ -98,8 +101,11 @@ export default function MilestoneDetailScreen() {
     if (rarity) {
       rows.push({
         label: "How uncommon",
-        value: `1 in ${rarity.oneInN.toFixed(0)} days has a moon at least ${rarity.thresholdPct}% lit`,
+        value: `1 in ${rarity.oneInN.toFixed(1)} days has a moon at least ${rarity.thresholdPct}% lit`,
       });
+    }
+    // A date still ahead has no anniversaries yet, and "0 of 0" says nothing.
+    if (rarity && rarity.totalYears > 0) {
       rows.push({
         label: "On this date",
         value: `${rarity.matchingYears.length} of ${rarity.totalYears} years so far had one`,
@@ -136,8 +142,8 @@ export default function MilestoneDetailScreen() {
 
   const [showPlanets, setShowPlanets] = useState(false);
   const planets = useMemo(() => showPlanets && computed ? [
-    planetReturns("Jupiter", computed.night, new Date()),
-    planetReturns("Saturn", computed.night, new Date()),
+    planetReturnsFor("Jupiter", computed.night, new Date()),
+    planetReturnsFor("Saturn", computed.night, new Date()),
   ] : [], [showPlanets, computed]);
 
   if (!milestone || !computed) {
