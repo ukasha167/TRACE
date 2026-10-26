@@ -46,3 +46,16 @@ export function settled(current: number, target: number, epsilon = 1e-4): boolea
   "worklet";
   return Math.abs(target - current) < epsilon;
 }
+
+/**
+ * Lenis's own easing, for every timed animation: entrances, fades, layout
+ * moves, a thumb settling onto its mark. The glide above is the same motion
+ * for things a finger drives; this is it with a fixed duration. The curve
+ * overshoots 1 by 0.00002 at t = 1, which the clamp removes, and starts at
+ * 0.001, which the t <= 0 case removes.
+ */
+export function lenis(t: number): number {
+  "worklet";
+  if (t <= 0) return 0;
+  return Math.min(1, 1.001 - Math.pow(2, -10 * t));
+}
