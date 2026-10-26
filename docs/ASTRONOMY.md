@@ -67,9 +67,10 @@ Rules that follow from that:
   Gibbous" understates reality as badly as the bucket overstated it at 96%. `describePhase()` uses a
   99% threshold (`FULL_ENOUGH`), with "Almost full moon" from 96% and "Half moon" from 45% through 55%, and `describeSyzygyNote()` then discloses where the exact instant
   fell. Both directions of error are bugs.
-- **`isTruePhase` is computed** for the four primary phases. It is true only when the exact syzygy
-  instant falls inside the observer's local calendar day. That is the almanac convention and it is
-  precise.
+- **`isTruePhase` is computed** for the four primary phases, by `syzygyFallsInDay`, on the record
+  page only. It is true only when the exact syzygy instant falls inside the observer's local
+  calendar day. That is the almanac convention and it is precise. `getMoonPhase` does not run the
+  scan: it costs up to 145 SunCalc calls, and the ledger and carousel never read the result.
 - **The exact percentage is always displayed** alongside the name. Never the name alone.
 - **`waxing` comes from SunCalc, never from `phaseIndex`.** The primary buckets (index 0 and 4) span
   both sides of the syzygy, so half of every "Full Moon" bucket is waning. Inferring direction from

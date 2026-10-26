@@ -38,7 +38,7 @@ Read DECISIONS.md before changing anything in `lib/astronomy/`, `hooks/useSkyOri
 
 ```bash
 npx expo start          # then i for iOS simulator, a for Android
-npm test                # 251 tests, tsx + node:test. NOT jest.
+npm test                # 260 tests, tsx + node:test. NOT jest.
 npx tsc --noEmit
 ```
 
@@ -116,13 +116,18 @@ the air rather than to the star. Decision 26.
 **The date wheel on Android is ours.** iOS keeps `UIDatePicker`; Android would otherwise get the
 Material calendar dialog, which is a modal on a screen that is one continuous scroll.
 `components/WheelDatePicker.tsx` is written rather than installed because every wheel picker that
-looks right is a native module and this app runs in Expo Go. The haptic tick fires per detent
-crossed, live, not on momentum end.
+looks right is a native module and this app runs in Expo Go. It does not tick the haptic motor:
+haptics belong to save, the reveal landing, the bell and the details fold. Decision 62.
 
 **The sky view draws everything at its true size.** The sun, moon and planets subtend their real
 angle through the frame's focal length; nothing is enlarged so it can be seen, which is why the zoom
 reaches 0.1 degrees. The Milky Way keeps its brightness under zoom because surface brightness does
 not change with magnification. Read DECISIONS 55 to 58 before changing `components/sky/`.
+
+**Sensors on Android need `HIGH_SAMPLING_RATE_SENSORS`.** Expo Go has it; a standalone build
+without it samples every sensor at 5 Hz whatever `setUpdateInterval` asks for, and the sky moves in
+steps. It is in `app.json` and in `android/app/src/main/AndroidManifest.xml`. Gyro `dt` comes from
+the reading's own `timestamp`, never from arrival time. Decision 60.
 
 **Colour.** Only `theme.ts` holds hex. `SkyColors` is separate from `Colors` on purpose: it answers
 to physics, so changing the app's accent must not change a constellation line.
@@ -141,6 +146,6 @@ come back. Do not narrate what the next line does.
 Phases A through H are built, tested, and verified on an iPhone simulator and a Pixel 7 Pro. The
 improvement stages after them (the reveal, reminders, night facts, star map, sky scrubber, life in
 moons, the night card, backup) are verified on the iPhone simulator only. `npm test`
-is green at 251 tests and `npx tsc --noEmit` is clean.
+is green at 260 tests and `npx tsc --noEmit` is clean.
 
 Open work is listed at the end of PRD.md.
