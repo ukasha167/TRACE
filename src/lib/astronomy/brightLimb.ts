@@ -1,6 +1,7 @@
 import * as SunCalc from "suncalc";
 import * as Astronomy from "astronomy-engine";
 import type { MilestoneLocation } from "@/types";
+import { getMoonPhase } from "./moonPhase";
 
 /**
  * Computes the bright-limb angle (degrees) for the moon at a specific
@@ -42,6 +43,24 @@ export function getBrightLimbAngle(
   const zenithAngleDeg = illumination.angle - moonPosition.parallacticAngle;
 
   return normalizeAngleDeg(zenithAngleDeg);
+}
+
+/**
+ * Everything the moon shader needs to light one moon at one instant and place.
+ * The sky view and the prewarm that draws its moon image ahead of time both
+ * call this, so the image the prewarm caches is the image the sky would draw.
+ */
+export function moonLightAt(
+  date: Date,
+  location: MilestoneLocation
+): { phaseFraction: number; waxing: boolean; brightLimbAngleDeg: number; northAngleDeg: number } {
+  const phase = getMoonPhase(date);
+  return {
+    phaseFraction: phase.phaseFraction,
+    waxing: phase.waxing,
+    brightLimbAngleDeg: getBrightLimbAngle(date, location),
+    northAngleDeg: getLunarNorthRotation(date, location),
+  };
 }
 
 /**

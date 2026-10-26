@@ -82,6 +82,22 @@ export function parseDateString(dateString: string): {
 }
 
 /**
+ * The source date's anniversary in `year` as "YYYY-MM-DD", or null when that
+ * year has none.
+ *
+ * Feb 29 sources have no anniversary in common years. Skipping is honest;
+ * sliding to Mar 1 would show a different sky under a true date. Five modules
+ * each held their own copy of this rule, and the reminders, the ledger and the
+ * return search could have disagreed about which years exist.
+ */
+export function anniversaryOn(dateString: string, year: number): string | null {
+  const { month, day } = parseDateString(dateString);
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  if (month === 2 && day === 29 && !leap) return null;
+  return `${year}${dateString.slice(4)}`;
+}
+
+/**
  * Formats an instant as "HH:mm" in the given timezone offset (or device local).
  */
 export function formatLocalTime(date: Date, tzOffsetMin?: number): string {

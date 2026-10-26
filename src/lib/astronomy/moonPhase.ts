@@ -47,8 +47,12 @@ export function phaseDistanceDays(a: number, b: number): number {
  * Without this check the 8-way bucket calls anything within +/-1.85 days of full
  * a "Full Moon" — down to ~87% illumination — which is how this app once told
  * its own author a 96% moon was full.
+ *
+ * Up to 145 SunCalc calls, so it is not part of getMoonPhase. Only the record
+ * page reads it (describeSyzygyNote); the ledger and the carousel paid for it on
+ * every row and never looked.
  */
-function syzygyFallsInDay(dayStart: Date, phaseIndex: number): boolean {
+export function syzygyFallsInDay(dayStart: Date, phaseIndex: number): boolean {
   const target = PRIMARY_PHASE_TARGETS[phaseIndex];
   if (target === undefined) return false; // intermediate phases are ranges, not instants
 
@@ -77,30 +81,19 @@ function syzygyFallsInDay(dayStart: Date, phaseIndex: number): boolean {
  * Pass an instant from toLocalNight() when you care how the moon LOOKED, or
  * toLocalNoon() for calendar-date identity. Never pass new Date("YYYY-MM-DD").
  *
- * @param date     the instant to evaluate
- * @param dayStart local midnight that begins the calendar day, for the
- *                 isTruePhase check. Defaults to midnight before `date`.
+ * @param date the instant to evaluate
  */
 export function getMoonPhase(
-  date: Date,
-  dayStart?: Date
-): Pick<
-  MoonSnapshot,
-  "phaseFraction" | "phaseName" | "phaseIndex" | "isTruePhase" | "waxing"
-> {
+  date: Date
+): Pick<MoonSnapshot, "phaseFraction" | "phaseName" | "phaseIndex" | "waxing"> {
   const illumination = SunCalc.getMoonIllumination(date);
   // Map 0–1 phase value to one of 8 discrete states. phase 0 = New, 0.5 = Full.
   const phaseIndex = Math.round(illumination.phase * 8) % 8;
-
-  const start =
-    dayStart ??
-    new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0);
 
   return {
     phaseFraction: illumination.fraction,
     phaseName: PHASE_NAMES[phaseIndex],
     phaseIndex,
-    isTruePhase: syzygyFallsInDay(start, phaseIndex),
     waxing: illumination.waxing,
   };
 }
@@ -144,10 +137,7 @@ export const NEW_ENOUGH = 0.01;
  * A phase description that neither overclaims nor understates. Spec §6.2 / §13.
  */
 export function describePhase(
-  snapshot: Pick<
-    MoonSnapshot,
-    "phaseName" | "phaseIndex" | "isTruePhase" | "phaseFraction" | "waxing"
-  >
+  snapshot: Pick<MoonSnapshot, "phaseFraction" | "waxing">
 ): string {
   const f = snapshot.phaseFraction;
   if (f >= FULL_ENOUGH) return "Full moon";

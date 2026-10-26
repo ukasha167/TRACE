@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getNightFacts, headlineSentences, formatDuration } from "@/lib/astronomy/nightFacts";
+import { getNightFacts, nightFactsFor, headlineSentences, formatDuration } from "@/lib/astronomy/nightFacts";
 
 /**
  * Eclipse nights are the fixtures because an eclipse can only happen at an
@@ -71,4 +71,12 @@ test("above the Arctic Circle the sun can fail to set or fail to rise, and the w
   assert.equal(june.sentences.motion, "The sun did not set in Tromso that night.");
   const december = getNightFacts("2015-12-21", tromso, 60);
   assert.equal(december.sentences.motion, "The sun did not rise in Tromso that day, so the whole of it was night.");
+});
+
+test("nightFactsFor computes once per date and place and agrees with getNightFacts", () => {
+  const first = nightFactsFor("2015-09-27", greenwich, 0);
+  assert.equal(nightFactsFor("2015-09-27", { ...greenwich }, 0), first, "a second call is the same object");
+  assert.deepEqual(first, getNightFacts("2015-09-27", greenwich, 0));
+  assert.notEqual(nightFactsFor("2015-09-27", greenwich, 60), first, "another offset is another night");
+  assert.ok(Object.isFrozen(first) && Object.isFrozen(first.rows));
 });

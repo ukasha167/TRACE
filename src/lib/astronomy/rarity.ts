@@ -1,6 +1,6 @@
 import * as SunCalc from "suncalc";
 import type { RarityStat } from "@/types";
-import { parseDateString, toLocalNight, todayDateString } from "./dateUtils";
+import { anniversaryOn, parseDateString, toLocalNight, todayDateString } from "./dateUtils";
 
 /**
  * RARITY — measured, never asserted. Spec §6.4.
@@ -112,10 +112,9 @@ export function getRarityStat(
   thresholdPct: number,
   options: RarityOptions = {}
 ): RarityStat {
-  const { year: sourceYear, month, day } = parseDateString(dateString);
+  const { year: sourceYear } = parseDateString(dateString);
   const today = options.today ?? todayDateString();
   const throughYear = options.throughYear ?? parseDateString(today).year;
-  const pad = (n: number) => String(n).padStart(2, "0");
   const threshold = thresholdPct / 100;
 
   const matchingYears: number[] = [];
@@ -123,8 +122,8 @@ export function getRarityStat(
   let totalYears = 0;
 
   for (let year = sourceYear; year <= throughYear; year++) {
-    if (month === 2 && day === 29 && !isLeapYear(year)) continue;
-    const target = `${year}-${pad(month)}-${pad(day)}`;
+    const target = anniversaryOn(dateString, year);
+    if (target === null) continue;
     // This year's date may still be ahead, and "so far" means so far.
     if (target > today) break;
     totalYears++;
@@ -157,8 +156,4 @@ export function getRarityStat(
     matchingDetails,
     totalYears,
   };
-}
-
-function isLeapYear(year: number): boolean {
-  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }

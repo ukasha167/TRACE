@@ -1,7 +1,7 @@
 import * as SunCalc from "suncalc";
 import type { MoonReturn } from "@/types";
 import { phaseDistanceDays, SYNODIC_MONTH_DAYS } from "./moonPhase";
-import { parseDateString, toLocalNight } from "./dateUtils";
+import { anniversaryOn, parseDateString, toLocalNight } from "./dateUtils";
 
 /**
  * MOON RETURN — the app's core feature. Spec §6.3.
@@ -91,42 +91,63 @@ export function getMoonReturns(
     tzOffsetMin,
   } = options;
 
-  const { year: sourceYear, month, day } = parseDateString(dateString);
-  const pad = (n: number) => String(n).padStart(2, "0");
-
+  const { year: sourceYear } = parseDateString(dateString);
   const sourcePhase = SunCalc.getMoonIllumination(
     toLocalNight(dateString, tzOffsetMin)
   ).phase;
 
   const results: MoonReturn[] = [];
-
   for (let year = sourceYear - searchYears; year <= sourceYear + searchYears; year++) {
-    if (year === sourceYear) continue;
-
-    // Feb 29 sources have no anniversary in common years. Skip rather than
-    // silently sliding to Mar 1, which would be a different sky.
-    if (month === 2 && day === 29 && !isLeapYear(year)) continue;
-
-    const target = `${year}-${pad(month)}-${pad(day)}`;
-    const illumination = SunCalc.getMoonIllumination(
-      toLocalNight(target, tzOffsetMin)
-    );
-    const offsetDays = phaseDistanceDays(illumination.phase, sourcePhase);
-    if (offsetDays >= thresholdDays) continue;
-
-    const offsetYears = Math.abs(year - sourceYear);
-    results.push({
-      year,
-      age: year - sourceYear,
-      offsetYears,
-      phaseOffsetDays: offsetDays,
-      phaseFraction: illumination.fraction,
-      direction: year < sourceYear ? "past" : "future",
-      cycleLabel: describeCycle(offsetYears),
-    });
+    const hit = returnIn(dateString, sourcePhase, year, thresholdDays, tzOffsetMin);
+    if (hit) results.push(hit);
   }
-
   return results;
+}
+
+/**
+ * The return in one year, or null. nextAnniversary asks about a single year,
+ * and running the full 121-year search to answer it threw the other 120 away.
+ */
+export function getMoonReturnIn(
+  dateString: string,
+  year: number,
+  options: Pick<MoonReturnOptions, "thresholdDays" | "tzOffsetMin"> = {}
+): MoonReturn | null {
+  const { thresholdDays = RETURN_THRESHOLD_DAYS, tzOffsetMin } = options;
+  const sourcePhase = SunCalc.getMoonIllumination(
+    toLocalNight(dateString, tzOffsetMin)
+  ).phase;
+  return returnIn(dateString, sourcePhase, year, thresholdDays, tzOffsetMin);
+}
+
+function returnIn(
+  dateString: string,
+  sourcePhase: number,
+  year: number,
+  thresholdDays: number,
+  tzOffsetMin: number | undefined
+): MoonReturn | null {
+  const sourceYear = parseDateString(dateString).year;
+  if (year === sourceYear) return null;
+  const target = anniversaryOn(dateString, year);
+  if (target === null) return null;
+
+  const illumination = SunCalc.getMoonIllumination(
+    toLocalNight(target, tzOffsetMin)
+  );
+  const offsetDays = phaseDistanceDays(illumination.phase, sourcePhase);
+  if (offsetDays >= thresholdDays) return null;
+
+  const offsetYears = Math.abs(year - sourceYear);
+  return {
+    year,
+    age: year - sourceYear,
+    offsetYears,
+    phaseOffsetDays: offsetDays,
+    phaseFraction: illumination.fraction,
+    direction: year < sourceYear ? "past" : "future",
+    cycleLabel: describeCycle(offsetYears),
+  };
 }
 
 /** The most recent past return and the next future one, relative to `fromYear`. */
@@ -141,10 +162,6 @@ export function getNearestReturns(
     else if (next === null) next = r;
   }
   return { previous, next };
-}
-
-function isLeapYear(year: number): boolean {
-  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }
 
 export { SYNODIC_MONTH_DAYS };

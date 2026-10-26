@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getMoonPhase, formatIllumination, describePhase, describeSyzygyNote, phaseDistanceDays } from "@/lib/astronomy/moonPhase";
+import { getMoonPhase, formatIllumination, describePhase, describeSyzygyNote, phaseDistanceDays, syzygyFallsInDay } from "@/lib/astronomy/moonPhase";
 import { getBrightLimbAngle } from "@/lib/astronomy/brightLimb";
 import { getMoonReturns, describeCycle } from "@/lib/astronomy/moonReturn";
 import {
@@ -58,9 +58,15 @@ test("brightLimb stays within (-180, 180] across a full year", () => {
 
 // ---- isTruePhase: the labelling bug that misled the author ----
 
+/** The phase with its syzygy check, as the record page builds it. */
+function phaseOn(date: Date, dayStart: Date) {
+  const p = getMoonPhase(date);
+  return { ...p, isTruePhase: syzygyFallsInDay(dayStart, p.phaseIndex) };
+}
+
 test("a true full moon date reports isTruePhase", () => {
   // Full moon instant 2015-09-28 02:47 UTC -> that UTC day contains it.
-  const p = getMoonPhase(new Date(Date.UTC(2015, 8, 28, 2, 47)), new Date(Date.UTC(2015, 8, 28)));
+  const p = phaseOn(new Date(Date.UTC(2015, 8, 28, 2, 47)), new Date(Date.UTC(2015, 8, 28)));
   assert.equal(p.phaseName, "Full Moon");
   assert.equal(p.isTruePhase, true);
 });
@@ -69,16 +75,16 @@ test("a near-full day bucketed as Full Moon does NOT report isTruePhase", () => 
   // Two days after the full instant: still buckets to index 4, but the syzygy
   // is long past. This is exactly the case that produced a false "full moon".
   const dayStart = new Date(Date.UTC(2015, 8, 30));
-  const p = getMoonPhase(new Date(Date.UTC(2015, 8, 30, 12)), dayStart);
+  const p = phaseOn(new Date(Date.UTC(2015, 8, 30, 12)), dayStart);
   assert.equal(p.isTruePhase, false);
   assert.notEqual(describePhase(p), "Full moon");
 });
 
 test("phase wording uses illumination and the measured direction", () => {
   const base = getMoonPhase(new Date(Date.UTC(2015, 8, 26, 12)));
-  assert.equal(describePhase({ ...base, phaseIndex: 4, phaseFraction: 0.9, waxing: true }), "Growing moon");
-  assert.equal(describePhase({ ...base, phaseIndex: 4, phaseFraction: 0.9, waxing: false }), "Fading moon");
-  assert.equal(describePhase({ ...base, isTruePhase: true, phaseFraction: 0.97 }), "Almost full moon");
+  assert.equal(describePhase({ ...base, phaseFraction: 0.9, waxing: true }), "Growing moon");
+  assert.equal(describePhase({ ...base, phaseFraction: 0.9, waxing: false }), "Fading moon");
+  assert.equal(describePhase({ ...base, phaseFraction: 0.97 }), "Almost full moon");
   for (const [fraction, name] of [[0.9599, "Growing moon"], [0.96, "Almost full moon"], [0.9899, "Almost full moon"], [0.99, "Full moon"], [0.01, "New moon"], [0.0101, "Thin crescent"], [0.4499, "Growing crescent"], [0.45, "Half moon"], [0.55, "Half moon"], [0.5501, "Growing moon"]] as const) {
     assert.equal(describePhase({ ...base, phaseFraction: fraction, waxing: true }), name);
   }
@@ -201,7 +207,7 @@ test("a 99%+ moon is called Full even when the syzygy lands on the next day", ()
   // Impersonal reference: full instant 2015-09-28 02:47 UTC. Sample the UTC day
   // BEFORE it, where illumination is already >=99% but the instant has not hit.
   const dayStart = new Date(Date.UTC(2015, 8, 27));
-  const p = getMoonPhase(new Date(Date.UTC(2015, 8, 27, 20)), dayStart);
+  const p = phaseOn(new Date(Date.UTC(2015, 8, 27, 20)), dayStart);
   assert.ok(p.phaseFraction >= 0.99, `setup: expected >=99%, got ${p.phaseFraction}`);
   assert.equal(p.isTruePhase, false);
   assert.equal(describePhase(p), "Full moon");
@@ -211,7 +217,7 @@ test("a 99%+ moon is called Full even when the syzygy lands on the next day", ()
 
 test("a sub-99% moon bucketed as Full is never called Full", () => {
   const dayStart = new Date(Date.UTC(2015, 8, 30));
-  const p = getMoonPhase(new Date(Date.UTC(2015, 8, 30, 12)), dayStart);
+  const p = phaseOn(new Date(Date.UTC(2015, 8, 30, 12)), dayStart);
   assert.ok(p.phaseFraction < 0.99);
   assert.notEqual(describePhase(p), "Full moon");
   assert.equal(describeSyzygyNote(p), null);

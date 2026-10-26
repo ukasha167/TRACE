@@ -1,4 +1,5 @@
 import * as Astronomy from "astronomy-engine";
+import { lru } from "@/lib/memo";
 
 /**
  * JUPITER AND SATURN COME BACK TOO.
@@ -79,6 +80,17 @@ function firstCrossing(
  * The returns of one planet to where it stood at `at`, through `until` and one
  * beyond, so the page can say when the next one comes.
  */
+const returnsCache = lru<PlanetReturns>(8);
+
+/**
+ * planetReturns, once per planet, night and day of asking. Keyed on the UTC
+ * day of `until` rather than its instant, so the record screen's "now" hits.
+ */
+export function planetReturnsFor(planet: ReturningPlanet, at: Date, until: Date): PlanetReturns {
+  const key = `${planet}|${at.getTime()}|${until.toISOString().slice(0, 10)}`;
+  return returnsCache.through(key, () => Object.freeze(planetReturns(planet, at, until)));
+}
+
 export function planetReturns(planet: ReturningPlanet, at: Date, until: Date): PlanetReturns {
   const target = geocentricLongitude(planet, at);
   const eq = Astronomy.Equator(
