@@ -87,6 +87,20 @@ export const useLocationStore = create<LocationState>()(
               // The phone's own offset, which for "here, tonight" is exact.
               timezoneOffsetMin: -new Date().getTimezoneOffset(),
             };
+            // The same spot again keeps the same object. A fresh object for a
+            // fix within 0.01 degrees (about 1 km) rebuilt an open sky and
+            // re-rendered Home; the moon's parallax across 1 km is half an
+            // arcsecond.
+            const latest = get().place;
+            if (
+              latest &&
+              Math.abs(latest.latitude - latitude) < 0.01 &&
+              Math.abs(latest.longitude - longitude) < 0.01 &&
+              latest.label === place.label &&
+              latest.timezoneOffsetMin === place.timezoneOffsetMin
+            ) {
+              return latest;
+            }
             set({ place });
             return place;
           } catch {

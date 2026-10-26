@@ -1,5 +1,13 @@
 import type { MilestoneType } from "@/types";
 
+/** The kicker over a record's title, on its page and in the list. */
+export const TYPE_LABELS: Record<MilestoneType, string> = {
+  birthday: "Birthday",
+  anniversary: "Anniversary",
+  graduation: "Graduation",
+  custom: "A day to remember",
+};
+
 const BIRTHDAY = /\b(birthday|bday|b-day|born|birth)\b/i;
 const ANNIVERSARY = /\b(anniversary|wedding|married|marriage|nikah|walima|engaged|engagement)\b/i;
 
