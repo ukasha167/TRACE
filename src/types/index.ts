@@ -12,6 +12,12 @@ export interface MilestoneLocation {
    * Optional for backwards compatibility with milestones saved before this field existed.
    */
   timezoneOffsetMin?: number;
+  /**
+   * The phone supplied this place, so the offset follows the phone's own zone
+   * rules for the record's date. Kept so an edit that moves the date moves the
+   * offset too: a London record moved from July to January kept UTC+1.
+   */
+  fromDevice?: true;
 }
 
 export interface Milestone {
@@ -135,8 +141,6 @@ export interface ApodCacheEntry {
 export interface AppSettings {
   nasaApiKey: string | null; // null = fall back to DEMO_KEY with an in-app rate-limit warning
   hasCompletedOnboarding: boolean;
-  /** The sky view's "hold your phone up" hint has been seen once. */
-  hasSeenPointHint: boolean;
   /** The sky view's "drag to look around" tip has been seen once. */
   hasSeenDragHint: boolean;
 }
@@ -144,7 +148,7 @@ export interface AppSettings {
 export interface MoonCarouselItem {
   offset: number;
   date: string;
-  phase: Pick<MoonSnapshot, "phaseFraction" | "phaseName" | "phaseIndex" | "isTruePhase" | "waxing">;
+  phase: Pick<MoonSnapshot, "phaseFraction" | "phaseName" | "phaseIndex" | "waxing">;
   brightLimbAngleDeg: number | null;
   northAngleDeg: number | null;
 }

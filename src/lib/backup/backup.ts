@@ -50,7 +50,7 @@ const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Num
 function readLocation(v: unknown): MilestoneLocation | null | undefined {
   if (v === null || v === undefined) return null;
   if (!isObject(v)) return undefined;
-  const { latitude, longitude, label, timezoneOffsetMin } = v;
+  const { latitude, longitude, label, timezoneOffsetMin, fromDevice } = v;
   if (!isFiniteNumber(latitude) || latitude < -90 || latitude > 90) return undefined;
   if (!isFiniteNumber(longitude) || longitude < -180 || longitude > 180) return undefined;
   if (typeof label !== "string") return undefined;
@@ -60,6 +60,7 @@ function readLocation(v: unknown): MilestoneLocation | null | undefined {
     longitude,
     label,
     ...(timezoneOffsetMin !== undefined ? { timezoneOffsetMin } : {}),
+    ...(fromDevice === true ? { fromDevice: true as const } : {}),
   };
 }
 
