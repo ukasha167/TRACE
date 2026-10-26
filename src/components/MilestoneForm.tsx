@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   Keyboard,
 } from "react-native";
 import Animated, { FadeIn, LinearTransition, ReduceMotion } from "react-native-reanimated";
+import { lenis } from "@/lib/glide";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
 import DateTimePicker, {
   DateTimePickerChangeEvent,
@@ -22,6 +23,8 @@ import { WheelDatePicker } from "./WheelDatePicker";
 import * as Location from "expo-location";
 import { useLocationStore } from "@/store/useLocationStore";
 import { inferOccasion } from "@/lib/occasion";
+import { nightFactsFor } from "@/lib/astronomy/nightFacts";
+import { placeOf } from "@/lib/astronomy/place";
 import {
   MilestoneType,
   type Milestone,
@@ -43,6 +46,21 @@ import {
 } from "@/lib/astronomy/dateUtils";
 
 /** Create and edit share the form so place resolution cannot drift between them. */
+
+/**
+ * The place as it will be saved. A place from the phone takes the phone's zone
+ * on the record's own date, so a winter birthday in a summer-time country is
+ * not read an hour out. Save and the night-facts prewarm both go through here,
+ * or the prewarm computes under a key the reveal never asks for.
+ */
+function savedLocation(place: MilestoneLocation | null, dateStr: string, fromDevice: boolean): MilestoneLocation | null {
+  if (!place || !fromDevice) return place;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return { ...place, timezoneOffsetMin: -new Date(y, m - 1, d, 12).getTimezoneOffset(), fromDevice: true };
+}
+
+/** How long the date and place sit still before the prewarm runs. */
+const PREWARM_MS = 500;
 
 export interface MilestoneFormValues {
   title: string;
@@ -103,7 +121,9 @@ export function MilestoneForm({
   const [lookupFailed, setLookupFailed] = useState(false);
   // The place came from the phone, so the phone's own zone rules are the real
   // offset there; a typed place only has its longitude to go on.
-  const [placeFromDevice, setPlaceFromDevice] = useState(prefill !== null);
+  const [placeFromDevice, setPlaceFromDevice] = useState(
+    prefill !== null || initial?.location?.fromDevice === true
+  );
 
   // `onValueChange` rather than the legacy `onChange`, which encoded selection
   // and dismissal in `event.type` and warns on every mount.
@@ -193,6 +213,25 @@ export function MilestoneForm({
    * now finishes the lookup itself, and if it fails it asks rather than
    * guessing in either direction.
    */
+  // The night's facts, computed while the title is being typed. Their eclipse
+  // search was most of the pause between Save and the reveal; with this the
+  // reveal reads them from nightFactsFor's cache.
+  useEffect(() => {
+    const dateStr = toDateString(date);
+    const place = placeOf(savedLocation(location, dateStr, placeFromDevice));
+    if (!place) return;
+    let task: number | null = null;
+    const timer = setTimeout(() => {
+      task = requestIdleCallback(() => {
+        nightFactsFor(dateStr, place, place.timezoneOffsetMin);
+      });
+    }, PREWARM_MS);
+    return () => {
+      clearTimeout(timer);
+      if (task != null) cancelIdleCallback(task);
+    };
+  }, [date, location, placeFromDevice]);
+
   const handleSave = useCallback(async () => {
     if (!title.trim()) {
       setTitleError(true);
@@ -200,18 +239,12 @@ export function MilestoneForm({
     }
     const submit = (place: MilestoneLocation | null) => {
       const dateStr = toDateString(date);
-      const [y, m, d] = dateStr.split("-").map(Number);
       onSubmit({
         title: title.trim(),
         type,
         date: dateStr,
         notes: notes.trim() || undefined,
-        // The phone's zone on the record's own date, so a winter birthday in a
-        // summer-time country is not read an hour out.
-        location:
-          place && placeFromDevice
-            ? { ...place, timezoneOffsetMin: -new Date(y, m - 1, d, 12).getTimezoneOffset() }
-            : place,
+        location: savedLocation(place, dateStr, placeFromDevice),
       });
     };
 
@@ -296,8 +329,8 @@ export function MilestoneForm({
             meant for the form changed the month without anyone noticing. */}
         {dateExpanded && (
           <Animated.View
-            entering={FadeIn.duration(180).reduceMotion(ReduceMotion.System)}
-            layout={LinearTransition.duration(220).reduceMotion(ReduceMotion.System)}
+            entering={FadeIn.duration(180).easing(lenis).reduceMotion(ReduceMotion.System)}
+            layout={LinearTransition.duration(220).easing(lenis).reduceMotion(ReduceMotion.System)}
             style={styles.pickerWrap}
           >
           {Platform.OS === "ios" ? (

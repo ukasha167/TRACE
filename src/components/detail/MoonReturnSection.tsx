@@ -66,15 +66,15 @@ export function MoonReturnSection({ returns, sourceDate, today, planets = [], on
   const todayAt = Math.min(1, Math.max(0, (thisYear - source.year) / SPAN_YEARS));
   const at = (year: number) => `${((year - source.year) / SPAN_YEARS) * 100}%` as const;
 
-  if (shown.length === 0 && planets.length === 0) return null;
+  // Planets load only once the section is expanded, so with no returns there is
+  // nothing to expand and nothing to show.
+  if (shown.length === 0) return null;
 
   const lead = next
     ? next.year === thisYear
       ? `The moon comes back this year, ${next.offsetYears} years on.`
       : `The moon comes back in ${next.year}, ${next.offsetYears} years on.`
-    : shown.length
-      ? `The moon last came back in ${shown[shown.length - 1].year}.`
-      : "The moon has not come back to this phase on this date yet.";
+    : `The moon last came back in ${shown[shown.length - 1].year}.`;
   const now = Date.UTC(thisYear, Number(today.slice(5, 7)) - 1, Number(today.slice(8, 10)));
 
   return (

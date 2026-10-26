@@ -16,17 +16,12 @@ import {
   getBrightLimbAngle,
   getLunarNorthRotation,
 } from "@/lib/astronomy/brightLimb";
-import { toLocalNight, toLocalDayStart } from "@/lib/astronomy/dateUtils";
+import { toLocalNight } from "@/lib/astronomy/dateUtils";
 import type { Milestone } from "@/types";
+import { TYPE_LABELS } from "@/lib/occasion";
+import { placeOf } from "@/lib/astronomy/place";
 
 const route = (path: string) => path as Href;
-
-const TYPE_LABELS: Record<Milestone["type"], string> = {
-  birthday: "Birthday",
-  anniversary: "Anniversary",
-  graduation: "Graduation",
-  custom: "A day to remember",
-};
 
 interface Props {
   milestone: Milestone;
@@ -54,12 +49,9 @@ export function MilestoneListRow({ milestone, isLast, countdown }: Props) {
 
   const { phase, tilt, north } = useMemo(() => {
     const night = toLocalNight(milestone.date, tz);
-    const place =
-      milestone.location && milestone.location.latitude !== 0
-        ? milestone.location
-        : null;
+    const place = placeOf(milestone.location);
     return {
-      phase: getMoonPhase(night, toLocalDayStart(milestone.date, tz)),
+      phase: getMoonPhase(night),
       tilt: place ? getBrightLimbAngle(night, place) : null,
       north: place ? getLunarNorthRotation(night, place) : null,
     };
