@@ -1039,6 +1039,93 @@ object. A new object for the same spot rebuilt the open sky and re-rendered Home
 The entrance and exit zoom advance at most 20 ms per frame instead of by wall time, so a slow first
 frame delays the zoom rather than skipping part of it.
 
+### 64. A black sky, a coloured band, a field to stand in, and fewer figures
+
+Five changes to the sky view, made together, and each one reverses part of an earlier entry.
+
+**The night sky is black.** Decision 57 lit the sky round a bright moon toward `moonlitSky`, the
+dark blue a moonlit sky really is. On a phone it read as a grey-blue screen, and most nights have a
+moon. The shader no longer paints the ground; the moonlight still takes the band's contrast away,
+which is the half of 57 that matters. The map itself had a floor too: Gaia's faint stars are
+everywhere, so drawn as it was the whole sky carried a grey wash. The map's median is now the black
+point (`milkyWay.json`, `floor`), so the half of the sky away from the band draws black.
+
+**The Milky Way is in colour.** Decision 56 kept luminance only, because the rods do the seeing and
+see no colour. That is still true of the eye, and the view now draws the band the way a long
+exposure does instead. The colour is the EXR's own, Gaia's measured light: red over green runs from
+1.06 in the faint band to 1.5 in the brightest clouds, because dust reddens the core. The build
+white-balances on the band's average, as a camera balances on its scene, so the core reads gold, the
+arms blue-white and the dust lanes brown; the shader then doubles the chroma about each pixel's
+luminance (`MILKY_WAY_SATURATION`). Balance and gain are print decisions, as the moon's mineral
+colour is. Neither can put a hue where the map has none. The PNG went from 1.3 MB to 3.8 MB.
+
+**The ground is Stellarium's.** Decision 54's flat ground is replaced by Stellarium's default
+landscape, the field at Guéreins: eight 256 px side panels and a top-down ground disc, baked into one
+azimuth and altitude panorama (`scripts/build-landscape.mjs`) and read per pixel along the ground
+camera's rays (`landscapeShader.ts`), the way the Milky Way is. Its treeline stands a few degrees
+above the true horizon and hides the stars behind it, as in Stellarium. It is a picture of a French
+field and not of the record's place, so the horizon line at 0 degrees still marks the true horizon,
+faded to a trace while the ground is solid because over a photograph it read as a crack. Lighting
+follows Stellarium's shape (`landscapeLight`) with a 10% floor where Stellarium's 1% drew black on
+black, and the colour goes to grey as the light drops, for the rods. The panels are 6.4 pixels a
+degree, so at the eye's 21 degree field the treeline is soft; every Stellarium landscape is within
+a few pixels a degree of that. The photographs are GPL-2.0-or-later.
+
+**A small moon has glare.** At the eye's field the true moon is ten points across, and drawn exactly
+as the shader made it a full moon was a dull sticker. It now takes a halo scaled by the square root
+of its lit fraction and a lift of up to 60% in exposure, both gone by the time the zoom grows the disc
+to 120 points, where the image's own limb glow does the job (`moonGlare`). The disc stays its true
+size (decision 55); the glare is light round it, as the sun's is.
+
+**25 constellations, not 88.** All of them drew, and the sky read as a net of faint lines through
+stars nobody could name; Antlia was as loud as Orion. The view now draws the twelve of the zodiac and
+Orion, Ursa Major, Ursa Minor, Cassiopeia, Cygnus, Lyra, Aquila, Andromeda, Perseus,
+Pegasus, Canis Major, Crux and Boötes. The list lives in `build-sky-data.mjs`, the art sheet and the
+star labels are built from its output, and the sheet went from 3840x3456 to 3840x1152.
+
+### 65. Every Skia shader made in the frame was reported to Hermes as a megabyte
+
+A profile on the Pixel 7 Pro at 120 Hz, against main, after decision 64's ground, coloured band and
+glare: frames over the 8.33 ms deadline rose from 12.5% to 70.8%, the median frame from 7.13 ms to
+15.20 ms, UI thread recording from 2.38 ms to 8.39 ms a frame, and CPU time on Hermes's collector
+thread (`hades`) from 230 ms to 530 ms.
+
+react-native-skia 2.6.2 tells Hermes a native size for every host object it makes, and the size is
+fixed by type, not measured: 1 MB for each `SkShader` (`cpp/api/JsiSkShader.h`) and each
+`SkPictureRecorder` (`JsiSkPictureRecorder.h`), 2 KB for a colour filter, 256 bytes for a rect. A
+night frame with the moon in view and ground on screen made a recorder, the band's shader, the
+ground's shader and the moon's glare gradient: four megabytes a frame, 480 MB a second at 120 Hz.
+Hermes collects as that number grows, whatever the objects really hold.
+
+The ground cost the GPU as well. It was a full-screen pass that ran whenever any pixel looked below
+the treeline, which at the eye's 21 degree field is any view lower than about 40 degrees, and each
+pixel above the treeline rebuilt its ray and took an arcsine to draw nothing.
+
+What changed:
+
+- The recorder, the full-screen rect and the moon's image rects are made once per run of the loop.
+- `skyShader.uniformShader` keeps one uniform array per effect, written in place by slot, and makes
+  a new shader only when a value has changed. What never changes for a sky (screen size, the
+  equatorial rotation, the maps' constants) is written once. The ground's opacity moved from a
+  uniform to the paint's alpha, so a fade needs no new shader.
+- The sun's and the moon's glare and the Earth's shadow are gradients made once at unit size, placed
+  with `translate` and `scale`, coloured by a colour filter that is remade only when its colour
+  changes, and faded by the paint's alpha.
+- `skyView.groundBounds` replaces `lowestAltitude` and returns the rectangle that holds every pixel
+  below the treeline, or false. The sky above a positive altitude is a cap narrower than a
+  hemisphere, so on a gnomonic screen its share is convex and the ground left over reaches its
+  furthest on the screen's border. Sampling the border and widening each run of ground by one
+  sample gives a rectangle that cannot miss ground; a test checks that pixel by pixel over 150
+  cameras with roll and zoom. At the eye's field with no roll the pass now covers 75% of the screen
+  at 10 degrees up, 50% at 20, 31% at 30 and 6% at 40, and is skipped at 50.
+
+What it does not fix. A shader's uniforms are fixed when it is made, and both full-screen passes
+carry the camera, so a turning phone still makes two shaders a frame: 240 MB a second of reported
+size where there were 480. Taking the camera out of the uniforms (a perspective canvas matrix over
+cube faces, so each shader is made once) or moving the frame loop onto the UI thread (decision 59)
+is the next step if a new profile still misses frames. A resolved planet's disc and the sun's
+(`drawBodies.drawDisc`) still make a gradient each frame they are drawn.
+
 ## Decisions
 
 **The mineral colour is real, and that is the only reason it is allowed.**

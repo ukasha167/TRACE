@@ -127,6 +127,10 @@ This is the one place where the ordinary React model is deliberately abandoned.
    target and the frame loop glides toward it (`lib/glide.ts`), so uneven touch events arrive as
    even motion, and a flick coasts. The home carousel runs the same glide in a Reanimated frame
    callback on the UI thread.
+5. Native objects are made when the loop starts, not in the frame. react-native-skia reports each
+   shader and picture recorder to Hermes as a megabyte, so the recorder, the glare gradients and the
+   colour filters are made once, and the two full-screen shaders are made again only when one of
+   their uniforms changes (`skyShader.uniformShader`). DECISIONS 65.
 
 Stars draw as batched Skia `Path`s bucketed by brightness. Nothing is culled by altitude, so the
 view passes through the horizon and keeps going. Standing somewhere means being able to look down.
@@ -154,19 +158,31 @@ Stars are coloured from their catalogued B-V (`skyLight.bvToKelvin`, binned into
 so colour costs nine extra fills), white below magnitude 4 where the eye sees no colour, and dimmed
 by the airmass they are seen through.
 
-The Milky Way is NASA's Deep Star Maps 2020 background layer, the light of Gaia's faint stars,
-projected per pixel by `components/sky/skyShader.ts` through the same camera as the stars. The same
-pass computes moonlight scattered by the air (Krisciunas and Schaefer 1991), which washes the band
-out and lights the sky blue around a bright moon, and extinction toward the horizon. Twilight and a
-compressed dark adaptation set one exposure per frame. A ground covers everything below the horizon while the view looks up and
-dissolves as it tips to the horizon (`skyView.groundRegion`, `groundOpacity`).
+The Milky Way is NASA's Deep Star Maps 2020 background layer, the light of Gaia's faint stars, in
+its measured colour, white-balanced on the band and saturated 2x. `components/sky/skyShader.ts`
+projects it per pixel through the same camera as the stars, with the map's median taken off as a
+black point so the sky between is black. The same pass computes moonlight scattered by the air
+(Krisciunas and Schaefer 1991), which washes the band out near a bright moon, and extinction toward
+the horizon. Twilight and a compressed dark adaptation set one exposure per frame.
+
+The ground is Stellarium's default landscape, the field at Guéreins, baked into one azimuth and
+altitude panorama and read per pixel through the ground camera by
+`components/sky/landscapeShader.ts`. It is lit by the sun and the moon (`skyView.landscapeLight`),
+greys out in the dark, and covers everything below its treeline while the view looks up, dissolving
+as the view tips to the horizon (`groundOpacity`). The pass is skipped when no part of the screen is
+below the treeline, and otherwise covers only the rectangle that holds the treeline and everything
+under it (`skyView.groundBounds`).
+
+A moon drawn small takes a glare round it and a lift in exposure (`skyView.moonGlare`), both gone by
+the time the zoom makes it 120 points across.
 
 Constellation figures rest at an alpha almost too faint to notice and lift, with their name, when
 the view centre comes within 60% of the half-field of their centroid, easing over about 0.8 seconds.
 Figures at rest all draw in one path, so the common case costs what the whole set used to.
 
-85 of them also carry a drawn figure, riding the same fade and drawn under the lines. That is
-Stellarium's whole pack: Puppis and Vela are drawn inside Argo Navis, and Serpens has no figure. While
+The view draws 25 constellations: the zodiac and thirteen that people find without a chart
+(`DRAWN` in `scripts/build-sky-data.mjs`). Each carries Stellarium's drawn figure, riding the same
+fade and drawn under the lines. While
 a figure is lit, every star its lines pass through is labelled, with its proper name, else its Bayer
 letter, else its Flamsteed number. Placement
 comes from Stellarium's anchor scheme: three points in the illustration are tied to three real
@@ -251,24 +267,26 @@ phone's own offset on the record's date; a typed place stores the longitude esti
 
 ## Bundled data
 
-648 KB of data under `src/data/`, plus the images below. All of it is reproducible from `scripts/`.
+604 KB of data under `src/data/`, plus the images below. All of it is reproducible from `scripts/`.
 
 | File | Contents | Source |
 |---|---|---|
 | `src/data/bsc.json` | 8,404 stars to magnitude 6.5, with 333 IAU proper names and 8,160 B-V colour indices merged in | Yale BSC5, V/50 on VizieR (public domain) + IAU-CSN |
-| `assets/sky/milkyway.png`, `src/data/milkyWay.json` | 2048x1024 greyscale Milky Way in J2000 RA/Dec, gamma 2.2, and its reference radiance | NASA SVS Deep Star Maps 2020, Ernie Wright (public domain) |
-| `src/data/constellations.json` | 89 constellations, 150 line segments | d3-celestial (BSD-3) |
-| `src/data/constellationStars.json` | 767 figure stars with chart labels | `scripts/build-constellation-stars.mjs`, from the two files above |
-| `src/data/constellationNames.ts` | 88 IAU abbreviations to full names | IAU designations |
+| `assets/sky/milkyway.png`, `src/data/milkyWay.json` | 2048x1024 RGB Milky Way in J2000 RA/Dec, white-balanced on the band, gamma 2.2, its reference radiance and black point | NASA SVS Deep Star Maps 2020, Ernie Wright (public domain) |
+| `assets/sky/landscape.png`, `src/data/landscape.json` | 2048x696 RGBA panorama, azimuth across, altitude +18.6 down to the nadir | Stellarium's Guéreins, Fabien Chéreau (**GPL-2.0-or-later**) |
+| `src/data/constellations.json` | 25 constellations, 63 line segments | d3-celestial (BSD-3) |
+| `src/data/constellationStars.json` | 306 figure stars with chart labels | `scripts/build-constellation-stars.mjs`, from the two files above |
+| `src/data/constellationNames.ts` | The 25 drawn constellations' IAU abbreviations to full names | IAU designations |
 | `assets/moon_disc.png` | 1024x1024 orthographic near-side albedo, exposure graded, opaque to the corners | NASA LROC WAC / CGI Moon Kit (public domain) |
 | `assets/moon_normal.png` | 1024x1024 surface normals for the same projection, y down | NASA LOLA LDEM / CGI Moon Kit (public domain) |
 | `assets/moon_disc_256.png`, `assets/moon_normal_256.png` | The same pair box-filtered to 256px, for moons drawn small | `scripts/build-moon-thumbs.mjs` |
-| `assets/constellations/figures.png` | 3840x3456 sheet, 85 figure illustrations at 384pt | Stellarium, Johan Meuris (**Free Art License 1.3**) |
+| `assets/constellations/figures.png` | 3840x1152 sheet, 25 figure illustrations at 384pt | Stellarium, Johan Meuris (**Free Art License 1.3**) |
 | `src/data/constellationArt.json` | Three sky anchors per figure, resolved from HIP through VizieR | Stellarium (CC BY-SA 4.0) |
 
-The figure artwork is the one bundled asset that is not public domain. The Free Art License is
-copyleft: the images keep it, the app's own source stays MIT, and the attribution in
-`assets/constellations/ATTRIBUTION.md` has to remain visible in the app's credits.
+The figure artwork and the landscape are the two bundled assets that are not public domain. The
+Free Art License and the GPL are both copyleft: the images keep their licences, the app's own source
+stays MIT, and the attributions in `assets/constellations/ATTRIBUTION.md` and
+`assets/sky/ATTRIBUTION.md` have to remain visible in the app's credits.
 
 ```bash
 node scripts/build-star-catalog.mjs <bsc5.dat>
@@ -277,6 +295,7 @@ node scripts/build-constellation-stars.mjs   # no network; reads the two files a
 node scripts/build-constellation-art.mjs     # downloads Stellarium's illustrations
 node scripts/build-star-colours.mjs          # B-V from VizieR; caches under .cache/
 node scripts/build-milky-way.mjs             # reads sources/milkyway_2020_4k.exr (see its header)
+node scripts/build-landscape.mjs             # reads sources/guereins/ (see its header)
 node --max-old-space-size=4096 scripts/build-moon-maps.mjs [grade]
 node scripts/build-moon-thumbs.mjs   # the 256px pair only; build-moon-maps runs it too
 # Builds moon_disc.png and moon_normal.png together, from one projection, so the

@@ -96,10 +96,6 @@ these**, because a brass constellation line would read as a real object.
 | `horizon` | `#C9C4B8` | The horizon ring, the one line that marks the ground. |
 | `label` | `#93A7B4` | Star and body names. Cooler and quieter than the stars. |
 | `planet` | `#D9A15C` | Planets and their labels. Warm, so they never read as scaffolding. |
-| `groundNight` | `#0B0D10` | The ground at night. A step above `space`, so the horizon is an edge. |
-| `groundDay` | `#252C33` | The ground with the sun up. Mixed with `groundNight` by the sun's altitude. |
-| `milkyWay` | `#DCE3F0` | The Milky Way's light. Grey with the Purkinje shift; the rods see no colour. |
-| `moonlitSky` | `#101C36` | The sky lit by a bright moon at full strength. |
 | `sun` | `#FFF6E8` | The sun's disc and glare. The air reddens it toward the horizon. |
 | `planetDisc.*` | five hexes | Resolved planet discs, in each planet's own colour. Labels keep `planet`. |
 
