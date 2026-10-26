@@ -100,15 +100,22 @@ half4 main(float2 p) {
 
 export const skyEffect: SkRuntimeEffect | null = Skia.RuntimeEffect.Make(SOURCE);
 
+// The layout never changes, and reading it per frame was about 65 native calls.
+const LAYOUT = skyEffect
+  ? Array.from({ length: skyEffect.getUniformCount() }, (_, i) => ({
+      name: skyEffect.getUniformName(i),
+      slot: skyEffect.getUniform(i).slot,
+    }))
+  : [];
+const FLOATS = skyEffect?.getUniformFloatCount() ?? 0;
+
 /**
  * Packs named uniforms into the flat array Skia wants, by each uniform's own
  * slot rather than by assuming a layout.
  */
-export function packUniforms(effect: SkRuntimeEffect, values: Record<string, number | readonly number[]>): number[] {
-  const out = new Array<number>(effect.getUniformFloatCount()).fill(0);
-  for (let i = 0; i < effect.getUniformCount(); i++) {
-    const name = effect.getUniformName(i);
-    const { slot } = effect.getUniform(i);
+export function packUniforms(values: Record<string, number | readonly number[]>): number[] {
+  const out = new Array<number>(FLOATS).fill(0);
+  for (const { name, slot } of LAYOUT) {
     const v = values[name];
     if (v == null) throw new Error(`sky shader: no value for ${name}`);
     if (typeof v === "number") out[slot] = v;
