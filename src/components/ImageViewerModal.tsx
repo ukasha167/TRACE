@@ -15,7 +15,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withSpring,
   runOnJS,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +26,10 @@ import {
   Tracking,
   Radius,
 } from "@/constants/theme";
+import { lenis } from "@/lib/glide";
+
+/** Every settle in the viewer: Lenis's curve, no spring, so nothing overshoots. */
+const SETTLE = { duration: 400, easing: lenis };
 
 interface ImageViewerModalProps {
   visible: boolean;
@@ -80,10 +83,10 @@ export function ImageViewerModal({
 
   const resetTransform = useCallback(() => {
     "worklet";
-    scale.value = withTiming(1);
+    scale.value = withTiming(1, SETTLE);
     savedScale.value = 1;
-    translateX.value = withTiming(0);
-    translateY.value = withTiming(0);
+    translateX.value = withTiming(0, SETTLE);
+    translateY.value = withTiming(0, SETTLE);
     savedTranslateX.value = 0;
     savedTranslateY.value = 0;
   }, [scale, savedScale, translateX, translateY, savedTranslateX, savedTranslateY]);
@@ -105,10 +108,10 @@ export function ImageViewerModal({
     })
     .onEnd(() => {
       if (scale.value < MIN_SCALE) {
-        scale.value = withSpring(MIN_SCALE);
+        scale.value = withTiming(MIN_SCALE, SETTLE);
         savedScale.value = MIN_SCALE;
-        translateX.value = withSpring(0);
-        translateY.value = withSpring(0);
+        translateX.value = withTiming(0, SETTLE);
+        translateY.value = withTiming(0, SETTLE);
         savedTranslateX.value = 0;
         savedTranslateY.value = 0;
       } else {
@@ -139,7 +142,7 @@ export function ImageViewerModal({
         if (e.translationY > 120 || e.velocityY > 600) {
           runOnJS(handleDismiss)();
         } else {
-          translateY.value = withSpring(0);
+          translateY.value = withTiming(0, SETTLE);
         }
       } else {
         savedTranslateX.value = translateX.value;
@@ -152,20 +155,20 @@ export function ImageViewerModal({
     .numberOfTaps(2)
     .onEnd((e) => {
       if (scale.value > 1.2) {
-        scale.value = withTiming(1);
+        scale.value = withTiming(1, SETTLE);
         savedScale.value = 1;
-        translateX.value = withTiming(0);
-        translateY.value = withTiming(0);
+        translateX.value = withTiming(0, SETTLE);
+        translateY.value = withTiming(0, SETTLE);
         savedTranslateX.value = 0;
         savedTranslateY.value = 0;
       } else {
-        scale.value = withTiming(2.5);
+        scale.value = withTiming(2.5, SETTLE);
         savedScale.value = 2.5;
         // Center zoom around tap location
         const targetX = (width / 2 - e.x) * 1.5;
         const targetY = (height / 2 - e.y) * 1.5;
-        translateX.value = withTiming(targetX);
-        translateY.value = withTiming(targetY);
+        translateX.value = withTiming(targetX, SETTLE);
+        translateY.value = withTiming(targetY, SETTLE);
         savedTranslateX.value = targetX;
         savedTranslateY.value = targetY;
       }
@@ -216,6 +219,8 @@ export function ImageViewerModal({
               source={{ uri: imageUrl }}
               style={{ width, height, position: "absolute" }}
               contentFit="contain"
+              cachePolicy="memory-disk"
+              recyclingKey={imageUrl}
               accessibilityLabel={title}
             />
 
@@ -230,7 +235,9 @@ export function ImageViewerModal({
                   opacity: isHdLoaded ? 1 : 0,
                 }}
                 contentFit="contain"
-                transition={300}
+                transition={{ duration: 300, timing: "ease-out" }}
+                cachePolicy="memory-disk"
+                recyclingKey={hdUrl!}
                 onLoad={() => setIsHdLoaded(true)}
                 onError={() => setIsHdLoaded(false)}
                 accessibilityLabel={title}

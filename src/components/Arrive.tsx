@@ -2,6 +2,7 @@ import React from "react";
 import type { ViewStyle, StyleProp } from "react-native";
 import Animated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { Motion } from "@/constants/theme";
+import { lenis } from "@/lib/glide";
 
 interface ArriveProps {
   children: React.ReactNode;
@@ -34,6 +35,7 @@ export function Arrive({
   style,
 }: ArriveProps) {
   const entering = FadeInDown.duration(slow ? Motion.durationSlow : Motion.duration)
+    .easing(lenis)
     .delay(delay + Math.min(index, 8) * Motion.stagger)
     .withInitialValues({
       transform: [{ translateY: slow ? Motion.rise * 1.8 : Motion.rise }],

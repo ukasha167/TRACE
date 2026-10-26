@@ -22,8 +22,10 @@ import {
   Motion,
 } from "@/constants/theme";
 import { MoonCarousel } from "./MoonCarousel";
+import { lenis } from "@/lib/glide";
 import { useMoonCarousel } from "@/hooks/useMoonCarousel";
 import { useOpenSky } from "@/hooks/useOpenSky";
+import { useSkyPrewarm } from "@/hooks/useSkyPrewarm";
 import { StarField } from "./moon/StarField";
 import { getMoonPhase, describePhase, formatIllumination } from "@/lib/astronomy/moonPhase";
 import { getMoonReturns } from "@/lib/astronomy/moonReturn";
@@ -31,7 +33,6 @@ import {
   todayDateString,
   parseDateString,
   toLocalNight,
-  toLocalDayStart,
 } from "@/lib/astronomy/dateUtils";
 import { addDays, formatWeekdayDate } from "@/lib/astronomy/anniversary";
 import type { Milestone, MilestoneLocation } from "@/types";
@@ -85,7 +86,7 @@ export function TonightHero({
         const returns = getMoonReturns(m.date, { tzOffsetMin: tz });
         const hit = returns.find((r) => r.year === todayYear);
         if (hit) {
-          const then = getMoonPhase(toLocalNight(m.date, tz), toLocalDayStart(m.date, tz));
+          const then = getMoonPhase(toLocalNight(m.date, tz));
           return { milestone: m, returnInfo: hit, thenName: describePhase(then) };
         }
       }
@@ -99,6 +100,8 @@ export function TonightHero({
   // Tonight opens the live sky at this minute. Another day opens that day's
   // evening, so the sky never shows tonight under a different date.
   const { moonRef, openSky } = useOpenSky(isTonight ? "tonight" : "preview", isTonight ? undefined : shownStr);
+  // Once the carousel rests, build the sky that tap would open.
+  useSkyPrewarm(location, isTonight ? null : shownStr);
 
   const todayLabel = new Date(todayYear, todayMonth - 1, todayDay).toLocaleDateString(
     "en-GB",
@@ -126,6 +129,7 @@ export function TonightHero({
 
       <Animated.View
         entering={FadeIn.duration(Motion.duration)
+          .easing(lenis)
           .delay(Motion.durationSlow * 0.4)
           .reduceMotion(ReduceMotion.System)}
       >

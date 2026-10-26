@@ -79,7 +79,9 @@ export function LedgerRow({ row, apod, isLast, onApodPress }: LedgerRowProps) {
             source={{ uri: apod!.url }}
             style={styles.thumb}
             contentFit="cover"
-            transition={250}
+            transition={{ duration: 250, timing: "ease-out" }}
+            cachePolicy="memory-disk"
+            recyclingKey={apod!.url}
             accessibilityLabel={apod!.title}
           />
         </TouchableOpacity>

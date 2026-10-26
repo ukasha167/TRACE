@@ -1,16 +1,15 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, StyleSheet, type LayoutChangeEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
-  Easing,
   runOnJS,
   runOnUI,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/theme";
+import { lenis } from "@/lib/glide";
 
 interface Props {
   min: number;
@@ -25,25 +24,25 @@ interface Props {
 }
 
 const STEP = 10 * 60_000;
-const HOUR = 3_600_000;
 const THUMB = 22;
 /** The thumb's settle onto its ten-minute mark, and onto a value set from outside. */
-const SETTLE = { duration: 260, easing: Easing.out(Easing.exp) };
+const SETTLE = { duration: 260, easing: lenis };
 
 /**
  * A rail and a thumb for scrubbing through one night.
  *
  * Written rather than installed, for the same reason as the Android date wheel:
  * the slider packages that look right are native modules and this app runs in
- * Expo Go. It snaps to ten minutes and ticks the phone once per hour crossed,
- * so a thumb dragged through the night can be felt going past each hour.
+ * Expo Go. It snaps to ten minutes. It does not tick the phone: haptics belong
+ * to discrete actions, and a tick per hour under a moving thumb read as noise.
  *
  * THE THUMB LIVES ON THE UI THREAD. It used to be placed from the `value` prop,
  * so it moved only after the whole sky screen had re-rendered for the new
  * time, and it trailed the finger by however long that took. Now the finger
  * moves it directly and continuously; only the snapped time goes to the JS
- * thread, at most once a frame, and the thumb settles onto that mark when the
- * finger lifts.
+ * thread, at most 30 times a second, and the thumb settles onto that mark when
+ * the finger lifts. Once a frame was 84 full sky renders for a one-second drag
+ * across a March night; the sky glides toward the time over 80 ms anyway.
  */
 export function TimeScrubber({
   min,
@@ -60,7 +59,6 @@ export function TimeScrubber({
   const thumbX = useSharedValue(0);
   const dragging = useSharedValue(false);
   const lastStep = useSharedValue(value);
-  const lastHour = useSharedValue(Math.floor(value / HOUR));
 
   // A value set from outside ("Midnight", a screen reader) moves the thumb.
   // While a finger is on it, the finger wins.
@@ -73,63 +71,66 @@ export function TimeScrubber({
     })(value, width);
   }, [value, width, min, span]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Several snapped values can arrive between two frames on a fast drag. Only
-  // the last matters, and the sky re-renders once for it.
-  const pending = useRef<number | null>(null);
-  const flush = () => {
-    const v = pending.current;
-    pending.current = null;
-    if (v != null) onChange(v);
-  };
-  const emit = (v: number) => {
-    if (pending.current == null) requestAnimationFrame(flush);
-    pending.current = v;
-  };
-  const tick = () => void Haptics.selectionAsync();
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
-  const setFromX = (x: number) => {
-    "worklet";
-    const w = railWidth.value;
-    if (w <= 0) return;
-    const cx = Math.min(w, Math.max(0, x));
-    thumbX.value = cx;
-    const snapped = Math.min(max, Math.max(min, Math.round((min + (cx / w) * span) / STEP) * STEP));
-    if (snapped === lastStep.value) return;
-    lastStep.value = snapped;
-    const hour = Math.floor(snapped / HOUR);
-    if (hour !== lastHour.value) {
-      lastHour.value = hour;
-      runOnJS(tick)();
-    }
-    runOnJS(emit)(snapped);
-  };
-  const settle = () => {
-    "worklet";
-    const w = railWidth.value;
-    if (w > 0) thumbX.value = withTiming(((lastStep.value - min) / span) * w, SETTLE);
-  };
+  // Built once per range. A new gesture object gets a new id, and Gesture
+  // Handler then copies its worklets to the UI thread again, which a scrub step
+  // re-rendering this component used to do in the middle of the drag.
+  const gesture = useMemo(() => {
+    // Several snapped values arrive within 33 ms on a fast drag. Only the last
+    // matters, and the sky re-renders once for it.
+    let pending: number | null = null;
+    const flush = () => {
+      const v = pending;
+      pending = null;
+      if (v != null) onChangeRef.current(v);
+    };
+    const emit = (v: number) => {
+      if (pending == null) setTimeout(flush, 33);
+      pending = v;
+    };
 
-  const pan = Gesture.Pan()
-    .onBegin((e) => {
-      dragging.value = true;
+    const setFromX = (x: number) => {
+      "worklet";
+      const w = railWidth.value;
+      if (w <= 0) return;
+      const cx = Math.min(w, Math.max(0, x));
+      thumbX.value = cx;
+      const snapped = Math.min(max, Math.max(min, Math.round((min + (cx / w) * span) / STEP) * STEP));
+      if (snapped === lastStep.value) return;
+      lastStep.value = snapped;
+      runOnJS(emit)(snapped);
+    };
+    const settle = () => {
+      "worklet";
+      const w = railWidth.value;
+      if (w > 0) thumbX.value = withTiming(((lastStep.value - min) / span) * w, SETTLE);
+    };
+
+    const pan = Gesture.Pan()
+      .onBegin((e) => {
+        dragging.value = true;
+        setFromX(e.x);
+      })
+      .onUpdate((e) => setFromX(e.x))
+      .onFinalize(() => {
+        dragging.value = false;
+        settle();
+      });
+    const tap = Gesture.Tap().onEnd((e) => {
       setFromX(e.x);
-    })
-    .onUpdate((e) => setFromX(e.x))
-    .onFinalize(() => {
-      dragging.value = false;
       settle();
     });
-  const tap = Gesture.Tap().onEnd((e) => {
-    setFromX(e.x);
-    settle();
-  });
+    return Gesture.Race(pan, tap);
+  }, [min, max, span]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fillStyle = useAnimatedStyle(() => ({ width: Math.max(0, thumbX.value) }));
   const thumbStyle = useAnimatedStyle(() => ({ transform: [{ translateX: thumbX.value - THUMB / 2 }] }));
   const at = (t: number) => ((t - min) / span) * width;
 
   return (
-    <GestureDetector gesture={Gesture.Race(pan, tap)}>
+    <GestureDetector gesture={gesture}>
       <View
         style={styles.hit}
         onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)}

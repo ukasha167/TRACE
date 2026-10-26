@@ -32,6 +32,7 @@ import { useMilestone } from "@/store/useMilestonesStore";
 import { useRevealStore } from "@/store/useRevealStore";
 import { revealContent, type RevealContent } from "@/lib/astronomy/revealLines";
 import { todayDateString } from "@/lib/astronomy/dateUtils";
+import { lenis } from "@/lib/glide";
 
 /**
  * Mounted once at the root, after the navigation stack, so it paints over every
@@ -65,7 +66,7 @@ const ACTIONS_AT = 5600;
 
 function fade(t: SharedValue<number>, start: number, rise = 10) {
   "worklet";
-  const p = Math.min(1, Math.max(0, (t.value - start) / 750));
+  const p = lenis(Math.min(1, Math.max(0, (t.value - start) / 750)));
   return { opacity: p, transform: [{ translateY: (1 - p) * rise }] };
 }
 
@@ -117,9 +118,9 @@ function Reveal({ content, title, onDone, onShare }: Props) {
   );
 
   const moonStyle = useAnimatedStyle(() => {
-    const o = Math.min(1, Math.max(0, (t.value - MOON_IN) / 1800));
-    const m = Math.min(1, Math.max(0, (t.value - MOON_IN) / (MOON_LANDS - MOON_IN)));
-    const eased = 1 - Math.pow(1 - m, 3);
+    // The clock is linear; each ramp off it takes the one curve.
+    const o = lenis(Math.min(1, Math.max(0, (t.value - MOON_IN) / 1800)));
+    const eased = lenis(Math.min(1, Math.max(0, (t.value - MOON_IN) / (MOON_LANDS - MOON_IN))));
     return {
       opacity: o,
       transform: [{ translateY: (1 - eased) * 56 }, { scale: 0.94 + eased * 0.06 }],
@@ -145,8 +146,8 @@ function Reveal({ content, title, onDone, onShare }: Props) {
   return (
     <Animated.View
       style={styles.overlay}
-      entering={FadeIn.duration(250)}
-      exiting={FadeOut.duration(450)}
+      entering={FadeIn.duration(250).easing(lenis)}
+      exiting={FadeOut.duration(450).easing(lenis)}
       accessibilityViewIsModal
     >
       <StatusBar barStyle="light-content" />

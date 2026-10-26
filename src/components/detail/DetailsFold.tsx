@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp } from "lucide-react-native";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { Colors, Spacing, Type, FontFamily, FontSize, Motion } from "@/constants/theme";
+import { lenis } from "@/lib/glide";
 
 interface Props {
   rows: { label: string; value: string }[];
@@ -37,7 +38,7 @@ export function DetailsFold({ rows }: Props) {
         <Icon size={18} color={Colors.inkMuted} strokeWidth={2} />
       </Pressable>
       {open && (
-        <Animated.View entering={FadeIn.duration(Motion.duration).reduceMotion(ReduceMotion.System)}>
+        <Animated.View entering={FadeIn.duration(Motion.duration).easing(lenis).reduceMotion(ReduceMotion.System)}>
           {rows.map((row) => (
             <View key={row.label} style={styles.row}>
               <Text style={styles.label}>{row.label}</Text>

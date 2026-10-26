@@ -13,12 +13,9 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useAnimatedScrollHandler,
-  useAnimatedReaction,
-  runOnJS,
   interpolate,
   Extrapolation,
 } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
 import {
   Colors,
   FontFamily,
@@ -31,7 +28,7 @@ import {
  * THE DATE WHEEL, FOR ANDROID.
  *
  * iOS keeps its own spinner. UIDatePicker already does the thing being copied
- * here, being the curve, the tick under the thumb and the way a flick decays
+ * here, being the curve and the way a flick decays
  * into a detent, and reimplementing it there would be strictly worse. This
  * exists because the Android side of `@react-native-community/datetimepicker`
  * is the Material calendar dialog: a modal you open, tap through and dismiss,
@@ -42,15 +39,11 @@ import {
  * that looks right is a native module, and this app runs in Expo Go, where a
  * native module cannot be loaded. The JS-only ones exist but none of them has
  * been through Reanimated 4 and React Native 0.86 yet. So: a ScrollView per
- * column with snap detents, a rotateX per row for the barrel, and one haptic
- * tick per detent crossed.
+ * column with snap detents and a rotateX per row for the barrel.
  *
- * THE TICK IS THE POINT. What people mean when they say the iOS picker feels
- * good is mostly that it answers under the thumb: every value that passes the
- * centre line fires a selection haptic, during the drag and during the decay,
- * not once at the end. So the tick is driven from `useAnimatedReaction` on the
- * live scroll offset rather than from `onMomentumScrollEnd`, which fires once
- * and far too late.
+ * NO TICK. It used to fire a selection haptic per detent crossed. On the Pixel
+ * a flick through a year column buzzed the motor for every row, and haptics in
+ * this app belong to discrete actions (save, the reveal landing, the bell).
  */
 
 /** Row height. iOS uses 34-40; 38 puts two rows either side in the same box. */
@@ -140,21 +133,6 @@ function Column({
   const onScroll = useAnimatedScrollHandler((e) => {
     offset.value = e.contentOffset.y;
   });
-
-  const tick = useCallback(() => {
-    Haptics.selectionAsync().catch(() => {
-      // A device with haptics switched off, or a simulator. The wheel still
-      // works; it just does not answer back.
-    });
-  }, []);
-
-  // One tick per detent crossed, live. Not on momentum end; see the header.
-  useAnimatedReaction(
-    () => Math.round(offset.value / ITEM_HEIGHT),
-    (current, previous) => {
-      if (previous !== null && current !== previous) runOnJS(tick)();
-    }
-  );
 
   const commit = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {

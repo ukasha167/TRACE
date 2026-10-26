@@ -14,6 +14,7 @@ import {
 import { formatIllumination } from "@/lib/astronomy/moonPhase";
 import { getBrightLimbAngle, getLunarNorthRotation } from "@/lib/astronomy/brightLimb";
 import { toLocalNight, todayDateString, parseDateString } from "@/lib/astronomy/dateUtils";
+import { placeOf } from "@/lib/astronomy/place";
 import { reminderBody, REMINDER_HOUR } from "@/lib/reminders/planReminders";
 import { useReminderBell } from "@/hooks/useReminders";
 import type { Milestone } from "@/types";
@@ -32,8 +33,7 @@ export function ComingUpCard({ milestone }: { milestone: Milestone }) {
 
   const view = useMemo(() => {
     const next = nextAnniversary(milestone, today);
-    const place =
-      milestone.location && milestone.location.latitude !== 0 ? milestone.location : null;
+    const place = placeOf(milestone.location);
     const night = toLocalNight(next.date, milestone.location?.timezoneOffsetMin);
     return {
       next,

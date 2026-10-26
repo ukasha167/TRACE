@@ -1,16 +1,16 @@
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { View, StyleSheet } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS, runOnUI, useAnimatedStyle, useFrameCallback, useSharedValue,
-  useReducedMotion, type SharedValue,
+  useReducedMotion, type FrameInfo, type SharedValue,
 } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
 import { MoonPhaseGlyph } from "./MoonPhaseGlyph";
 import { MOON_DAY_LIMIT } from "@/lib/astronomy/moonCarousel";
 import { GLIDE, glide, settled } from "@/lib/glide";
 import type { MoonCarouselItem } from "@/types";
 
+const mod5 = (n: number) => ((n % 5) + 5) % 5;
 const clamp = (v: number) => { "worklet"; return Math.max(-MOON_DAY_LIMIT, Math.min(MOON_DAY_LIMIT, v)); };
 /** One release travels at most this many days. The window renders two either side. */
 const MAX_THROW = 2;
@@ -39,42 +39,44 @@ interface Props {
  * Every frame of motion is computed on the UI thread by one frame callback that
  * glides the shown position toward a target (lib/glide.ts). The finger moves
  * the target; a release throws it to the nearest day along the flick. The JS
- * thread hears about it twice: a haptic tick per day crossed, and the new date
- * once the coast has nearly landed.
+ * thread hears about it once, with the new date, when the coast has nearly
+ * landed.
+ *
+ * The loop runs for as long as Home is mounted and returns at once when idle.
+ * It used to switch itself on at touch-down through the JS thread and off when
+ * settled, and its first frame ran before the pan activated, found nothing
+ * moving, and switched itself off again: the first swipe moved the target with
+ * no loop running, and the next touch jumped to it.
  */
 export function MoonCarousel({ items, offset, size, width, onChange, onOpen, moonRef, label }: Props) {
   const position = useSharedValue(offset);
   const target = useSharedValue(offset);
   const start = useSharedValue(offset);
   const dragging = useSharedValue(false);
+  /** A finger is down, moving or not. Holds the loop short of the drag threshold. */
+  const touching = useSharedValue(false);
   const committed = useSharedValue(offset);
-  const detent = useSharedValue(offset);
   const reduced = useReducedMotion();
   const stride = width * 0.65;
 
-  const tick = () => void Haptics.selectionAsync();
-  const commit = (next: number) => onChange(next);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const commit = useCallback((next: number) => onChangeRef.current(next), []);
 
-  const frame = useFrameCallback((info) => {
+  // Stable, so useFrameCallback registers it once. An inline worklet is new on
+  // every render and re-registered at each date handover and location update.
+  const step = useCallback((info: FrameInfo) => {
+    "worklet";
+    if (!touching.value && position.value === target.value) return;
     const dt = info.timeSincePreviousFrame ?? 16;
     position.value = glide(position.value, target.value, dt, dragging.value ? GLIDE.follow : GLIDE.coast);
-    const near = Math.round(position.value);
-    if (near !== detent.value) {
-      detent.value = near;
-      runOnJS(tick)();
-    }
     if (!dragging.value && committed.value !== target.value && Math.abs(target.value - position.value) < COMMIT_WITHIN) {
       committed.value = target.value;
       runOnJS(commit)(target.value);
     }
-    if (!dragging.value && settled(position.value, target.value)) {
-      position.value = target.value;
-      runOnJS(stop)();
-    }
-  }, false);
-  // setActive belongs to the JS thread; the frame callback reaches it through runOnJS.
-  function stop() { frame.setActive(false); }
-  const run = () => frame.setActive(true);
+    if (!dragging.value && settled(position.value, target.value)) position.value = target.value;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useFrameCallback(step, true);
 
   // A date chosen elsewhere: "Back to tonight", or a screen reader's swipe.
   // The carousel's own commits come back through here too and are ignored.
@@ -87,42 +89,54 @@ export function MoonCarousel({ items, offset, size, width, onChange, onOpen, moo
       // the carousel cuts rather than gliding across empty arc.
       if (reduced || Math.abs(position.value - next) > MAX_THROW) position.value = next;
     })(offset);
-    run();
   }, [offset, reduced]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pan = Gesture.Pan()
-    .activeOffsetX([-10, 10])
-    .failOffsetY([-12, 12])
-    .onBegin(() => {
-      runOnJS(run)();
-    })
-    .onStart(() => {
-      dragging.value = true;
-      start.value = target.value = position.value;
-    })
-    .onUpdate((event) => {
-      const next = start.value - event.translationX / stride;
-      const edge = clamp(next);
-      // Past the thirtieth day the arc resists rather than stopping dead.
-      target.value = reduced ? start.value : edge + (next - edge) * 0.18;
-      if (reduced) position.value = target.value;
-    })
-    .onEnd((event) => {
-      const from = Math.round(start.value);
-      const thrown = target.value - (event.velocityX / stride) * GLIDE.throwSeconds;
-      const next = clamp(Math.round(Math.max(from - MAX_THROW, Math.min(from + MAX_THROW, thrown))));
-      target.value = next;
-      if (reduced) position.value = next;
-    })
-    .onFinalize(() => {
-      dragging.value = false;
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+
+  // Built once per size. A new gesture object makes Gesture Handler copy its
+  // worklets to the UI thread again, and every landing re-rendered this
+  // component while the coast was still moving.
+  const gesture = useMemo(() => {
+    const open = () => onOpenRef.current();
+    const pan = Gesture.Pan()
+      // Android's touch slop. Any more and the page's native vertical scroll
+      // takes a slightly diagonal swipe first.
+      .activeOffsetX([-8, 8])
+      .failOffsetY([-12, 12])
+      .onBegin(() => {
+        touching.value = true;
+      })
+      .onStart(() => {
+        dragging.value = true;
+        start.value = target.value = position.value;
+      })
+      .onUpdate((event) => {
+        const next = start.value - event.translationX / stride;
+        const edge = clamp(next);
+        // Past the thirtieth day the arc resists rather than stopping dead.
+        target.value = reduced ? start.value : edge + (next - edge) * 0.18;
+        if (reduced) position.value = target.value;
+      })
+      .onEnd((event) => {
+        const from = Math.round(start.value);
+        const thrown = target.value - (event.velocityX / stride) * GLIDE.throwSeconds;
+        const next = clamp(Math.round(Math.max(from - MAX_THROW, Math.min(from + MAX_THROW, thrown))));
+        target.value = next;
+        if (reduced) position.value = next;
+      })
+      .onFinalize(() => {
+        dragging.value = false;
+        touching.value = false;
+      });
+    const tap = Gesture.Tap().maxDistance(10).onEnd((_event, success) => {
+      if (success && Math.abs(position.value - target.value) < 0.05) runOnJS(open)();
     });
-  const tap = Gesture.Tap().maxDistance(10).onEnd((_event, success) => {
-    if (success && Math.abs(position.value - target.value) < 0.05) runOnJS(onOpen)();
-  });
+    return Gesture.Race(pan, tap);
+  }, [stride, reduced]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <GestureDetector gesture={Gesture.Race(pan, tap)}>
+    <GestureDetector gesture={gesture}>
       <View
         style={{ height: size + 48, width }}
         accessible
@@ -137,7 +151,10 @@ export function MoonCarousel({ items, offset, size, width, onChange, onOpen, moo
         }}
       >
         <View ref={moonRef} collapsable={false} pointerEvents="none" style={{ position: "absolute", left: (width - size) / 2, top: 16, width: size, height: size }} />
-        {items.map((item) => <OrbitMoon key={item.date} item={item} position={position} size={size} width={width} reduced={reduced} />)}
+        {/* Keyed by slot, not by date: at a handover the moon leaving one edge
+            becomes the moon entering the other (both sit at opacity 0), so no
+            Skia canvas is torn down and rebuilt on the UI thread mid-coast. */}
+        {items.map((item) => <OrbitMoon key={mod5(item.offset)} item={item} position={position} size={size} width={width} reduced={reduced} />)}
       </View>
     </GestureDetector>
   );
@@ -146,8 +163,11 @@ export function MoonCarousel({ items, offset, size, width, onChange, onOpen, moo
 function OrbitMoon({ item, position, size, width, reduced }: {
   item: MoonCarouselItem; position: SharedValue<number>; size: number; width: number; reduced: boolean;
 }) {
+  // Read outside the worklet: capturing `item` restarted all five animations
+  // each time the screen handed down a fresh object for the same moon.
+  const at = item.offset;
   const animated = useAnimatedStyle(() => {
-    const distance = item.offset - position.value;
+    const distance = at - position.value;
     const angle = Math.max(-2, Math.min(2, distance)) * 0.95;
     return {
       opacity: Math.max(0, 1 - Math.abs(distance) * 0.68),
