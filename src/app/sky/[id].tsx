@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  ActivityIndicator,
   Platform,
   useWindowDimensions,
 } from "react-native";
@@ -22,7 +23,7 @@ import {
   type SkShader,
 } from "@shopify/react-native-skia";
 import * as Astronomy from "astronomy-engine";
-import { useReducedMotion, useSharedValue } from "react-native-reanimated";
+import Animated, { FadeIn, ReduceMotion, useReducedMotion, useSharedValue } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { X, Compass, Hand } from "lucide-react-native";
 import { router, useLocalSearchParams, useFocusEffect, useNavigation } from "expo-router";
@@ -90,6 +91,7 @@ import { useSkyAssets } from "@/components/sky/skyAssets";
 import { MOON_IMG, MOON_IMG_DISC, cachedSkyMoonImage, drawSkyMoonImage, skyMoonKey } from "@/components/sky/skyMoonImage";
 import { MoonPhaseGlyph } from "@/components/MoonPhaseGlyph";
 import { TimeScrubber } from "@/components/TimeScrubber";
+import { SkyGuide, type GuideRect, type GuideStep } from "@/components/sky/SkyGuide";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useSkyOrientation } from "@/hooks/useSkyOrientation";
@@ -1523,6 +1525,74 @@ export default function ImmersiveSkyScreen() {
     return () => cancelAnimationFrame(raf);
   }, [sphere, assets, width, height, insetTop, picture, focused, entry, reduced]);
 
+  // THE FIRST-VISIT GUIDE (components/sky/SkyGuide.tsx). Once per install, after
+  // the entrance zoom has landed, and measured from the controls as they are on
+  // this screen, because which buttons show and where the scrubber sits depend
+  // on the night and the phone.
+  const hasSeenSkyGuide = useSettingsStore((s) => s.hasSeenSkyGuide);
+  const setHasSeenSkyGuide = useSettingsStore((s) => s.setHasSeenSkyGuide);
+  const [guide, setGuide] = useState<GuideStep[] | null>(null);
+  const rootRef = useRef<View>(null);
+  const scrubberRef = useRef<View>(null);
+  const modeRef = useRef<View>(null);
+  const closeRef = useRef<View>(null);
+  useEffect(() => {
+    if (hasSeenSkyGuide || !skyReady || !focused || guide) return;
+    const measure = (ref: React.RefObject<View | null>) =>
+      new Promise<GuideRect | null>((resolve) => {
+        if (!ref.current) return resolve(null);
+        ref.current.measureInWindow((x, y, w, h) => resolve(w > 0 ? { x, y, width: w, height: h } : null));
+      });
+    let alive = true;
+    // The entrance zoom runs 720 ms from the first frame.
+    const timer = setTimeout(() => {
+      if (!alive) return;
+      // Each read in the root's own coordinates, at the moment its step begins.
+      const local = (ref: React.RefObject<View | null>) => async () => {
+        const [root, rect] = await Promise.all([measure(rootRef), measure(ref)]);
+        return root && rect && { ...rect, x: rect.x - root.x, y: rect.y - root.y };
+      };
+      const centre = 40;
+      const back = isTonight ? "Now" : "Midnight";
+      setGuide([
+        {
+          key: "sky",
+          text: "Drag to look around and pinch to zoom. Tap a star, a planet or the moon to see its name.",
+          measure: async () => {
+            const root = await measure(rootRef);
+            return root && { x: root.width / 2 - centre, y: root.height / 2 - centre, width: centre * 2, height: centre * 2 };
+          },
+          round: true,
+        },
+        {
+          key: "time",
+          text: "Slide to move through the night. The marks on the line are sunset and sunrise.",
+          measure: local(scrubberRef),
+        },
+        {
+          key: "mode",
+          text:
+            (orientation.mode === "sensor"
+              ? "Use my finger lets you drag the sky instead of pointing the phone."
+              : "Move my phone turns the view as you point the phone at the sky.") +
+            ` Reset zoom, ${back} and Find the moon show up beside it when you need them.`,
+          measure: local(modeRef),
+        },
+        { key: "close", text: "This closes the sky and takes you back.", measure: local(closeRef) },
+      ]);
+    }, 900);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [hasSeenSkyGuide, skyReady, focused, guide]); // eslint-disable-line react-hooks/exhaustive-deps
+  const finishGuide = useCallback(() => {
+    setGuide(null);
+    setHasSeenSkyGuide(true);
+    // The guide said what the drag tip says, so the tip does not follow it.
+    setHasSeenDragHint(true);
+  }, [setHasSeenSkyGuide, setHasSeenDragHint]);
+
   if (!milestone?.location) {
     return (
       <View
@@ -1559,7 +1629,7 @@ export default function ImmersiveSkyScreen() {
   const moonNow = bodies.find((b) => b.kind === "moon");
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} ref={rootRef} collapsable={false}>
       <GestureDetector gesture={gesture}>
         <Canvas style={{ width, height, backgroundColor: Colors.space }}>
           <Picture picture={picture} />
@@ -1569,6 +1639,22 @@ export default function ImmersiveSkyScreen() {
       {entry && !skyReady && moonLight && <View pointerEvents="none" style={{ position: "absolute", left: entry.x - entry.radius, top: entry.y - entry.radius, width: entry.radius * 2, height: entry.radius * 2, alignItems: "center", justifyContent: "center" }}>
         <MoonPhaseGlyph {...moonLight} size={entry.radius * 2} variant="bare" glow="hero" />
       </View>}
+      {/* A cold open decodes the sky's images and builds its star sphere first,
+          and for that second the screen was black with nothing on it. Delayed,
+          so the usual open, which is prewarmed and draws in a frame, never
+          shows it. */}
+      {!skyReady && (
+        <Animated.View
+          entering={FadeIn.delay(250).duration(180).easing(lenis).reduceMotion(ReduceMotion.System)}
+          // Under the entering moon when there is one, never across it.
+          style={[styles.loading, entry && { top: entry.y + entry.radius + Spacing.lg, bottom: undefined, height: 24 }]}
+          pointerEvents="none"
+          accessibilityLiveRegion="polite"
+        >
+          <ActivityIndicator size="small" color={Colors.plateInk} />
+          <Text style={styles.loadingText}>Drawing the sky</Text>
+        </Animated.View>
+      )}
       <View style={[styles.caption, { top: insets.top + Spacing.md }]} pointerEvents="none">
         <Text style={styles.captionLabel}>
           {isTonight ? "The sky tonight" : "The sky that night"}
@@ -1580,6 +1666,7 @@ export default function ImmersiveSkyScreen() {
       </View>
 
       <TouchableOpacity
+        ref={closeRef}
         style={[styles.closeButton, { top: insets.top + Spacing.md }]}
         onPress={closeSky}
         accessibilityRole="button"
@@ -1602,7 +1689,7 @@ export default function ImmersiveSkyScreen() {
         </TouchableOpacity>
       )}
 
-      {showHelp && !hasSeenDragHint && orientation.mode === "drag" && (
+      {showHelp && !hasSeenDragHint && !guide && orientation.mode === "drag" && (
         <View style={styles.help} pointerEvents="none">
           <Text style={styles.helpText}>Drag to look around. Pinch to zoom.</Text>
         </View>
@@ -1617,7 +1704,8 @@ export default function ImmersiveSkyScreen() {
         }}
       >
         {night && (
-          <>
+          // Measured as one target by the guide: the time and the line that sets it.
+          <View ref={scrubberRef} collapsable={false} style={styles.timeBlock}>
             <View style={styles.timeRow}>
               <View style={{ flexShrink: 1 }}>
                 <Text style={styles.timeBig}>
@@ -1650,7 +1738,7 @@ export default function ImmersiveSkyScreen() {
               accessibilityLabel="Time of night"
               accessibilityValue={isTonight ? `${formatLocalTime(at, tonightOffsetMin)}, ${moment}` : moment}
             />
-          </>
+          </View>
         )}
 
         <View style={styles.buttonRow}>
@@ -1682,6 +1770,7 @@ export default function ImmersiveSkyScreen() {
             </TouchableOpacity>
           )}
           <TouchableOpacity
+            ref={modeRef}
             style={styles.modeButton}
             onPress={() => orientation.setMode(orientation.mode === "sensor" ? "drag" : "sensor")}
             accessibilityRole="button"
@@ -1752,6 +1841,8 @@ export default function ImmersiveSkyScreen() {
           </View>
         )}
       </View>
+
+      {guide && <SkyGuide steps={guide} onDone={finishGuide} />}
     </View>
   );
 }
@@ -1800,6 +1891,8 @@ const styles = StyleSheet.create({
     fontSize: FontSize.small,
     color: Colors.plateInk,
   },
+  loading: { ...StyleSheet.absoluteFill, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Spacing.sm },
+  loadingText: { fontFamily: FontFamily.medium, fontSize: FontSize.small, color: Colors.plateInk },
   help: { position: "absolute", left: Spacing.page, right: Spacing.page, bottom: CONTROLS_CLEARANCE, alignItems: "center" },
   helpText: {
     fontFamily: FontFamily.regular,
@@ -1816,6 +1909,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     // A scrim, so the controls read over any sky the scrubber turns up.
   },
+  timeBlock: { gap: Spacing.sm },
   timeRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", gap: Spacing.md },
   timeBig: { fontFamily: FontFamily.monoMedium, fontSize: FontSize.lead, color: Colors.plateInk },
   timeSmall: { fontFamily: FontFamily.regular, fontSize: FontSize.small, color: Colors.plateMuted },

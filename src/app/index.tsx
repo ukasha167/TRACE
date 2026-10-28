@@ -60,7 +60,7 @@ const STARTS = [
 export default function HomeScreen() {
   const milestones = useMilestonesStore((s) => s.milestones);
   const hydrated = useMilestonesHydrated();
-  const { location, isDefault, permission, request: requestLocation } = useCurrentLocation();
+  const { location, isDefault, permission, locating, request: requestLocation } = useCurrentLocation();
   const insets = useSafeAreaInsets();
   const isEmpty = milestones.length === 0;
   const [offsetDays, setOffsetDays] = useState(0);
@@ -166,6 +166,7 @@ export default function HomeScreen() {
             location={location}
             placeIsDefault={isDefault}
             locationDenied={permission === "denied"}
+            locating={locating}
             onRequestLocation={requestLocation}
             topInset={insets.top}
           />

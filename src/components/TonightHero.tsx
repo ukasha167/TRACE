@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   Linking,
+  ActivityIndicator,
   useWindowDimensions,
 } from "react-native";
 import Animated, {
@@ -49,6 +50,8 @@ interface TonightHeroProps {
   placeIsDefault: boolean;
   /** The person said no to location, so asking again would do nothing. */
   locationDenied: boolean;
+  /** The phone is reading its place. */
+  locating: boolean;
   /** Opens the permission dialog. Only ever called from a tap. */
   onRequestLocation: () => void;
   /** Safe-area top inset. The plate runs under the status bar. */
@@ -63,6 +66,7 @@ export function TonightHero({
   location,
   placeIsDefault,
   locationDenied,
+  locating,
   onRequestLocation,
   topInset,
 }: TonightHeroProps) {
@@ -159,7 +163,14 @@ export function TonightHero({
               {formatIllumination(tonightMoon.phase.phaseFraction)} lit
             </Text>
             <Text style={styles.caption}>Over {location.label}</Text>
-            {placeIsDefault && (
+            {placeIsDefault && locating ? (
+              // A fix can take seconds, and the tap that asked for it used to
+              // change nothing on screen until the place name did.
+              <View style={styles.locating} accessibilityLiveRegion="polite">
+                <ActivityIndicator size="small" color={Colors.signalOnPlate} />
+                <Text style={[styles.caption, styles.locatingText]}>Finding where you are</Text>
+              </View>
+            ) : placeIsDefault && (
               // A denied permission needs Settings; another request cannot open it.
               <Pressable
                 onPress={locationDenied ? () => Linking.openSettings() : onRequestLocation}
@@ -280,6 +291,14 @@ const styles = StyleSheet.create({
     color: Colors.signalOnPlate,
     textDecorationLine: "underline",
   },
+  locating: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  locatingText: { marginTop: 0, paddingHorizontal: 0, color: Colors.signalOnPlate },
 
   stepPressed: { opacity: 0.6 },
   dialLabel: {
