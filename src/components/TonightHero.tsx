@@ -44,7 +44,9 @@ interface TonightHeroProps {
   /** Opens the form with the shown date filled in. */
   onSaveDate: (date: string) => void;
   milestones: Milestone[];
-  location: MilestoneLocation | null;
+  location: MilestoneLocation;
+  /** `location` is the default place, so offer the phone's own. */
+  placeIsDefault: boolean;
   /** The person said no to location, so asking again would do nothing. */
   locationDenied: boolean;
   /** Opens the permission dialog. Only ever called from a tap. */
@@ -59,6 +61,7 @@ export function TonightHero({
   onSaveDate,
   milestones,
   location,
+  placeIsDefault,
   locationDenied,
   onRequestLocation,
   topInset,
@@ -155,9 +158,8 @@ export function TonightHero({
             <Text style={styles.figure}>
               {formatIllumination(tonightMoon.phase.phaseFraction)} lit
             </Text>
-            {location ? (
-              <Text style={styles.caption}>Over {location.label}</Text>
-            ) : (
+            <Text style={styles.caption}>Over {location.label}</Text>
+            {placeIsDefault && (
               // A denied permission needs Settings; another request cannot open it.
               <Pressable
                 onPress={locationDenied ? () => Linking.openSettings() : onRequestLocation}
