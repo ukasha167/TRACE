@@ -41,6 +41,9 @@ import { nightFactsFor, headlineSentences, shortPlace } from "@/lib/astronomy/ni
 import { daysBetween } from "@/lib/astronomy/anniversary";
 import { ExportCardCanvas, CARD_SIZES, type CardFormat } from "@/components/ExportCardCanvas";
 import { NightCardCanvas } from "@/components/NightCardCanvas";
+import { useExportCardFonts, useNightCardFonts } from "@/components/cardFonts";
+import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
+import { lenis } from "@/lib/glide";
 
 type CardStyle = "night" | "paper";
 
@@ -55,6 +58,11 @@ export default function ExportScreen() {
   const [style, setStyle] = useState<CardStyle>("night");
   const [dedication, setDedication] = useState("");
   const [exporting, setExporting] = useState(false);
+  // The card draws a bare ground until its fonts are in, and a cold first open
+  // showed that ground with nothing to say the words were on their way.
+  const nightFonts = useNightCardFonts();
+  const paperFonts = useExportCardFonts();
+  const cardReady = style === "night" ? nightFonts !== null : paperFonts !== null;
 
   const { moonPhase, moonReturns, brightLimbAngleDeg, northAngleDeg, fact } = useMemo(() => {
     if (!milestone)
@@ -265,6 +273,20 @@ export default function ExportScreen() {
             />
             )}
             </View>
+            {!cardReady && (
+              // Delayed, so a card whose fonts land in a frame or two does not
+              // flash a notice nobody can read.
+              <Animated.View
+                entering={FadeIn.delay(250).duration(180).easing(lenis).reduceMotion(ReduceMotion.System)}
+                style={styles.cardLoading}
+                pointerEvents="none"
+              >
+                <View style={styles.cardLoadingPill}>
+                  <ActivityIndicator size="small" color={Colors.ink} />
+                  <Text style={styles.cardLoadingText}>Setting the card</Text>
+                </View>
+              </Animated.View>
+            )}
           </View>
         )}
       </View>
@@ -287,14 +309,17 @@ export default function ExportScreen() {
       {/* ---- Export button ---- */}
       <View style={styles.footer}>
         <TouchableOpacity
-          style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
+          style={[styles.exportButton, (exporting || !cardReady) && styles.exportButtonDisabled]}
           onPress={handleExport}
-          disabled={exporting}
+          disabled={exporting || !cardReady}
           accessibilityRole="button"
           accessibilityLabel="Share card"
         >
           {exporting ? (
-            <ActivityIndicator color={Colors.paper} />
+            <View style={styles.busyRow}>
+              <ActivityIndicator color={Colors.paper} />
+              <Text style={styles.exportButtonText}>Making the picture</Text>
+            </View>
           ) : (
             <Text style={styles.exportButtonText}>Share this card</Text>
           )}
@@ -375,6 +400,18 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: Colors.paperDim,
   },
+  cardLoading: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
+  cardLoadingPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.paper,
+  },
+  cardLoadingText: { fontFamily: FontFamily.medium, fontSize: FontSize.small, color: Colors.ink },
+  busyRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
 
   // ---- APOD status ----
 
