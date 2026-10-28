@@ -690,7 +690,8 @@ place and time, and "the same as then" appears only when the two names match.
 Typing in the place field clears the resolved place until "Find place" runs. Save sent whatever was
 resolved, so typing "Lisbon" and tapping Save stored no place at all, which removed the tilt, the
 night facts and the sky view with nothing on screen to say so. Save now finishes the lookup itself,
-and if it finds nothing it asks: change the text, or save without a place.
+and if it finds nothing it asks: change the text, or save without a place. Decision 71 removed the
+second choice.
 
 ### 43. A VoiceOver user could not leave the reveal
 
@@ -1273,6 +1274,77 @@ Tonight's sky prints a clock time from the phone's own clock, which decision 33 
 phone's clock is exact for the phone's place. The default place is not where the phone is, so on it
 the sky prints that place's time from its fixed offset, which is exact because that zone keeps no
 daylight saving. A phone one zone away printed its own hour beside the other city's sky.
+
+### 71. A date needs a place, and the form says so in red
+
+"Save without a place" made a record with no sky, no tilt and no night facts, and a new user took
+the offer without knowing what it cost. A place is now required. Save checks the title and the place
+together, so one tap marks every empty field, and a place it cannot find marks the field red with the
+reason under it instead of an alert. "Find place" is "Search place", and it stays tappable with an
+empty field: a tap there turns the field red. A disabled button said nothing about why. Records saved
+before this keep no place until they are edited, and the edit asks for one.
+
+Requiring a place exposed a search that had never worked on Android without location permission.
+expo-location refuses `geocodeAsync` there unless the app may use location (iOS has no such rule),
+and the form reported the refusal as "Couldn't find that place" for Lahore. Looking up a typed name
+never reads the phone's position, and Android's `Geocoder` does not ask for the permission; the check
+is expo-location's own. `patches/expo-location+57.0.11.patch` removes it from `geocode` (applied by
+`patch-package` on `postinstall`), so a typed place resolves with location refused. Expo Go cannot
+load a native patch, so there the refusal still comes back, and only then does the form ask, from
+the tap that started the search. The form names the real failure: no permission (with a way to
+Settings), no answer from the geocoder, or no match. Upgrading expo-location means re-making the
+patch; `patch-package` fails the install loudly when it no longer applies.
+
+The first patched build still failed, because Expo ships expo-location as a prebuilt `.aar` and
+gradle never compiled the patched source. `expo.autolinking.android.buildFromSource` in
+package.json lists it, and `./gradlew projects` no longer marks it with the prebuilt package sign.
+The fallback also never fired in that build: expo forms an error's code from its exception's class
+name, and R8 renames classes in a release build, so the form matches the message as well.
+
+"Use my location" was never patched and still asks for permission. It failed for another reason:
+with "Approximate" location Android rations fixes ("location delivery blocked - too close"), and
+the store waited on `getCurrentPositionAsync` with no timeout. `findPosition` in
+`store/useLocationStore.ts` takes the last known position when it is under 15 minutes old, gives a
+fresh fix 15 seconds, and falls back to the last known position of any age.
+
+### 72. The day and month wheels are rings
+
+On the Android wheel, past the 31st comes the 1st and past December comes January, as on
+`UIDatePicker`. A ScrollView cannot wrap, and faking it means repeating the values hundreds of times
+and re-centring near an end. Each column is a pan and a frame loop instead, the carousel's (decision
+62's glide): a finger moves a target, a release throws it along the flick, and the position glides to
+it. Each row places itself by its distance from the centre the short way round a ring of its
+column's length, so the day column holds 31 rows and the month 12. When the month shortens the day
+from the 31st to the 30th, the day wheel goes the short way round. The year column is the same wheel
+with ends that resist. The form's scroll is Gesture Handler's, and the wheel blocks it, because both
+move vertically and the page took swipes that started on the wheel.
+
+### 73. Anything that waits says what it is waiting for
+
+A new user met four waits with nothing on screen: tapping "Use my location" on Home changed nothing
+until a place arrived, a cold sky view opened black, the share card sat blank while its fonts loaded
+(and Share answered with an alert), and the form's buttons swapped their word for a spinner in a
+grey pill. Each now shows a spinner with the thing it waits on, in words: "Finding where you are",
+"Drawing the sky", "Setting the card", "Searching". The sky and the card hold their notice back 250
+ms, so a prewarmed open, which draws in a frame, never flashes it.
+
+### 74. The sky view explains itself once, by pointing
+
+The sky view's controls are the scrubber, the finger-or-phone switch, the close button and the
+buttons that appear only when they help, and the only tip it had was a line about dragging. On the
+first open, after the entrance zoom, `components/sky/SkyGuide.tsx` takes the reader through them one
+at a time: a sentence, and an arrow that grows from it to the control, then a ring that closes on
+the control as the arrow lands. A tap moves on; Skip ends it; Settings can play it again.
+
+Each arrow is a different hand-drawn kind (a loop, a dashed arc, a squiggle, an S), so four steps
+do not read as one arrow repeated. The arrow grows in an ease-in-out, the one timed motion that is
+not lenis (decision 62), because it was asked for by name and a line travelling to a point should
+leave and arrive gently. The head is set from the curve's tangent at its tip, whatever the kind.
+
+Each target is measured when its step begins, never all at the start. "Find the moon" was on screen
+when the guide opened and gone two steps later, and a rect taken at the start ringed empty sky
+beside the button it had pushed over. The scrim is `Colors.guideScrim`, 22% black: the guide points
+at the controls, and a heavy scrim hides what it points at.
 
 ## Decisions
 

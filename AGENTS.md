@@ -116,8 +116,12 @@ the air rather than to the star. Decision 26.
 **The date wheel on Android is ours.** iOS keeps `UIDatePicker`; Android would otherwise get the
 Material calendar dialog, which is a modal on a screen that is one continuous scroll.
 `components/WheelDatePicker.tsx` is written rather than installed because every wheel picker that
-looks right is a native module and this app runs in Expo Go. It does not tick the haptic motor:
-haptics belong to save, the reveal landing, the bell and the details fold. Decision 62.
+looks right is a native module and this app runs in Expo Go. Its day and month columns are rings,
+not long lists: a pan and the carousel's glide, with each row placed around a ring of its column's
+length. It does not tick the haptic motor: haptics belong to save, the reveal landing, the bell and
+the details fold. Decisions 62 and 72.
+
+**A date needs a place.** The form will not save without one, and marks the field red. Decision 71.
 
 **The sky view draws everything at its true size.** The sun, moon and planets subtend their real
 angle through the frame's focal length; nothing is enlarged so it can be seen, which is why the zoom
