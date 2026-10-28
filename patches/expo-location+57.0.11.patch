@@ -1,0 +1,16 @@
+diff --git a/node_modules/expo-location/android/src/main/java/expo/modules/location/LocationModule.kt b/node_modules/expo-location/android/src/main/java/expo/modules/location/LocationModule.kt
+index 77cd877..914662d 100644
+--- a/node_modules/expo-location/android/src/main/java/expo/modules/location/LocationModule.kt
++++ b/node_modules/expo-location/android/src/main/java/expo/modules/location/LocationModule.kt
+@@ -771,9 +771,8 @@ class LocationModule : Module(), SensorEventListener, ActivityEventListener {
+       throw GeocodeException("Geocoder is not running")
+     }
+ 
+-    if (isMissingForegroundPermissions()) {
+-      throw LocationUnauthorizedException()
+-    }
++    // TRACE: no permission check. Looking up a typed name never reads the
++    // device's position, and android.location.Geocoder does not require it.
+ 
+     if (!Geocoder.isPresent()) {
+       throw NoGeocodeException()

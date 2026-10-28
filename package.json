@@ -45,6 +45,7 @@
     "@types/pngjs": "^6.0.5",
     "@types/react": "~19.2.2",
     "jpeg-js": "^0.4.4",
+    "patch-package": "^8.0.1",
     "pngjs": "^7.0.0",
     "tsx": "^4.23.13",
     "typescript": "~6.0.3"
@@ -54,7 +55,15 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "tsx --tsconfig tsconfig.json --test \"src/**/__tests__/*.test.ts\""
+    "test": "tsx --tsconfig tsconfig.json --test \"src/**/__tests__/*.test.ts\"",
+    "postinstall": "patch-package"
+  },
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": ["expo-location"]
+      }
+    }
   },
   "private": true
 }
