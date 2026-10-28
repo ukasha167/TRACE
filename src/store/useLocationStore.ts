@@ -36,6 +36,31 @@ interface LocationState {
 
 let inFlight: Promise<MilestoneLocation | null> | null = null;
 
+/** A fix this recent stands in for a new one. "Here" is a city, not a street. */
+const RECENT_MS = 15 * 60_000;
+/** How long a fresh fix may take before the last known one is used instead. */
+const FIX_TIMEOUT_MS = 15_000;
+
+/**
+ * The phone's position, or null.
+ *
+ * A FRESH FIX IS NOT GUARANTEED. With "Approximate" location Android rations
+ * fixes ("location delivery blocked - too close" in its log), and on the Pixel
+ * "Use my location" waited on `getCurrentPositionAsync` with nothing to show
+ * for it. So the last known position comes first when it is recent, a fresh
+ * fix is given FIX_TIMEOUT_MS, and a last known position of any age is the
+ * fallback.
+ */
+async function findPosition(): Promise<Location.LocationObject | null> {
+  const recent = await Location.getLastKnownPositionAsync({ maxAge: RECENT_MS }).catch(() => null);
+  if (recent) return recent;
+  const fresh = await Promise.race([
+    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), FIX_TIMEOUT_MS)),
+  ]);
+  return fresh ?? (await Location.getLastKnownPositionAsync().catch(() => null));
+}
+
 export const useLocationStore = create<LocationState>()(
   persist(
     (set, get) => ({
@@ -57,9 +82,8 @@ export const useLocationStore = create<LocationState>()(
             }
             set({ permission: "granted", locating: true });
 
-            const pos = await Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Balanced,
-            });
+            const pos = await findPosition();
+            if (!pos) return get().place;
             const { latitude, longitude } = pos.coords;
 
             // Keep the previous name if the geocoder fails and the phone has not
