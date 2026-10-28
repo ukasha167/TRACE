@@ -1,10 +1,9 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Platform,
   KeyboardAvoidingView,
@@ -12,7 +11,10 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  Linking,
 } from "react-native";
+// Gesture Handler's, so the Android date wheel can hold it still while it turns.
+import { ScrollView } from "react-native-gesture-handler";
 import Animated, { FadeIn, LinearTransition, ReduceMotion } from "react-native-reanimated";
 import { lenis } from "@/lib/glide";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
@@ -61,6 +63,61 @@ function savedLocation(place: MilestoneLocation | null, dateStr: string, fromDev
 
 /** How long the date and place sit still before the prewarm runs. */
 const PREWARM_MS = 500;
+
+type PlaceSearch =
+  | { found: MilestoneLocation }
+  | { failed: "none" | "permission" | "offline" };
+
+/**
+ * A typed place, looked up by the phone's geocoder.
+ *
+ * A TYPED PLACE NEEDS NO PERMISSION. expo-location refused `geocodeAsync` on
+ * Android unless the app could use location, though looking up a name never
+ * reads the GPS and Android's Geocoder does not ask for it; iOS has no such
+ * rule. On a Pixel that had never granted it, every search threw, the form said
+ * "Couldn't find that place" for Lahore, and with a place required nothing
+ * could be saved. patches/expo-location+57.0.11.patch removes that check from
+ * our builds.
+ *
+ * Expo Go cannot carry a native patch, so there the refusal still comes back.
+ * Only then does a search ask, from the tap that started it, and a refusal is
+ * reported as a refusal rather than as a place that does not exist.
+ */
+async function searchPlace(q: string): Promise<PlaceSearch> {
+  try {
+    let hits: Location.LocationGeocodedLocation[];
+    try {
+      hits = await Location.geocodeAsync(q);
+    } catch (e) {
+      // By message as well as code: expo builds the code from the exception's
+      // class name, and R8 renames that class in a release build.
+      const { code, message } = e as { code?: string; message?: string };
+      if (code !== "ERR_LOCATION_UNAUTHORIZED" && !/not authorized/i.test(message ?? "")) throw e;
+      const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
+      // The store answers Home's "Turn on location" line, so it hears this too.
+      useLocationStore.setState({
+        permission: status === "granted" ? "granted" : canAskAgain ? "unknown" : "denied",
+      });
+      if (status !== "granted") return { failed: "permission" };
+      hits = await Location.geocodeAsync(q);
+    }
+    const [hit] = hits;
+    if (!hit) return { failed: "none" };
+    return {
+      found: {
+        latitude: hit.latitude,
+        longitude: hit.longitude,
+        label: q,
+        // Approximated from longitude, see approximateTimezoneOffsetMin. A place
+        // from the phone is corrected to the phone's own offset on save.
+        timezoneOffsetMin: approximateTimezoneOffsetMin(hit.longitude),
+      },
+    };
+  } catch {
+    // Android's geocoder is a network service and throws when offline.
+    return { failed: "offline" };
+  }
+}
 
 export interface MilestoneFormValues {
   title: string;
@@ -118,7 +175,9 @@ export function MilestoneForm({
   // Seeded from the saved label so an edit doesn't look like the location was lost.
   const [placeQuery, setPlaceQuery] = useState(initial?.location?.label ?? prefill?.label ?? "");
   const [busy, setBusy] = useState<null | "gps" | "lookup" | "save">(null);
-  const [lookupFailed, setLookupFailed] = useState(false);
+  const [lookupFailed, setLookupFailed] = useState<null | "none" | "permission" | "offline">(null);
+  const [placeError, setPlaceError] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
   // The place came from the phone, so the phone's own zone rules are the real
   // offset there; a typed place only has its longitude to go on.
   const [placeFromDevice, setPlaceFromDevice] = useState(
@@ -149,7 +208,7 @@ export function MilestoneForm({
       timezoneOffsetMin: approximateTimezoneOffsetMin(longitude),
     });
     setPlaceFromDevice(fromDevice);
-    setLookupFailed(false);
+    setLookupFailed(null);
   };
 
   // The same lookup Home and tonight's sky use, so a place found here is also
@@ -163,12 +222,13 @@ export function MilestoneForm({
           useLocationStore.getState().permission === "denied"
             ? "Location permission denied"
             : "Could not read location",
-          "You can type a place instead, or save without one. Everything except the sky view still works."
+          "Type the place instead, a city and country is enough."
         );
         return;
       }
       commitLocation(here.latitude, here.longitude, here.label, true);
       setPlaceQuery(here.label);
+      setPlaceError(false);
     } finally {
       setBusy(null);
     }
@@ -185,21 +245,25 @@ export function MilestoneForm({
    */
   const handleLookupPlace = useCallback(async () => {
     const q = placeQuery.trim();
-    if (!q) return;
+    // The button stays live with an empty field so that a tap on it points at
+    // the field. A disabled button there said nothing about why.
+    if (!q) {
+      setPlaceError(true);
+      return;
+    }
     setBusy("lookup");
-    setLookupFailed(false);
+    setLookupFailed(null);
     try {
-      const results = await Location.geocodeAsync(q);
-      if (!results.length) {
-        setLookupFailed(true);
+      const result = await searchPlace(q);
+      if ("failed" in result) {
+        setLookupFailed(result.failed);
+        setPlaceError(true);
         setLocation(null);
         return;
       }
-      const { latitude, longitude } = results[0];
+      const { latitude, longitude } = result.found;
       commitLocation(latitude, longitude, q);
-    } catch {
-      setLookupFailed(true);
-      setLocation(null);
+      setPlaceError(false);
     } finally {
       setBusy(null);
     }
@@ -207,11 +271,14 @@ export function MilestoneForm({
 
   /**
    * A TYPED PLACE IS NEVER DROPPED. Typing clears the resolved place until
-   * "Find place" runs, and Save used to send whatever was resolved: type
+   * "Search place" runs, and Save used to send whatever was resolved: type
    * "Lisbon", tap Save, and the record went in with no place at all, so no
    * tilt, no night facts and no sky, with nothing on screen to say so. Save
-   * now finishes the lookup itself, and if it fails it asks rather than
-   * guessing in either direction.
+   * now finishes the lookup itself.
+   *
+   * A PLACE IS REQUIRED. "Save without a place" made a record with no sky, no
+   * tilt and no night facts, and a new user took that offer without knowing
+   * what it cost. Save now stops at the field and marks it red instead.
    */
   // The night's facts, computed while the title is being typed. Their eclipse
   // search was most of the pause between Save and the reveal; with this the
@@ -233,11 +300,14 @@ export function MilestoneForm({
   }, [date, location, placeFromDevice]);
 
   const handleSave = useCallback(async () => {
-    if (!title.trim()) {
-      setTitleError(true);
-      return;
-    }
-    const submit = (place: MilestoneLocation | null) => {
+    const q = placeQuery.trim();
+    // Both checked before returning, so one tap marks every empty field.
+    const noTitle = !title.trim();
+    const noPlace = !location && !q;
+    if (noTitle) setTitleError(true);
+    if (noPlace) setPlaceError(true);
+    if (noTitle || noPlace) return;
+    const submit = (place: MilestoneLocation) => {
       const dateStr = toDateString(date);
       onSubmit({
         title: title.trim(),
@@ -248,43 +318,25 @@ export function MilestoneForm({
       });
     };
 
-    const q = placeQuery.trim();
-    if (location || !q) {
+    if (location) {
       submit(location);
       return;
     }
 
     setBusy("save");
-    let found: MilestoneLocation | null = null;
+    let result: PlaceSearch;
     try {
-      const [hit] = await Location.geocodeAsync(q);
-      if (hit) {
-        found = {
-          latitude: hit.latitude,
-          longitude: hit.longitude,
-          label: q,
-          timezoneOffsetMin: approximateTimezoneOffsetMin(hit.longitude),
-        };
-      }
-    } catch {
-      // Offline, or the geocoder refused. Handled below as not found.
+      result = await searchPlace(q);
     } finally {
       setBusy(null);
     }
-    if (found) {
-      setLocation(found);
-      submit(found);
+    if ("found" in result) {
+      setLocation(result.found);
+      submit(result.found);
       return;
     }
-    setLookupFailed(true);
-    Alert.alert(
-      `Couldn't find "${q}"`,
-      "Save without a place, or change what you typed. Without one, this date has no sky to stand under.",
-      [
-        { text: "Change it", style: "cancel" },
-        { text: "Save without a place", onPress: () => submit(null) },
-      ]
-    );
+    setLookupFailed(result.failed);
+    setPlaceError(true);
   }, [title, type, date, notes, location, placeQuery, placeFromDevice, onSubmit]);
 
   return (
@@ -293,6 +345,7 @@ export function MilestoneForm({
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -350,6 +403,7 @@ export function MilestoneForm({
               onChange={(next) => setDate(toLocalNoon(toDateString(next)))}
               minimumYear={1900}
               maximumYear={2100}
+              scrollRef={scrollRef}
             />
           )}
           <Pressable accessibilityRole="button" onPress={() => setDateExpanded(false)} style={styles.pickerDone}>
@@ -364,17 +418,18 @@ export function MilestoneForm({
         <Text style={styles.help}>
           {prefill && location === prefill
             ? "Where you are now. Change it if it happened somewhere else."
-            : "Add a place to see that night's sky."}
+            : "The sky, the moon's tilt and the night's facts are worked out for this place."}
         </Text>
 
         <TextInput
-          style={styles.input}
+          style={[styles.input, placeError && styles.inputError]}
           value={placeQuery}
           onChangeText={(t) => {
             setPlaceQuery(t);
             setLocation(null);
             setPlaceFromDevice(false);
-            setLookupFailed(false);
+            setLookupFailed(null);
+            if (placeError && t.trim()) setPlaceError(false);
           }}
           onSubmitEditing={handleLookupPlace}
           placeholder="Where did it happen?"
@@ -388,13 +443,19 @@ export function MilestoneForm({
           <TouchableOpacity
             style={styles.outlineButton}
             onPress={handleLookupPlace}
-            disabled={busy !== null || !placeQuery.trim()}
+            disabled={busy !== null}
             accessibilityRole="button"
+            accessibilityState={{ busy: busy === "lookup" }}
           >
+            {/* A spinner alone in a grey pill read as a button that had gone
+                blank. The word says what is being waited on. */}
             {busy === "lookup" ? (
-              <ActivityIndicator size="small" color={Colors.ink} />
+              <View style={styles.busyRow}>
+                <ActivityIndicator size="small" color={Colors.ink} />
+                <Text style={styles.outlineButtonText}>Searching</Text>
+              </View>
             ) : (
-              <Text style={styles.outlineButtonText}>Find place</Text>
+              <Text style={styles.outlineButtonText}>Search place</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity
@@ -402,9 +463,13 @@ export function MilestoneForm({
             onPress={handleUseGPS}
             disabled={busy !== null}
             accessibilityRole="button"
+            accessibilityState={{ busy: busy === "gps" }}
           >
             {busy === "gps" ? (
-              <ActivityIndicator size="small" color={Colors.ink} />
+              <View style={styles.busyRow}>
+                <ActivityIndicator size="small" color={Colors.ink} />
+                <Text style={styles.outlineButtonText}>Finding you</Text>
+              </View>
             ) : (
               <Text style={styles.outlineButtonText}>Use my location</Text>
             )}
@@ -415,12 +480,27 @@ export function MilestoneForm({
         {location && location !== prefill && (
           <Text style={[styles.resolvedLabel, styles.found]}>Place found</Text>
         )}
-        {lookupFailed && (
+        {lookupFailed === "permission" ? (
+          <View>
+            <Text style={styles.error}>
+              Android only searches for a typed place when TRACE may use location.
+              Allow it, then search again.
+            </Text>
+            <Pressable onPress={() => Linking.openSettings()} accessibilityRole="button" hitSlop={8}>
+              <Text style={[styles.error, styles.errorAction]}>Open Settings</Text>
+            </Pressable>
+          </View>
+        ) : lookupFailed === "offline" ? (
           <Text style={styles.error}>
-            Couldn&apos;t find that place. Try a city and country, or save without
-            a location.
+            The place search did not answer. Check the connection and search again.
           </Text>
-        )}
+        ) : lookupFailed === "none" ? (
+          <Text style={styles.error}>
+            Couldn&apos;t find that place. Try a city and country.
+          </Text>
+        ) : placeError ? (
+          <Text style={styles.error}>A place is required. Type one, or use your location.</Text>
+        ) : null}
         <Pressable onPress={() => setNotesExpanded((open) => !open)} accessibilityRole="button"
           accessibilityState={{ expanded: notesExpanded }} style={styles.pickerDone}>
           <Text style={styles.outlineButtonText}>{notesExpanded ? "Hide note" : "Add a note"}</Text>
@@ -456,9 +536,13 @@ export function MilestoneForm({
           onPress={handleSave}
           disabled={busy !== null}
           accessibilityRole="button"
+          accessibilityState={{ busy: busy === "save" }}
         >
           {busy === "save" ? (
-            <ActivityIndicator size="small" color={Colors.paper} />
+            <View style={styles.busyRow}>
+              <ActivityIndicator size="small" color={Colors.paper} />
+              <Text style={styles.saveText}>Finding the place</Text>
+            </View>
           ) : (
             <Text style={styles.saveText}>{submitLabel}</Text>
           )}
@@ -499,6 +583,7 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   error: { ...Type.small, color: Colors.danger, marginTop: Spacing.sm },
+  errorAction: { fontFamily: FontFamily.medium, textDecorationLine: "underline" },
 
   dateSummary: { flexDirection: "row", alignItems: "center", gap: Spacing.md, minHeight: 54, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.rule },
   dateValue: { ...Type.heading, flex: 1 },
@@ -506,6 +591,7 @@ const styles = StyleSheet.create({
   pickerWrap: { marginTop: Spacing.xs },
 
   locationActions: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md },
+  busyRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   outlineButton: {
     flex: 1,
     alignItems: "center",
