@@ -38,7 +38,7 @@ Read DECISIONS.md before changing anything in `lib/astronomy/`, `hooks/useSkyOri
 
 ```bash
 npx expo start          # then i for iOS simulator, a for Android
-npm test                # 262 tests, tsx + node:test. NOT jest.
+npm test                # 253 tests, tsx + node:test. NOT jest.
 npx tsc --noEmit
 ```
 
@@ -126,8 +126,16 @@ not change with magnification. Read DECISIONS 55 to 58 and 64 before changing `c
 
 **Sensors on Android need `HIGH_SAMPLING_RATE_SENSORS`.** Expo Go has it; a standalone build
 without it samples every sensor at 5 Hz whatever `setUpdateInterval` asks for, and the sky moves in
-steps. It is in `app.json` and in `android/app/src/main/AndroidManifest.xml`. Gyro `dt` comes from
-the reading's own `timestamp`, never from arrival time. Decision 60.
+steps. It is in `app.json` and in `android/app/src/main/AndroidManifest.xml`. Decision 60.
+
+**Point mode is Stellarium's.** The view reads the operating system's fused attitude
+(`DeviceMotion`) once a frame and moves part of the way to it, by Stellarium Mobile's coefficient
+for the field of view: heavier zoomed in, because the same tremor covers more of the screen there.
+iOS sends CoreMotion's yaw, a quarter turn from W3C alpha; Android sends alpha. Decision 66.
+
+**The status bar has one writer.** Never mount a `<StatusBar>`: React Native re-applies the merged
+props of every mounted one a tick after any of them changes, and that put Home's clock black on black.
+Screens set their glyphs on focus through `hooks/statusBar.ts`. Decision 68.
 
 **Colour.** Only `theme.ts` holds hex. `SkyColors` is separate from `Colors` on purpose: it answers
 to physics, so changing the app's accent must not change a constellation line.
@@ -146,6 +154,6 @@ come back. Do not narrate what the next line does.
 Phases A through H are built, tested, and verified on an iPhone simulator and a Pixel 7 Pro. The
 improvement stages after them (the reveal, reminders, night facts, star map, sky scrubber, life in
 moons, the night card, backup) are verified on the iPhone simulator only. `npm test`
-is green at 262 tests and `npx tsc --noEmit` is clean.
+is green at 253 tests and `npx tsc --noEmit` is clean.
 
 Open work is listed at the end of PRD.md.
