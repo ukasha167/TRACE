@@ -4,8 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Linking,
-  StatusBar,
+  Platform,
   useWindowDimensions,
 } from "react-native";
 import {
@@ -26,7 +25,7 @@ import * as Astronomy from "astronomy-engine";
 import { useReducedMotion, useSharedValue } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { X, Compass, Hand } from "lucide-react-native";
-import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
+import { router, useLocalSearchParams, useFocusEffect, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Colors,
@@ -44,6 +43,7 @@ import {
   projectSphere,
   projectVector,
   projectInto,
+  pointAlong,
   anchorTransform,
   CONSTELLATION_ART_TILE,
   type CameraBasis,
@@ -105,7 +105,7 @@ import type { Milestone, SkyBody } from "@/types";
  * degree Saturn's rings are only four points across.
  */
 const FOV_MIN = 0.1;
-/** The most one frame advances the entrance or exit: a dropped frame waits, it does not jump. */
+/** The most one frame advances the entrance: a dropped frame waits, it does not jump. */
 const ENTRANCE_STEP_MS = 20;
 const FOV_MAX = 100;
 const DEG = Math.PI / 180;
@@ -131,6 +131,20 @@ const FIGURE_FOCUS_CONE = 0.6;
  * 120 Hz screen ran twice as fast.
  */
 const FIGURE_FADE_MS = 270;
+
+/**
+ * A LIT FIGURE DRAWS ITSELF OUT OF ITS STARS, as Stellarium's do
+ * (constellations.c, line_animation_effect). Every segment grows from its first
+ * star toward its second at once, so the figure connects up from each star
+ * rather than appearing whole. Looking away runs it backwards.
+ *
+ * Stellarium drives this with a linear fader per constellation, 0.5 s long,
+ * and grows the lines over its first half through smoothstep, which carries a
+ * line 90% of the way in about 200 ms. The growth here takes the app's own
+ * curve, lenis (DECISIONS 62), over the whole fader: lenis reaches 90% a third
+ * of the way in, about 165 ms.
+ */
+const FIGURE_GROW_MS = 500;
 
 /**
  * FIGURE ARTWORK.
@@ -259,28 +273,45 @@ export default function ImmersiveSkyScreen() {
       ? { x: left + diameter / 2, y: top + diameter / 2, radius: diameter / 2 } : null;
   });
   const [skyReady, setSkyReady] = useState(false);
-  // Milliseconds of entrance and exit played so far. Advanced per frame by at
-  // most ENTRANCE_STEP_MS, so a slow frame delays the zoom instead of skipping
-  // part of it, which is what a wall clock did on a cold first frame.
+  // Milliseconds of entrance played so far. Advanced per frame by at most
+  // ENTRANCE_STEP_MS, so a slow frame delays the zoom instead of skipping part
+  // of it, which is what a wall clock did on a cold first frame.
   const entryMs = useRef<number | null>(null);
-  const exitMs = useRef<number | null>(null);
-  const entryProgress = useRef(0);
-  const exitFrom = useRef(1);
-  const closeSky = () => {
-    if (!entry || reduced || !skyReady) router.back();
-    else if (exitMs.current == null) {
-      exitFrom.current = entryProgress.current;
-      exitMs.current = 0;
-    }
-  };
+  /**
+   * THE WAY OUT IS A CROSS-FADE, not the entrance played backwards. DECISIONS 69.
+   *
+   * Closing used to reverse the entrance: the field narrowed onto the centre of
+   * the view and the moon flew back to where it was tapped, turning back from
+   * its tilt. That only reads as a return when the moon is near the centre,
+   * upright and white. Pointed away, rolled, or tinted by twilight or an
+   * eclipse, the view zoomed into empty sky while a coloured disc slid in from
+   * the edge. The stack pushes this screen with no animation, because the
+   * canvas draws the entrance; once the first frame is up, the pop is switched
+   * to the stack's own fade, so the close button, the back gesture and
+   * Android's back button all fade back to the page the same way.
+   *
+   * Android's "fade" is the wrong fade for this. It fades the page in under
+   * the sky while the sky fades out, both linear over 150 ms, so halfway
+   * through a quarter of the paper behind the stack shows, and a black sky
+   * closing onto Home's black plate flashed grey. "fade_from_bottom" holds the
+   * page opaque and fades only the sky, as iOS's "fade" does; its 8% drop is
+   * accelerate_quint, 1.3% of the screen by the time the sky is half gone. Reduced
+   * motion keeps the plain fade, which has no drop.
+   */
+  const navigation = useNavigation();
+  useEffect(() => {
+    if (!skyReady) return;
+    const animation = Platform.OS === "android" && !reduced ? "fade_from_bottom" : "fade";
+    navigation.setOptions({ animation });
+  }, [skyReady, reduced, navigation]);
+  const closeSky = () => router.back();
   const isTonight = id === "tonight";
   const milestoneFromStore = useMilestone(id);
-  const {
-    location: currentLocation,
-    permission,
-    locating,
-    request: requestLocation,
-  } = useCurrentLocation();
+  const { location: currentLocation, isDefault: placeIsDefault } = useCurrentLocation();
+  // Tonight prints the phone's own clock, which is exact for the phone's own
+  // place. The default place is not where the phone is, so its times print in
+  // its own zone: a phone in another zone printed its own hour beside that sky.
+  const tonightOffsetMin = isTonight && placeIsDefault ? currentLocation.timezoneOffsetMin : undefined;
 
   const milestone = useMemo<Milestone | null>(() => {
     if (!isTonight && !isPreview) return milestoneFromStore ?? null;
@@ -636,6 +667,9 @@ export default function ImmersiveSkyScreen() {
     const figureAlpha = new Float32Array(sphere.figures.length).fill(
       FIGURE_BASE_ALPHA
     );
+    // How far each figure's lines have grown out of their stars: Stellarium's
+    // per-constellation fader, 0 to 1, linear in time.
+    const figureGrow = new Float32Array(sphere.figures.length);
 
     // The alt/az grid and the horizon never change for a given sky, so their
     // vertices are built here once. They used to be rebuilt inside the frame,
@@ -678,6 +712,31 @@ export default function ImmersiveSkyScreen() {
         }
         if (!started) { path.moveTo(scratch.x, scratch.y); started = true; }
         else path.lineTo(scratch.x, scratch.y);
+      }
+    };
+    // A polyline part-grown: each segment is lit from its first star to the
+    // tip, and at the resting alpha from the tip on, so the faint figure is
+    // still whole underneath.
+    const along = { x: 0, y: 0, z: 0 };
+    const tip = { x: 0, y: 0 };
+    const addGrowing = (
+      lit: ReturnType<typeof Skia.PathBuilder.Make>,
+      rest: ReturnType<typeof Skia.PathBuilder.Make>,
+      pts: Float32Array,
+      cam: CameraBasis,
+      k: number
+    ) => {
+      for (let i = 0; i + 5 < pts.length; i += 3) {
+        pointAlong(pts, i / 3, k, along);
+        if (!projectInto(along.x, along.y, along.z, cam, width, height, tip)) continue;
+        if (projectInto(pts[i], pts[i + 1], pts[i + 2], cam, width, height, scratch)) {
+          lit.moveTo(scratch.x, scratch.y);
+          lit.lineTo(tip.x, tip.y);
+        }
+        if (projectInto(pts[i + 3], pts[i + 4], pts[i + 5], cam, width, height, scratch)) {
+          rest.moveTo(tip.x, tip.y);
+          rest.lineTo(scratch.x, scratch.y);
+        }
       }
     };
 
@@ -882,20 +941,9 @@ export default function ImmersiveSkyScreen() {
         entryMs.current ??= 0;
         setSkyReady(true);
       }
-      const leaving = exitMs.current != null;
-      const step = firstFrame ? 0 : Math.min(now - lastTick, ENTRANCE_STEP_MS);
-      if (leaving) exitMs.current! += step;
-      else entryMs.current! += step;
-      const elapsed = leaving ? exitMs.current! / 520 : entryMs.current! / 720;
-      const raw = reduced || !entry ? 1 : Math.min(1, elapsed);
-      const eased = lenis(raw);
-      const progress = leaving ? exitFrom.current * (1 - eased) : eased;
-      entryProgress.current = progress;
-      if (leaving && raw >= 1) {
-        cancelAnimationFrame(raf);
-        router.back();
-        return;
-      }
+      entryMs.current! += firstFrame ? 0 : Math.min(now - lastTick, ENTRANCE_STEP_MS);
+      const raw = reduced || !entry ? 1 : Math.min(1, entryMs.current! / 720);
+      const progress = lenis(raw);
       // The scrubber moves in ten-minute steps; the sky glides between them.
       const dt = reduced ? 1e6 : now - lastTick;
       lastTick = now;
@@ -935,7 +983,7 @@ export default function ImmersiveSkyScreen() {
         Math.abs(axes.up.x - lastAxes[3]) > 1e-6 ||
         Math.abs(axes.up.y - lastAxes[4]) > 1e-6 ||
         Math.abs(axes.up.z - lastAxes[5]) > 1e-6;
-      if (!moved && !fading && !drifting && raw >= 1 && !leaving) return;
+      if (!moved && !fading && !drifting && raw >= 1) return;
       lastFov = f;
       lastVersion = sky.version;
       lastAxes[0] = axes.forward.x;
@@ -1031,10 +1079,25 @@ export default function ImmersiveSkyScreen() {
         else fading = true;
         figureAlpha[ci] = alpha;
 
+        // Stellarium's fader moves at a fixed speed toward 1 while the figure
+        // is looked at and toward 0 after.
+        const growTarget = target === FIGURE_FOCUS_ALPHA ? 1 : 0;
+        const growStep = dt / FIGURE_GROW_MS;
+        const grow = growTarget > figureGrow[ci]
+          ? Math.min(1, figureGrow[ci] + growStep)
+          : Math.max(0, figureGrow[ci] - growStep);
+        if (grow !== growTarget) fading = true;
+        figureGrow[ci] = grow;
+
         const lit = alpha > FIGURE_BASE_ALPHA + 0.002;
-        const path = lit ? Skia.PathBuilder.Make() : restingFigures;
-        for (const pts of con.lines) addPolyline(path, pts, cam);
-        if (!lit) continue;
+        const k = lit ? lenis(grow) : 0;
+        if (k <= 0) {
+          for (const pts of con.lines) addPolyline(restingFigures, pts, cam);
+          if (!lit) continue;
+        }
+        const path = Skia.PathBuilder.Make();
+        if (k >= 1) for (const pts of con.lines) addPolyline(path, pts, cam);
+        else if (k > 0) for (const pts of con.lines) addGrowing(path, restingFigures, pts, cam, k);
 
         litFigures.push({ path: path.detach(), alpha });
         const shown =
@@ -1469,32 +1532,12 @@ export default function ImmersiveSkyScreen() {
           { paddingTop: insets.top + Spacing.xl, paddingBottom: insets.bottom + Spacing.lg },
         ]}
       >
-        <Text style={styles.missingTitle}>
-          {isTonight || isPreview ? "Where are you?" : "Add a place to see this sky"}
-        </Text>
+        {/* Only a saved date can get here: tonight and the carousel's days
+            fall back to the default place. */}
+        <Text style={styles.missingTitle}>Add a place to see this sky</Text>
         <Text style={styles.missing}>
-          {isTonight || isPreview
-            ? permission === "denied"
-              ? "Location is off for TRACE, so there is no way to know which sky is over you. Turn it on in Settings and this view opens."
-              : "The sky overhead depends on where you stand. TRACE uses your location for this view and stores it only on this phone."
-            : "The stars that night depend on where it happened. Add a place to this date and the view opens."}
+          The stars that night depend on where it happened. Add a place to this date and the view opens.
         </Text>
-        {(isTonight || isPreview) && (
-          <TouchableOpacity
-            style={styles.missingButton}
-            onPress={permission === "denied" ? () => Linking.openSettings() : requestLocation}
-            disabled={locating}
-            accessibilityRole="button"
-          >
-            <Text style={styles.missingButtonText}>
-              {locating
-                ? "Finding you"
-                : permission === "denied"
-                ? "Open Settings"
-                : "Use my location"}
-            </Text>
-          </TouchableOpacity>
-        )}
         <TouchableOpacity
           style={styles.missingClose}
           onPress={closeSky}
@@ -1510,14 +1553,13 @@ export default function ImmersiveSkyScreen() {
   const below = orientation.altitudeDeg < -2;
   const at = new Date(timeMs);
   const moment = anchor
-    ? describeNightMoment(at, isTonight ? toLocalNight(todayDateString()) : anchor, night?.sunset ?? null, night?.sunrise ?? null, formatDuration)
+    ? describeNightMoment(at, isTonight ? toLocalNight(todayDateString(), tonightOffsetMin) : anchor, night?.sunset ?? null, night?.sunrise ?? null, formatDuration)
     : "";
   const skyState = sunAlt > -0.8 ? "Daylight" : sunAlt > -18 ? "Twilight" : "Night";
   const moonNow = bodies.find((b) => b.kind === "moon");
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
       <GestureDetector gesture={gesture}>
         <Canvas style={{ width, height, backgroundColor: Colors.space }}>
           <Picture picture={picture} />
@@ -1581,7 +1623,7 @@ export default function ImmersiveSkyScreen() {
                 <Text style={styles.timeBig}>
                   {/* The phone's own clock is exact for here and now. A record's
                       clock time is never printed: its offset is an estimate. */}
-                  {isTonight ? formatLocalTime(at) : moment}
+                  {isTonight ? formatLocalTime(at, tonightOffsetMin) : moment}
                 </Text>
                 {isTonight ? <Text style={styles.timeSmall}>{moment}</Text> : null}
               </View>
@@ -1606,7 +1648,7 @@ export default function ImmersiveSkyScreen() {
               }}
               marks={[night.sunset?.getTime(), night.sunrise?.getTime()].filter((m): m is number => m != null)}
               accessibilityLabel="Time of night"
-              accessibilityValue={isTonight ? `${formatLocalTime(at)}, ${moment}` : moment}
+              accessibilityValue={isTonight ? `${formatLocalTime(at, tonightOffsetMin)}, ${moment}` : moment}
             />
           </>
         )}
@@ -1674,8 +1716,8 @@ export default function ImmersiveSkyScreen() {
         )}
         {orientation.permissionDenied && orientation.mode === "sensor" && (
           <Text style={styles.note}>
-            Location permission is off, so the compass can&apos;t find north.
-            Pointing will tilt correctly but may not face the right way.
+            Location permission is off, so the view is set by magnetic north,
+            not true north.
           </Text>
         )}
 
@@ -1688,20 +1730,12 @@ export default function ImmersiveSkyScreen() {
               {orientation.altitudeDeg.toFixed(0)}
             </Text>
             <Text style={styles.debugText}>
-              accel {orientation.debug.motionEvents} · mag{" "}
-              {orientation.debug.magEvents} · gyro{" "}
-              {orientation.debug.gyroEvents} · compass{" "}
+              motion {orientation.debug.motionEvents} · compass{" "}
               {orientation.debug.headingEvents} · acc{" "}
-              {orientation.debug.accuracy ?? "none"}
+              {orientation.debug.accuracy ?? "none"} · smoothing{" "}
+              {orientation.debug.smoothingMs.toFixed(0)} ms
             </Text>
             <View style={styles.flipRow}>
-              <TouchableOpacity
-                style={[styles.flipButton, orientation.flipGravity && styles.flipOn]}
-                onPress={orientation.toggleFlipGravity}
-                accessibilityRole="button"
-              >
-                <Text style={styles.flipText}>Flip up/down</Text>
-              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.flipButton, orientation.flipHeading && styles.flipOn]}
                 onPress={orientation.toggleFlipHeading}
@@ -1710,10 +1744,6 @@ export default function ImmersiveSkyScreen() {
                 <Text style={styles.flipText}>Flip N/S</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.debugText}>
-              gravity sign {orientation.detectedGravitySign > 0 ? "+" : "−"}
-              {orientation.flipGravity ? " (overridden)" : " (auto)"}
-            </Text>
             <Text style={styles.debugText}>
               declination {orientation.debug.northOffset?.toFixed(1) ?? "none"}° ·
               rot {orientation.debug.angularSpeed.toFixed(0)}°/s · perm{" "}
@@ -1899,19 +1929,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: Colors.plateMuted,
     marginTop: Spacing.md,
-  },
-  missingButton: {
-    alignSelf: "flex-start",
-    marginTop: Spacing.lg,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.plateInk,
-  },
-  missingButtonText: {
-    fontFamily: FontFamily.semibold,
-    fontSize: FontSize.body,
-    color: Colors.space,
   },
   missingClose: {
     alignSelf: "flex-start",
