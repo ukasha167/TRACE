@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  StatusBar,
   AccessibilityInfo,
   ScrollView,
   useWindowDimensions,
@@ -26,6 +25,7 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 import { Colors, Spacing, FontFamily, FontSize, Radius, Tracking } from "@/constants/theme";
+import { useLightBarWhile } from "@/hooks/statusBar";
 import { MoonPhaseGlyph } from "./MoonPhaseGlyph";
 import { StarField } from "./moon/StarField";
 import { useMilestone } from "@/store/useMilestonesStore";
@@ -88,6 +88,8 @@ function Reveal({ content, title, onDone, onShare }: Props) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
+  // Black over every screen, so light glyphs whatever page saved the date.
+  useLightBarWhile(true);
   // A screen reader gets the finished frame, like reduced motion does: lines
   // fading in one by one are invisible to it, and it should not have to wait.
   const [screenReader, setScreenReader] = useState(false);
@@ -150,7 +152,6 @@ function Reveal({ content, title, onDone, onShare }: Props) {
       exiting={FadeOut.duration(450).easing(lenis)}
       accessibilityViewIsModal
     >
-      <StatusBar barStyle="light-content" />
       {/* Not an accessibility element itself. As one big "skip" button it hid
           the four lines and the way out from VoiceOver, and with the overlay
           modal that left a screen-reader user with nowhere to go. */}

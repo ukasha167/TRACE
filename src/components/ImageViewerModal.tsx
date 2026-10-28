@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   useWindowDimensions,
-  StatusBar,
   ActivityIndicator,
 } from "react-native";
 import { Image } from "expo-image";
@@ -27,6 +26,7 @@ import {
   Radius,
 } from "@/constants/theme";
 import { lenis } from "@/lib/glide";
+import { useLightBarWhile } from "@/hooks/statusBar";
 
 /** Every settle in the viewer: Lenis's curve, no spring, so nothing overshoots. */
 const SETTLE = { duration: 400, easing: lenis };
@@ -70,6 +70,7 @@ export function ImageViewerModal({
 }: ImageViewerModalProps) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
+  useLightBarWhile(visible);
 
   const [showChrome, setShowChrome] = useState(true);
 
@@ -210,7 +211,6 @@ export function ImageViewerModal({
       onRequestClose={handleDismiss}
       statusBarTranslucent
     >
-      <StatusBar barStyle="light-content" backgroundColor={Colors.space} />
       <View style={styles.root}>
         <GestureDetector gesture={gesture}>
           <Animated.View style={[styles.canvas, animatedImageStyle]}>

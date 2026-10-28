@@ -16,12 +16,13 @@ import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { useReducedMotion } from "react-native-reanimated";
 import { useEffect, useState } from "react";
-import { StatusBar } from "react-native";
+import { Platform, type StatusBarStyle } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Colors, FontFamily, FontSize } from "@/constants/theme";
 import { preloadMoonTextures } from "@/components/moon/moonTextures";
 import { useReminderSync, useReminderTaps } from "@/hooks/useReminders";
 import { RevealHost } from "@/components/Reveal";
+import { setScreenBarStyle } from "@/hooks/statusBar";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -43,6 +44,23 @@ const HEADER_TITLE = {
   fontSize: FontSize.lead,
   color: Colors.ink,
 } as const;
+
+/** The routes the stack presents as sheets. */
+const SHEETS = new Set(["settings", "milestone/new", "milestone/edit/[id]", "export/[id]"]);
+
+/**
+ * The glyphs each screen wants, set as it gains focus (hooks/statusBar.ts).
+ * Home is left out: it changes them as its black plate scrolls away, so it
+ * sets its own. On iOS a sheet sits on black with the page behind it shrunk
+ * below the bar, so a sheet takes light glyphs there; on Android a sheet is a
+ * full paper screen.
+ */
+function barStyleFor(route: string): StatusBarStyle | null {
+  if (route === "index") return null;
+  if (route === "sky/[id]") return "light-content";
+  if (Platform.OS === "ios" && SHEETS.has(route)) return "light-content";
+  return "dark-content";
+}
 
 export default function RootLayout() {
   const reduced = useReducedMotion();
@@ -83,8 +101,13 @@ export default function RootLayout() {
     // GestureHandlerRootView must wrap the whole app, or any GestureDetector
     // below it throws at render time (the immersive sky view uses one).
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.paper }}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.paper} />
       <Stack
+        screenListeners={({ route }) => ({
+          focus: () => {
+            const style = barStyleFor(route.name);
+            if (style) setScreenBarStyle(style);
+          },
+        })}
         screenOptions={{
           headerStyle: { backgroundColor: Colors.paper },
           headerTintColor: Colors.ink,

@@ -4,8 +4,6 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  StatusBar,
-  Platform,
   type LayoutChangeEvent,
 } from "react-native";
 import { router, useFocusEffect, type Href } from "expo-router";
@@ -28,6 +26,7 @@ import { MilestoneListRow } from "@/components/MilestoneListRow";
 import { TonightHero } from "@/components/TonightHero";
 import { Arrive } from "@/components/Arrive";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
+import { setScreenBarStyle } from "@/hooks/statusBar";
 import { anniversaryDate, countdownLabel } from "@/lib/astronomy/anniversary";
 import { clampMoonDay } from "@/lib/astronomy/moonCarousel";
 import { todayDateString } from "@/lib/astronomy/dateUtils";
@@ -61,7 +60,7 @@ const STARTS = [
 export default function HomeScreen() {
   const milestones = useMilestonesStore((s) => s.milestones);
   const hydrated = useMilestonesHydrated();
-  const { location, permission, request: requestLocation } = useCurrentLocation();
+  const { location, isDefault, permission, request: requestLocation } = useCurrentLocation();
   const insets = useSafeAreaInsets();
   const isEmpty = milestones.length === 0;
   const [offsetDays, setOffsetDays] = useState(0);
@@ -117,12 +116,13 @@ export default function HomeScreen() {
    */
   const overPlate = useRef(true);
 
+  // Whether Home is the focused screen. Momentum can carry the page across
+  // the plate after a screen has been pushed over it, and that screen's glyphs
+  // are its own.
+  const focused = useRef(false);
   const setBarLight = useCallback((light: boolean) => {
     overPlate.current = light;
-    StatusBar.setBarStyle(light ? "light-content" : "dark-content", true);
-    if (Platform.OS === "android") {
-      StatusBar.setBackgroundColor(light ? Colors.space : Colors.paper, true);
-    }
+    if (focused.current) setScreenBarStyle(light ? "light-content" : "dark-content");
   }, []);
 
   useAnimatedReaction(
@@ -135,18 +135,16 @@ export default function HomeScreen() {
     [crossover]
   );
 
-  // Home is the only screen whose top is a dark plate. Setting the bar style on
-  // focus rather than at mount matters: Home stays mounted underneath every
-  // pushed screen, so a plain <StatusBar> here would leave white glyphs sitting
-  // on the paper screens above it.
+  // Home is the only screen whose top is a dark plate, so it sets its own
+  // glyphs on focus. It writes nothing on blur: the screen gaining focus sets
+  // its own, and a blur that landed after that focus is what turned the sky's
+  // clock black (hooks/statusBar.ts).
   useFocusEffect(
     useCallback(() => {
+      focused.current = true;
       setBarLight(overPlate.current);
       return () => {
-        StatusBar.setBarStyle("dark-content", true);
-        if (Platform.OS === "android") {
-          StatusBar.setBackgroundColor(Colors.paper, true);
-        }
+        focused.current = false;
       };
     }, [setBarLight])
   );
@@ -166,6 +164,7 @@ export default function HomeScreen() {
             onSaveDate={(date) => router.push(route(`/milestone/new?date=${date}`))}
             milestones={milestones}
             location={location}
+            placeIsDefault={isDefault}
             locationDenied={permission === "denied"}
             onRequestLocation={requestLocation}
             topInset={insets.top}
