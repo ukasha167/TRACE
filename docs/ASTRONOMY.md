@@ -180,33 +180,30 @@ evidence.
 
 ## Device orientation
 
-Orientation comes from physics, not from platform convention. Gravity gives "down" and the magnetic
-field gives "north"; together they pin a complete world basis with nothing left to assume. This is
-the same construction as Android's `SensorManager.getRotationMatrix`.
+The operating system fuses the gyroscope, accelerometer and magnetometer, and the view reads its
+answer: `DeviceMotion`'s attitude, which is CoreMotion's on iOS and `TYPE_ROTATION_VECTOR` on
+Android. Both arrive as W3C Euler angles in radians, magnetic north:
 
 ```
-A = normalize(gravity)        up, in device coordinates
-H = normalize(magnetic x A)   east, in device coordinates
-M = A x H                     north, in device coordinates
-R = rows [H, M, A]            maps device vectors to world (East, North, Up)
+R = Rz(alpha) . Rx(beta) . Ry(gamma)    maps device vectors to world (East, North, Up)
+right = R . (1, 0, 0)    up = R . (0, 1, 0)    forward = R . (0, 0, -1)
 ```
 
-The camera looks along device -Z, so its world direction is `-(H.z, M.z, A.z)`.
+The camera looks along device -Z. Alpha turns counterclockwise seen from above, the opposite of a
+compass, so true north is `alpha - declination`.
 
-**Sensor fusion, not sensor averaging.** The accelerometer and magnetometer give an orientation that
-is stable over minutes but noisy frame to frame. The gyroscope gives motion that is smooth over a
-second but drifts over minutes. Smoothing the noisy one hard enough to look calm necessarily makes
-it lag, and that trade is unwinnable. A complementary filter escapes it: integrate the gyro for fast
-motion, then blend gently toward the absolute reading (factor about 0.035) to cancel its drift.
+**iOS is a quarter turn out.** expo forwards CoreMotion's yaw, pitch and roll from
+`CMAttitudeReferenceFrameXMagneticNorthZVertical`, whose X axis is magnetic north. CoreMotion's angles
+compose in the W3C order, but yaw 0 is the phone's right edge pointing north, so `alpha = yaw + 90
+degrees`. Android's `-azimuth, -pitch, roll` from `SensorManager.getOrientation` are the W3C angles
+as they stand. Tests rebuild each platform's own matrix and hold the camera to it.
 
-**The accelerometer sign is platform-specific and must be a constant, not a runtime guess.** Android
-reports the reaction to gravity (+1 g on z when face-up); iOS CoreMotion reports the opposite. Expo
-passes both through unchanged. Getting it wrong inverts altitude *and* mirrors azimuth, because east
-comes from `magnetic x gravity`. Manual overrides stay in the debug panel for hardware that
-disagrees.
-
-**Roll comes from gravity alone**, which is stable and drift-free, while the view direction comes
-from the fused estimate.
+**Stellarium's average, not a fixed one.** Each frame the shown camera moves part of the way to the
+reading: `0.05 + (fov - 5) * 0.15 / 125` of it per 60 Hz frame, the field clamped to 5 to 130
+degrees, from Stellarium Mobile's `SensorsMgr.mm`. A tremor of a tenth of a degree covers three times
+as many points at 21 degrees as at 65, so the average is heaviest zoomed in. The average runs on the
+camera's forward and up vectors rather than on angles, so the view passes over the zenith without
+swinging sideways. DECISIONS 66 has the lag it costs.
 
 **Pointing accuracy.** Phone magnetometers run 10 to 15 degrees out, worse indoors or near metal.
 There is deliberately no reticle: drawing a crosshair on top of that error would be a lie the

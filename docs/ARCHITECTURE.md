@@ -10,7 +10,7 @@
 | Storage | `@react-native-async-storage/async-storage` | MMKV would force an EAS dev build on day one for a data volume nowhere near AsyncStorage's limits. |
 | Sun and moon | `suncalc` 2.0.1 | Returns **degrees**. Read ASTRONOMY.md before touching any angle. |
 | Planets, cross-checks | `astronomy-engine` | Also the independent implementation `skyTransform` is validated against. |
-| Sensors | `expo-sensors` | Accelerometer, Magnetometer, Gyroscope. Expo Go compatible. Outside Expo Go, Android needs `HIGH_SAMPLING_RATE_SENSORS` or every sensor runs at 5 Hz (DECISIONS 60). |
+| Sensors | `expo-sensors` | `DeviceMotion`: CoreMotion's attitude on iOS, `TYPE_ROTATION_VECTOR` on Android. Expo Go compatible. Outside Expo Go, Android needs `HIGH_SAMPLING_RATE_SENSORS` or every sensor runs at 5 Hz (DECISIONS 60). |
 | Rendering | `@shopify/react-native-skia` | Sky render, moon glyph, export card. |
 | Location | `expo-location` | Coordinates and magnetic declination. |
 | Dates | `lib/astronomy/dateUtils.ts` | Four helpers own every conversion between a calendar date and an instant. See ASTRONOMY.md. |
@@ -80,7 +80,7 @@ into it.
 | `skySphere` | The precomputed sphere and the allocation-free projection. |
 | `skyBodies` | Planets, moon, sun. |
 | `skyNight` | The night as a span: the scrubber's sidereal camera turn, sunset to sunrise, the Earth's shadow on the moon, where an instant sits in the night. |
-| `attitude` | Device orientation, sensor fusion, camera frames. |
+| `attitude` | Device orientation, camera frames, Stellarium's sensor average. |
 | `anniversary` | When a date next comes round and the moon it brings. `anniversaryDate` is the cheap half Home sorts by. |
 | `nightFacts` | That night in words: rise and set against sunset and sunrise, highest point, constellation, planets up, any lunar eclipse. Never a clock time. |
 | `revealLines` | The four lines the reveal speaks. |
@@ -91,13 +91,14 @@ into it.
 
 | Hook | Job |
 |---|---|
-| `useSkyOrientation` | The sensor stack. Three raw sensors at 60 Hz, complementary filter, roll extraction. The single most bug-prone file in the app. Read DECISIONS.md before touching it. |
+| `useSkyOrientation` | The sensor stack. The OS's fused attitude, read once a frame and eased by Stellarium's zoom-scaled average (DECISIONS 66). The single most bug-prone file in the app. Read DECISIONS.md before touching it. |
 | `useApod` | One date's APOD, cache first. |
 | `useApodBatch` | The ledger's 20 to 40 requests, bounded and progressive. |
-| `useCurrentLocation` | The phone's place, from `store/useLocationStore`: remembered across launches, refreshed quietly once a session, and never the reason a permission dialog opens. `request()` does that, from a tap. |
+| `useCurrentLocation` | The phone's place, from `store/useLocationStore`: remembered across launches, refreshed quietly once a session, and never the reason a permission dialog opens. `request()` does that, from a tap. Until the phone gives a place, `location` is `DEFAULT_PLACE` and `isDefault` is true (DECISIONS 70). |
 | `useReminders` | Keeps pending notifications in step with the records and bells, opens a record from a tapped reminder, and sends the test one. |
 | `useBackup` | Saves the records file through the share sheet and restores one. |
 | `useSkyPrewarm` | At idle, builds what the sky would open on: its images and font, the star sphere (`skyCache.ts`) and the moon image. Home and the record screen call it. |
+| `statusBar` | The only writer of the status bar's glyphs. A screen sets them on focus, an overlay holds them light while it is up, and nothing mounts a `<StatusBar>` (DECISIONS 68). |
 
 ### `lib/apod/`
 
@@ -315,7 +316,8 @@ auditable. Four stars with independently known J2000 positions are asserted in t
 - APOD failure, 429, or non-200: retryable error state. The screen is still complete.
 - APOD video or illustrative: labelled card, never a stretched hero.
 - Offline and uncached: an explicit message, not an infinite spinner.
-- Location denied: saves with `location: null`, sky render unavailable, everything else intact.
+- Location denied: a record saves with `location: null`, its sky render is unavailable, everything
+  else intact. Home and tonight's sky use the default place under its own name (DECISIONS 70).
 - Magnetometer low accuracy: fall back to drag-to-pan and say why.
 - Date before APOD's start (16 June 1995): not requested. It used to be left to the response, and on
   the shared key the "no" answers for a 1970 birthday spent the hourly quota before any real year.

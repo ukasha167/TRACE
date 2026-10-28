@@ -571,7 +571,7 @@ With no location, `/sky/tonight` fell back to London's coordinates under the lab
 Location", and it drew local midnight under the words "Live celestial sphere". Both were claims the
 data did not support, on the home screen's only button. Without a place the view now asks for one;
 with one it draws the moment it opened, and the caption names the phone's own clock time, which for
-here and now is exact.
+here and now is exact. Decision 70 brings back a fallback place, under its own name.
 
 ### 32. Saving a record showed nothing of it
 
@@ -709,8 +709,8 @@ have a picture. Dates before the archive, and dates still ahead, are never reque
 
 Tapping a date's moon opens the sky at the same date, place and illumination sample.
 The route carries the moon's measured screen bounds. The sky renderer moves it from those bounds
-into the projected sky while widening the view. Closing reverses that movement. Both use the
-existing frame loop. Reduced motion skips the movement. A missing place still asks for a place.
+into the projected sky while widening the view, in the existing frame loop. Closing fades
+(decision 69). Reduced motion skips the movement. A saved date without a place still asks for one.
 
 Tonight on Home opens the live sky, `/sky/tonight`. Any other day uses `/sky/preview` with that calendar date. Opening a different date must
 never show tonight under that date's label. The carousel stops at thirty days before and after
@@ -1036,8 +1036,8 @@ stays exact. Records and the carousel's other days open on a deterministic night
 A GPS refresh that lands within 0.01 degrees, with the same label and offset, keeps the old place
 object. A new object for the same spot rebuilt the open sky and re-rendered Home.
 
-The entrance and exit zoom advance at most 20 ms per frame instead of by wall time, so a slow first
-frame delays the zoom rather than skipping part of it.
+The entrance zoom advances at most 20 ms per frame instead of by wall time, so a slow first frame
+delays the zoom rather than skipping part of it.
 
 ### 64. A black sky, a coloured band, a field to stand in, and fewer figures
 
@@ -1125,6 +1125,154 @@ size where there were 480. Taking the camera out of the uniforms (a perspective 
 cube faces, so each shader is made once) or moving the frame loop onto the UI thread (decision 59)
 is the next step if a new profile still misses frames. A resolved planet's disc and the sun's
 (`drawBodies.drawDisc`) still make a gradient each frame they are drawn.
+
+### 66. The sky shook in a resting hand, and Stellarium's filter is the cure
+
+Point mode jittered with the phone held still. Nothing was broken; the filter passed real motion
+through. `useSkyOrientation` integrated the raw gyroscope itself, and a gyroscope measures a hand's
+8 to 12 Hz tremor faithfully, because the tremor is real. The integrated view was pulled toward the
+raw accelerometer and magnetometer over 470 ms, which fed their noise in below the tremor. The last
+stage eased over 7 to 16 ms, and it eased lighter as the view narrowed, so at the eye's 20 degree
+field, where a tenth of a degree is two points, every shake reached the screen. Roll came straight
+off the accelerometer with one average per reading.
+
+Stellarium's answer dates from 2013. The sensor code is in Stellarium Mobile 1.x, Noctua's GPL
+source (`src/core/modules/SensorsMgr.mm` for iOS, `SensorsMgr.cpp` for Qt on Android; mirrored on
+GitHub as ultrapre/Stellarium-mobile), and the Qt version lived on in the web engine as
+`src/modules/sensors.c` until it was removed as unused in September 2018. All three do the same
+three things, and the view now does them:
+
+- **The operating system fuses the sensors.** Stellarium's iOS build reads CoreMotion's attitude
+  rather than the raw sensors. The view reads expo-sensors' `DeviceMotion`, which is CoreMotion's
+  attitude on iOS and `TYPE_ROTATION_VECTOR` on Android: gyroscope, accelerometer and magnetometer
+  fused with bias and calibration models.
+- **The reading is taken once a frame.** The listener keeps the newest attitude; the frame loop reads
+  it, as Stellarium's `update()` reads `manager.deviceMotion`.
+- **Each frame moves part of the way to it, and less when zoomed in.** Stellarium's coefficient is
+  `0.05 + (fov - 5) * 0.15 / 125` a frame, the field of view clamped to 5 to 130 degrees
+  (`attitude.sensorBlendPerFrame`). It is per frame at 60 Hz, so it is applied against elapsed time
+  (decision 59). The first reading is shown as it is, as Stellarium's `firstMeasure` is.
+
+One part is not Stellarium's. Stellarium averages the gravity vector for pitch and roll and the
+azimuth as an angle. An averaged azimuth swings sideways at the zenith, where it is undefined, and
+this view passes through the zenith on purpose. So the same average is taken on the camera's forward
+and up vectors (`attitude.smoothAxes`), which carry the same three angles with no seam.
+
+The cost is lag, and it is Stellarium's: the time constant is 234 ms at the eye's field, 325 ms at
+5 degrees and closer, 93 ms at 100. A 60 degree turn at 90 degrees a second ends with the view
+20 degrees behind, 5 degrees behind a third of a second later, 2 degrees behind at half a second, and
+within a degree after 0.8 s. In return a
+resting tremor reaches the screen at 7% of its size at the eye's field and 5% zoomed in (tests in
+`attitude.test.ts`). The coefficient is one function if a device test says it should be lighter.
+
+**Both platforms' angles were checked against the platforms' own matrices.** expo forwards
+CoreMotion's yaw, pitch and roll unchanged, in `CMAttitudeReferenceFrameXMagneticNorthZVertical`.
+CoreMotion composes them in the W3C order, which is how WebKit's `WebCoreMotionManager.mm` builds its
+matrix, but its X axis is magnetic north, so yaw 0 is the right edge pointing north and W3C alpha is
+yaw plus 90 degrees (`COREMOTION_YAW_TO_ALPHA`). Android's module sends `-azimuth, -pitch, roll` from
+`SensorManager.getOrientation`, which are the W3C angles as they stand. A test rebuilds each
+platform's matrix and holds the camera to it. Neither mapping has been run on a phone yet; the Flip
+N/S switch stays in the debug panel.
+
+What went with the old pipeline: the three raw sensors, the gyro integration and its timestamp
+handling (decision 60's second half), the accelerometer's per-platform sign and its Flip up/down
+switch, since the operating system now owns gravity. On Android, `DeviceMotion.isAvailableAsync`
+wants a gyroscope, an accelerometer and the linear acceleration, rotation vector and gravity
+sensors; a phone missing any of them, in practice one with no gyroscope, can no longer point and gets
+drag only. Location permission now
+only adds the declination; without it the view faces magnetic north.
+
+**The release build's settings were not the cause.** R8 full mode, minification and resource
+shrinking rewrite Java and Kotlin bytecode, not JavaScript. arm64-only is an ABI choice. Hermes uses
+IEEE 754 doubles with or without `-O`. The React Compiler does not compile `useSkyOrientation` at all:
+run over the file, `babel-plugin-react-compiler` 1.0.0 bails out on `++` applied to variables a
+callback captures, so the hook runs as written. `HIGH_SAMPLING_RATE_SENSORS` is still needed:
+`DeviceMotion` registers through the same `SensorSubscription.kt` as the raw sensors (decision 60).
+
+### 67. A lit figure draws itself out of its stars
+
+Stellarium grows constellation lines rather than fading them in (`constellations.c`,
+`line_animation_effect`, in the web engine since 2019). Each constellation has its own fader, linear
+over 0.5 s, and every segment of its figure grows from its first star toward its second at once,
+along the great circle: the two directions are mixed and normalised. Stellarium Mobile's default,
+`show_only_pointed`, lights the constellations at the centre of the screen and grows their lines as
+one arrives there; looking away runs it backwards.
+
+A lit figure here is the one inside the focus cone, so that is where the growth runs. Each figure
+carries a fader of the same length (`FIGURE_GROW_MS`). The resting figure stays whole underneath at
+its faint alpha: a growing segment is split at its tip, lit behind and resting ahead, so the two
+alphas never stack. Stellarium eases the growth with smoothstep over the fader's first half; the
+growth here takes lenis over the whole fader (decision 62), which carries a line 90% of the way in
+about 165 ms where smoothstep takes about 200.
+
+Two of Stellarium's line habits were not taken. It stops each line short of its stars by the star's
+drawn radius and 0.2 degrees, and it decides "pointed" by which IAU boundary holds the screen's
+centre rather than by distance from the figure's centroid.
+
+### 68. Two writers shared the status bar, and Home's clock went black on black
+
+On the Pixel, Home's clock, signal and battery glyphs were black over Home's black plate. Two
+mechanisms set the glyphs. The root layout mounted `<StatusBar barStyle="dark-content">`, the sky,
+the reveal and the picture viewer each mounted a light one, and Home called `StatusBar.setBarStyle`
+directly: light while its plate sits under the bar, dark on focus loss. React Native merges the props
+of every mounted `<StatusBar>` and re-applies the result a tick after any of them mounts or unmounts
+(`StatusBar.js`, `_updatePropsStack`). Closing the sky unmounted its `<StatusBar>`, and the re-apply
+landed after Home's focus had set light glyphs, so the root's dark ones came back. Opening the sky
+raced the same way against Home's blur.
+
+Nothing mounts a `<StatusBar>` now. `hooks/statusBar.ts` is the only writer. Each stack screen states
+its glyphs when it gains focus, through the root stack's `screenListeners`: dark on paper, light on
+the sky, and light for the iOS sheets, whose bar sits over the black gap a page sheet leaves above
+itself. Home still picks its own by scroll position, and writes only while it has focus. Nothing
+writes on blur, because the screen gaining focus writes next. The reveal and the picture viewer cover
+every screen, so they hold a count while they are up and the bar stays light whatever focuses under
+them.
+
+Android ignores the bar's colour while the app is edge-to-edge (`StatusBarModule.kt`), so Home's
+`setBackgroundColor` calls did nothing there and are gone.
+
+### 69. Closing the sky fades instead of flying the moon back
+
+Decision 45's close reversed the entrance: the field narrowed onto the centre of the view and the moon
+flew back to the bounds it was tapped from, turning back from its tilt. That reads as a return only
+when the moon sits near the centre, upright and white. With the view pointed away from the moon,
+rolled, or with the moon tinted by twilight or an eclipse, the close zoomed into empty sky while a
+coloured disc slid in from the edge of the screen. And only the close button ran it. The sky is
+pushed with the stack's animation off, because the canvas draws the entrance, so the iOS back swipe
+and Android's back button cut straight to the page.
+
+The close is now the native stack's fade. Once the first frame is up, the screen sets its own
+`animation` option, and the pop uses it. The button, the swipe and the back button leave the same
+way. The entrance is unchanged.
+
+The option differs by platform because the two `"fade"`s differ. iOS's pop holds the page opaque and
+takes the sky's alpha to 0, ease-in-out (`RNSScreenStackAnimator.mm`). Android's pop runs
+`rns_fade_out` on the sky and `rns_fade_in` on the page at once, both linear over 150 ms, so at the
+midpoint each is half transparent and a quarter of whatever sits behind the stack shows through. A
+screen recording on the Pixel had the middle frame brighter than both the sky and Home: paper leaking
+in, which over a black night sky and Home's black plate is a grey flash. Android uses
+`"fade_from_bottom"` instead. Its pop holds the page with `rns_no_animation_250` and fades the sky over
+its last 150 ms while dropping it 8% on accelerate_quint, which has moved it 1.3% of the screen by
+the time it is half gone. Reduced motion keeps the plain fade on both platforms, since a fade has no
+movement.
+
+### 70. Without a place, "here" is a named default
+
+Decision 31 took out the London fallback because it was labelled "Current Location", a claim about
+the phone that the data did not support. After that, a phone with no place (before anyone allowed
+location, or after a refusal) showed no place on Home and opened tonight's sky on a request for one.
+
+"Here" now falls back to `DEFAULT_PLACE` in `hooks/useCurrentLocation.ts`: a fixed city with its own
+coordinates, its own name and its own UTC offset. Home says "Over" and that city's name, with the
+location action underneath, so the caption names a city and never claims to be where the phone is.
+The sky names it in its header. The fallback lives in the hook and not in the store, so the store
+holds only what the phone reported, and the new-date form, which prefills from the store, never
+starts a date at a place nobody chose. A saved date without a place still asks for one.
+
+Tonight's sky prints a clock time from the phone's own clock, which decision 33 allows because the
+phone's clock is exact for the phone's place. The default place is not where the phone is, so on it
+the sky prints that place's time from its fixed offset, which is exact because that zone keeps no
+daylight saving. A phone one zone away printed its own hour beside the other city's sky.
 
 ## Decisions
 
