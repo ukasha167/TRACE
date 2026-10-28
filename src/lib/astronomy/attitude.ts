@@ -17,7 +17,9 @@
  *   world:  +X east, +Y north, +Z up.
  *
  * R = Rz(alpha) . Rx(beta) . Ry(gamma), intrinsic, per the W3C
- * DeviceOrientation spec that both iOS and Android follow.
+ * DeviceOrientation spec. alpha turns COUNTERCLOCKWISE seen from above, which
+ * is the opposite way to a compass: read with the wrong sign, the view mirrors
+ * about north.
  */
 
 const RAD = 180 / Math.PI;
@@ -73,222 +75,7 @@ export function angleDelta(a: number, b: number): number {
   return d;
 }
 
-/**
- * Angle-aware exponential smoothing. Interpolates the short way around the
- * circle so 359 -> 1 doesn't spin the view the long way.
- *
- * @param factor 0 = never move, 1 = no smoothing at all.
- */
-export function smoothAngle(current: number, target: number, factor: number): number {
-  return normalizeDeg(current + angleDelta(target, current) * factor);
-}
-
-/**
- * Angular speed, in deg/s, above which the north offset must NOT be re-anchored.
- *
- * THE BUG THIS EXISTS TO PREVENT — a real negative feedback loop that made
- * horizontal panning feel dead:
- *
- *   view azimuth = relativeAzimuth + offset
- *   offset       eases toward (compassHeading - relativeAzimuth)
- *
- * Turn the phone and `relativeAzimuth` moves instantly, but the compass is slow
- * and still reads the old heading. The measured offset therefore moves in the
- * OPPOSITE direction to the turn, and at 60 samples a second it cancels most of
- * the real rotation within half a second. The view barely moves horizontally
- * while vertical — which has no such loop — tracks fine.
- *
- * The offset is a property of the environment, not of how you are moving, so it
- * only ever needs re-anchoring while the device is roughly still.
- */
-export const OFFSET_FREEZE_DEG_PER_SEC = 8;
-
-/**
- * SENSOR FUSION, and the reason pointing feels solid rather than swimmy.
- *
- * The gyro-derived attitude is smooth and fast but its azimuth zero is
- * arbitrary. The compass knows true north but is noisy and slow. So we take
- * ONLY a slowly-varying north offset from the compass and let the attitude do
- * all the fast motion.
- *
- * @param angularSpeedDegPerSec how fast the device is turning. Above
- *        OFFSET_FREEZE_DEG_PER_SEC the offset is held, not updated — see above.
- */
-export function updateNorthOffset(
-  currentOffset: number | null,
-  relativeAzimuthDeg: number,
-  compassHeadingDeg: number,
-  angularSpeedDegPerSec = 0,
-  factor = 0.05
-): number {
-  const measured = normalizeDeg(compassHeadingDeg - relativeAzimuthDeg);
-  if (currentOffset === null) return measured; // snap on first fix
-  // Moving: hold. Re-anchoring mid-turn would cancel the turn.
-  if (angularSpeedDegPerSec > OFFSET_FREEZE_DEG_PER_SEC) return currentOffset;
-  return smoothAngle(currentOffset, measured, factor);
-}
-
-// ---------------------------------------------------------------------------
-// ABSOLUTE ORIENTATION FROM RAW SENSORS
-// ---------------------------------------------------------------------------
-
-/**
- * WHY THIS REPLACES THE EULER PATH.
- *
- * lookDirectionFromEuler() is correct for the W3C ZXY convention, in which
- * `alpha` increases COUNTERCLOCKWISE seen from above. Compass azimuth runs
- * CLOCKWISE. Platforms disagree about which one they hand you, and if the sign
- * is inverted the view mirrors about north — anchor facing north, turn east,
- * and the app shows west. Exactly 180 degrees wrong at the extremes.
- *
- * Rather than guess a platform convention, derive the orientation from physics.
- * Gravity gives "down" and the magnetic field gives "north"; together they pin a
- * complete world basis with nothing left to assume. This is the same
- * construction as Android's SensorManager.getRotationMatrix.
- *
- *   A = normalize(gravity)        up, in device coordinates
- *   H = normalize(magnetic x A)   east, in device coordinates
- *   M = A x H                     north, in device coordinates
- *   R = rows [H, M, A]            maps device vectors -> world (East, North, Up)
- *
- * The camera looks along device -Z, so its world direction is -(H.z, M.z, A.z).
- *
- * Returns null when the two vectors are parallel or degenerate — which happens
- * in a strong magnetic anomaly, and is worth reporting rather than rendering a
- * confident wrong answer.
- */
 export interface Vec3 { x: number; y: number; z: number }
-
-export function lookDirectionFromSensors(
-  gravity: Vec3,
-  magnetic: Vec3
-): LookDirection | null {
-  const ga = Math.hypot(gravity.x, gravity.y, gravity.z);
-  const ma = Math.hypot(magnetic.x, magnetic.y, magnetic.z);
-  if (ga < 1e-6 || ma < 1e-6) return null;
-
-  const ax = gravity.x / ga, ay = gravity.y / ga, az = gravity.z / ga;
-
-  // H = magnetic x A  -> east in device coordinates
-  let hx = magnetic.y * az - magnetic.z * ay;
-  let hy = magnetic.z * ax - magnetic.x * az;
-  let hz = magnetic.x * ay - magnetic.y * ax;
-  const hn = Math.hypot(hx, hy, hz);
-  // Parallel vectors: the phone is pointed along the field line, or the
-  // magnetometer is being swamped. No usable heading.
-  if (hn < 1e-6) return null;
-  hx /= hn; hy /= hn; hz /= hn;
-
-  // M = A x H -> north in device coordinates
-  const mz = ax * hy - ay * hx;
-
-  const east = -hz;
-  const north = -mz;
-  const up = -az;
-
-  return {
-    altitudeDeg: Math.asin(Math.max(-1, Math.min(1, up))) * RAD,
-    relativeAzimuthDeg: normalizeDeg(Math.atan2(east, north) * RAD),
-  };
-}
-
-/**
- * Low-pass filter for a sensor vector.
- *
- * Smoothing the raw VECTORS rather than the derived angles is deliberate: angles
- * wrap at 360 and averaging across the seam produces a violent swing, while
- * vector components are continuous everywhere.
- */
-export function smoothVector(current: Vec3 | null, sample: Vec3, factor: number): Vec3 {
-  if (!current) return { ...sample };
-  return {
-    x: current.x + (sample.x - current.x) * factor,
-    y: current.y + (sample.y - current.y) * factor,
-    z: current.z + (sample.z - current.z) * factor,
-  };
-}
-
-/**
- * World "up" expressed in DEVICE coordinates, from the Euler angles.
- *
- * This is the third ROW of R = Rz(alpha).Rx(beta).Ry(gamma), i.e. R^T applied
- * to world up (0,0,1):
- *
- *   up_device = (-cb*sg, sb, cb*cg)
- *
- * Sanity: flat and level (all angles zero) gives (0, 0, 1) — up is straight out
- * of the screen, which is correct for a phone face-up on a table.
- *
- * WHAT IT IS FOR: resolving the accelerometer's sign convention at runtime.
- * Android reports the REACTION to gravity (+9.81 on z when face-up); iOS
- * CoreMotion reports the opposite. Getting it backwards flips altitude AND
- * mirrors azimuth, because east is derived from a cross product with gravity.
- *
- * Only beta and gamma appear here — not alpha — which matters because alpha is
- * the angle whose convention platforms actually disagree about. Tilt is
- * gravity-derived and consistent everywhere, so this is a trustworthy referee.
- */
-export function expectedUpInDeviceFrame(beta: number, gamma: number): Vec3 {
-  const cb = Math.cos(beta);
-  const sb = Math.sin(beta);
-  const cg = Math.cos(gamma);
-  const sg = Math.sin(gamma);
-  return { x: -cb * sg, y: sb, z: cb * cg };
-}
-
-/**
- * +1 if the accelerometer already points "up", -1 if it must be negated.
- * Returns 0 when the reading is too weak or too ambiguous to judge.
- */
-export function gravitySignFromEuler(
-  measured: Vec3,
-  beta: number,
-  gamma: number
-): 1 | -1 | 0 {
-  const m = Math.hypot(measured.x, measured.y, measured.z);
-  if (m < 1e-6) return 0;
-  const up = expectedUpInDeviceFrame(beta, gamma);
-  const dot = (measured.x * up.x + measured.y * up.y + measured.z * up.z) / m;
-  // Near-perpendicular readings carry no information; wait for a better one.
-  if (Math.abs(dot) < 0.5) return 0;
-  return dot > 0 ? 1 : -1;
-}
-
-// ---------------------------------------------------------------------------
-// COMPLEMENTARY FILTER: gyroscope prediction + accel/mag correction
-// ---------------------------------------------------------------------------
-
-/**
- * The device's east/north/up axes, expressed in DEVICE coordinates.
- *
- * Same construction as lookDirectionFromSensors, exposed separately because the
- * gyroscope reports angular velocity in the device frame and it has to be
- * rotated into the world frame before it can be integrated.
- */
-export interface DeviceBasis { H: Vec3; M: Vec3; A: Vec3 }
-
-export function deviceBasisFromSensors(
-  gravity: Vec3,
-  magnetic: Vec3
-): DeviceBasis | null {
-  const ga = Math.hypot(gravity.x, gravity.y, gravity.z);
-  if (ga < 1e-6) return null;
-  const A = { x: gravity.x / ga, y: gravity.y / ga, z: gravity.z / ga };
-
-  let hx = magnetic.y * A.z - magnetic.z * A.y;
-  let hy = magnetic.z * A.x - magnetic.x * A.z;
-  let hz = magnetic.x * A.y - magnetic.y * A.x;
-  const hn = Math.hypot(hx, hy, hz);
-  if (hn < 1e-6) return null;
-  const H = { x: hx / hn, y: hy / hn, z: hz / hn };
-
-  const M = {
-    x: A.y * H.z - A.z * H.y,
-    y: A.z * H.x - A.x * H.z,
-    z: A.x * H.y - A.y * H.x,
-  };
-  return { H, M, A };
-}
 
 /** Unit look vector (east, north, up) for an azimuth/altitude pair. */
 export function lookVector(azimuthDeg: number, altitudeDeg: number): Vec3 {
@@ -308,56 +95,6 @@ export function lookAngles(v: Vec3): LookDirection {
 }
 
 /**
- * Rotates a device-frame angular velocity into the world frame.
- * omega_world = (H.w, M.w, A.w) — the components of w along the device's own
- * east, north and up axes.
- */
-export function angularVelocityToWorld(basis: DeviceBasis, omega: Vec3): Vec3 {
-  const dot = (a: Vec3, b: Vec3) => a.x * b.x + a.y * b.y + a.z * b.z;
-  return {
-    x: dot(basis.H, omega),
-    y: dot(basis.M, omega),
-    z: dot(basis.A, omega),
-  };
-}
-
-/**
- * Integrates the look vector forward by one gyro sample: dL/dt = omega x L.
- *
- * WHY THIS MATTERS. Accelerometer and magnetometer give an absolute orientation
- * that is stable over minutes but noisy frame to frame; the gyroscope gives
- * motion that is beautifully smooth over a second but drifts over minutes.
- * Neither alone is good enough — smoothing the noisy one hard enough to look
- * calm makes it lag, which is the trade the previous version was stuck in.
- *
- * Integrating the gyro supplies the fast motion, and blending gently toward the
- * absolute reading cancels its drift. That is a complementary filter, and it is
- * why a planetarium tracks your hand instead of swimming after it.
- */
-export function integrateGyro(look: Vec3, omegaWorld: Vec3, dt: number): Vec3 {
-  const cx = omegaWorld.y * look.z - omegaWorld.z * look.y;
-  const cy = omegaWorld.z * look.x - omegaWorld.x * look.z;
-  const cz = omegaWorld.x * look.y - omegaWorld.y * look.x;
-  const x = look.x + cx * dt;
-  const y = look.y + cy * dt;
-  const z = look.z + cz * dt;
-  const n = Math.hypot(x, y, z) || 1;
-  return { x: x / n, y: y / n, z: z / n };
-}
-
-/**
- * Blends the integrated estimate toward the absolute one.
- * @param factor small — 0.02 trusts the gyro almost entirely between corrections.
- */
-export function blendToward(current: Vec3, absolute: Vec3, factor: number): Vec3 {
-  const x = current.x + (absolute.x - current.x) * factor;
-  const y = current.y + (absolute.y - current.y) * factor;
-  const z = current.z + (absolute.z - current.z) * factor;
-  const n = Math.hypot(x, y, z) || 1;
-  return { x: x / n, y: y / n, z: z / n };
-}
-
-/**
  * Full camera basis in world coordinates, INCLUDING ROLL.
  *
  * THE BUG THIS FIXES: the previous basis derived `right` from the look azimuth
@@ -365,17 +102,6 @@ export function blendToward(current: Vec3, absolute: Vec3, factor: number): Vec3
  * the screen's x-axis forever. Rotate the phone to landscape and the horizon
  * stays running left-to-right across the screen instead of rotating with the
  * device. It was a planisphere pretending to be a window.
- *
- * The device basis already contains the whole orientation, so all three camera
- * axes come straight out of it. R (rows H, M, A) maps device -> world, so:
- *
- *   right   = R . (1, 0, 0) = (H.x, M.x, A.x)
- *   up      = R . (0, 1, 0) = (H.y, M.y, A.y)
- *   forward = R . (0, 0,-1) = -(H.z, M.z, A.z)
- *
- * Roll then falls out for free: rolling the phone rotates `right` and `up`
- * about `forward`, and the sky rotates with it, as it must if the screen is a
- * window rather than a picture.
  */
 export interface WorldCameraAxes {
   forward: Vec3;
@@ -383,21 +109,65 @@ export interface WorldCameraAxes {
   up: Vec3;
 }
 
-export function cameraAxesFromBasis(basis: DeviceBasis): WorldCameraAxes {
-  const { H, M, A } = basis;
+/**
+ * The camera frame for a device attitude, from the W3C Euler angles in RADIANS.
+ *
+ * R maps device vectors to the world, so the camera's axes are R's columns:
+ *
+ *   right   = R . (1, 0, 0)
+ *   up      = R . (0, 1, 0)
+ *   forward = R . (0, 0,-1)
+ *
+ * Roll falls out for free: rolling the phone rotates `right` and `up` about
+ * `forward`, and the sky rotates with it, as it must if the screen is a window
+ * rather than a picture. `forward` is lookDirectionFromEuler's vector.
+ */
+export function cameraAxesFromEuler(
+  alpha: number,
+  beta: number,
+  gamma: number
+): WorldCameraAxes {
+  const ca = Math.cos(alpha);
+  const sa = Math.sin(alpha);
+  const cb = Math.cos(beta);
+  const sb = Math.sin(beta);
+  const cg = Math.cos(gamma);
+  const sg = Math.sin(gamma);
   return {
-    right: { x: H.x, y: M.x, z: A.x },
-    up: { x: H.y, y: M.y, z: A.y },
-    forward: { x: -H.z, y: -M.z, z: -A.z },
+    right: { x: ca * cg - sa * sb * sg, y: sa * cg + ca * sb * sg, z: -cb * sg },
+    up: { x: -sa * cb, y: ca * cb, z: sb },
+    forward: { x: -(ca * sg + sa * sb * cg), y: -(sa * sg - ca * sb * cg), z: -cb * cg },
   };
 }
+
+/**
+ * WHERE iOS PUTS NORTH: add this to CoreMotion's yaw to get W3C alpha.
+ *
+ * expo-sensors starts CoreMotion in CMAttitudeReferenceFrameXMagneticNorthZVertical
+ * (SensorsUtils.swift) and forwards attitude.yaw, pitch and roll unchanged as
+ * alpha, beta and gamma (DeviceMotionModule.swift). CoreMotion composes them as
+ * Rz(yaw).Rx(pitch).Ry(roll), the W3C order; WebKit builds that matrix from
+ * them in WebCoreMotionManager.mm. But CoreMotion's frame has its X axis on
+ * magnetic north (CMAttitude.h), so yaw 0 is the phone's RIGHT edge pointing
+ * north. In east-north-up, where alpha 0 is the top edge pointing north, that
+ * is a quarter turn.
+ *
+ * Android needs nothing. DeviceMotionModule.kt reads TYPE_ROTATION_VECTOR,
+ * which is east-north-up with magnetic north, through SensorManager.getOrientation
+ * and sends -azimuth, -pitch and roll. Those are the W3C angles exactly:
+ * getOrientation's azimuth is atan2(R[1], R[4]) = -alpha, its pitch
+ * asin(-R[7]) = -beta, its roll atan2(-R[6], R[8]) = gamma.
+ *
+ * Both platforms are magnetic. The compass supplies the declination.
+ */
+export const COREMOTION_YAW_TO_ALPHA = Math.PI / 2;
 
 /**
  * Camera axes for a look direction plus an explicit roll, used by drag mode
  * (which has no device attitude to read) and by the static chart.
  *
  * rollDeg = 0 keeps the horizon level on screen, which is what a dragged view
- * should do; sensor mode passes the device's real roll instead.
+ * should do.
  */
 export function cameraAxesFromAngles(
   azimuthDeg: number,
@@ -426,11 +196,8 @@ export function cameraAxesFromAngles(
 
 /**
  * Signed roll of a camera frame about its own view direction, in degrees.
- *
- * Roll is taken from the DEVICE BASIS rather than fused, because it derives
- * from gravity alone — which is stable and drift-free — while heading is the
- * part that needs the gyro. So the view direction can come from the
- * complementary filter and the roll straight from the accelerometer.
+ * The inverse of cameraAxesFromAngles' roll; the renderer uses it to turn the
+ * compass labels with the horizon.
  */
 export function rollFromAxes(axes: WorldCameraAxes): number {
   const f = axes.forward;
@@ -453,4 +220,91 @@ export function rollFromAxes(axes: WorldCameraAxes): number {
   const sz = axes.up.x * uy - axes.up.y * ux;
   const s = sx * f.x + sy * f.y + sz * f.z;
   return Math.atan2(s, c) * RAD;
+}
+
+// ---------------------------------------------------------------------------
+// STELLARIUM'S SENSOR SMOOTHING
+// ---------------------------------------------------------------------------
+
+/**
+ * How much of the gap to the newest reading one 60 Hz frame closes, at this
+ * field of view. Stellarium Mobile's iOS sensor manager (SensorsMgr.mm,
+ * Guillaume Chéreau, 2015):
+ *
+ *   averagingCoef = 0.05 + (fov - 5) * 0.15 / 125,   fov clamped to [5, 130]
+ *
+ * THE ZOOM IS THE POINT. A hand at rest shakes by a fraction of a degree, and
+ * the same fraction of a degree is three times as many points at 21 degrees as
+ * at 65. So the filter tightens as the view narrows: 0.05 a frame at 5 degrees
+ * and below, 0.2 at 130. The filter this replaces did the opposite, easing
+ * lighter when zoomed in, and the eye's field showed every tremor.
+ *
+ * Stellarium's Qt build (SensorsMgr.cpp), which read the raw accelerometer and
+ * magnetometer rather than a fused attitude, used mix(0.01, 0.1, fov / 130):
+ * about three times heavier at the eye's field, because raw readings carry the
+ * hand's own acceleration. The view here reads the OS's fused attitude, as the
+ * iOS build did.
+ */
+export function sensorBlendPerFrame(fovDeg: number): number {
+  const f = Math.min(130, Math.max(5, fovDeg));
+  return 0.05 + ((f - 5) * 0.15) / 125;
+}
+
+/**
+ * The same blend over `dtMs` of elapsed time. Stellarium's coefficient is per
+ * frame at 60 Hz; applied per frame on a 120 Hz screen it would ease twice as
+ * fast (DECISIONS 59). A dropped frame is capped at 100 ms, as glide() caps it.
+ */
+export function sensorBlend(fovDeg: number, dtMs: number): number {
+  if (!(dtMs > 0)) return 0;
+  return 1 - Math.pow(1 - sensorBlendPerFrame(fovDeg), Math.min(dtMs, 100) / (1000 / 60));
+}
+
+/** The blend as a time constant in ms: the gap shrinks to 37% in one of these. */
+export function sensorTimeConstantMs(fovDeg: number): number {
+  return -(1000 / 60) / Math.log(1 - sensorBlendPerFrame(fovDeg));
+}
+
+/**
+ * One step of the exponential average from the shown frame toward the
+ * newest attitude, `k` of the way.
+ *
+ * Stellarium averages the gravity vector for pitch and roll, and the azimuth
+ * as an angle. Averaging an azimuth spins the view at the zenith, where the
+ * azimuth is undefined and swings through 180 degrees between two readings,
+ * and this view passes through the zenith on purpose. So the same average is
+ * taken on the camera's own forward and up vectors: forward carries azimuth and
+ * altitude, up carries roll, and neither has a seam. Up is made perpendicular
+ * to forward again afterwards, so the frame stays orthonormal.
+ */
+export function smoothAxes(
+  current: WorldCameraAxes,
+  target: WorldCameraAxes,
+  k: number
+): WorldCameraAxes {
+  const cf = current.forward, tf = target.forward;
+  let fx = cf.x + (tf.x - cf.x) * k;
+  let fy = cf.y + (tf.y - cf.y) * k;
+  let fz = cf.z + (tf.z - cf.z) * k;
+  const fn = Math.hypot(fx, fy, fz);
+  // Two opposite directions have no halfway point to ease through.
+  if (fn < 1e-6) return target;
+  fx /= fn; fy /= fn; fz /= fn;
+
+  const cu = current.up, tu = target.up;
+  let ux = cu.x + (tu.x - cu.x) * k;
+  let uy = cu.y + (tu.y - cu.y) * k;
+  let uz = cu.z + (tu.z - cu.z) * k;
+  const d = ux * fx + uy * fy + uz * fz;
+  ux -= fx * d; uy -= fy * d; uz -= fz * d;
+  const un = Math.hypot(ux, uy, uz);
+  if (un < 1e-6) return target;
+  ux /= un; uy /= un; uz /= un;
+
+  return {
+    forward: { x: fx, y: fy, z: fz },
+    up: { x: ux, y: uy, z: uz },
+    // right = forward x up, which is device +X for forward -Z and up +Y.
+    right: { x: fy * uz - fz * uy, y: fz * ux - fx * uz, z: fx * uy - fy * ux },
+  };
 }

@@ -408,6 +408,31 @@ export function projectInto(
   return true;
 }
 
+/**
+ * The direction `k` of the way from vertex `i` of a figure's polyline to vertex
+ * `i + 1`, for a line growing out of its star. Stellarium's
+ * line_animation_effect (constellations.c) mixes the two directions and
+ * normalises the result, so the point stays on the great circle between the
+ * stars. A gnomonic view draws that great circle as a straight line, so the
+ * growing line runs exactly along the finished one.
+ */
+export function pointAlong(
+  pts: Float32Array,
+  i: number,
+  k: number,
+  out: { x: number; y: number; z: number }
+): void {
+  const a = i * 3;
+  const b = a + 3;
+  const x = pts[a] + (pts[b] - pts[a]) * k;
+  const y = pts[a + 1] + (pts[b + 1] - pts[a + 1]) * k;
+  const z = pts[a + 2] + (pts[b + 2] - pts[a + 2]) * k;
+  const n = Math.hypot(x, y, z) || 1;
+  out.x = x / n;
+  out.y = y / n;
+  out.z = z / n;
+}
+
 /** Projects one unit vector. Used for the handful of solar-system bodies. */
 export function projectVector(
   v: [number, number, number],
