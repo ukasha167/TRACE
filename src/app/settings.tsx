@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
+  ActivityIndicator,
   Alert,
   Platform,
   KeyboardAvoidingView,
@@ -53,6 +54,8 @@ import { sendTestReminder } from "@/hooks/useReminders";
 export default function SettingsScreen() {
   const nasaApiKey = useSettingsStore((s) => s.nasaApiKey);
   const setNasaApiKey = useSettingsStore((s) => s.setNasaApiKey);
+  const hasSeenSkyGuide = useSettingsStore((s) => s.hasSeenSkyGuide);
+  const setHasSeenSkyGuide = useSettingsStore((s) => s.setHasSeenSkyGuide);
 
   // Local draft for the key input, only committed on save.
   const [keyDraft, setKeyDraft] = useState(nasaApiKey ?? "");
@@ -180,6 +183,7 @@ export default function SettingsScreen() {
               disabled={backup.busy !== null}
               accessibilityRole="button"
             >
+              {backup.busy === "save" && <ActivityIndicator size="small" color={Colors.ink} />}
               <Text style={styles.actionText}>
                 {backup.busy === "save" ? "Saving" : "Save a backup"}
               </Text>
@@ -190,6 +194,7 @@ export default function SettingsScreen() {
               disabled={backup.busy !== null}
               accessibilityRole="button"
             >
+              {backup.busy === "restore" && <ActivityIndicator size="small" color={Colors.ink} />}
               <Text style={styles.actionText}>
                 {backup.busy === "restore" ? "Reading" : "Restore"}
               </Text>
@@ -215,6 +220,22 @@ export default function SettingsScreen() {
                   : testSent === "unavailable"
                     ? "Not available in Expo Go on Android"
                     : "Send a test reminder"}
+            </Text>
+          </Pressable>
+
+          <Text style={[styles.label, styles.spaced]}>The sky view</Text>
+          <Text style={styles.sectionNote}>
+            The first time the sky opens, a short guide points at each of its
+            controls. This plays it again the next time the sky opens.
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.actionButton, styles.actionSingle, pressed && styles.pressed]}
+            onPress={() => setHasSeenSkyGuide(false)}
+            disabled={!hasSeenSkyGuide}
+            accessibilityRole="button"
+          >
+            <Text style={styles.actionText}>
+              {hasSeenSkyGuide ? "Show the sky guide again" : "It plays the next time the sky opens"}
             </Text>
           </Pressable>
         </Arrive>
@@ -427,6 +448,8 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md },
   actionButton: {
     flex: 1,
+    flexDirection: "row",
+    gap: Spacing.sm,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: Spacing.md,
