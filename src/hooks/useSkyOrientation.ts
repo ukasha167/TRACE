@@ -1,64 +1,62 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
-import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
+import { DeviceMotion } from "expo-sensors";
 import * as Location from "expo-location";
 import {
-  lookDirectionFromSensors,
-  deviceBasisFromSensors,
-  angularVelocityToWorld,
-  integrateGyro,
-  blendToward,
-  lookVector,
-  lookAngles,
-  cameraAxesFromBasis,
+  COREMOTION_YAW_TO_ALPHA,
   cameraAxesFromAngles,
-  rollFromAxes,
+  cameraAxesFromEuler,
+  lookAngles,
+  sensorBlend,
+  sensorTimeConstantMs,
+  smoothAxes,
   type WorldCameraAxes,
-  smoothVector,
   normalizeDeg,
   angleDelta,
-  type Vec3,
 } from "@/lib/astronomy/attitude";
 import { GLIDE, glide } from "@/lib/glide";
 
 /**
  * Where the immersive view is pointed. Spec §7.3.
  *
- * ARCHITECTURE, and why it feels different from the first attempt:
+ * THIS IS STELLARIUM'S SENSOR MODE (Stellarium Mobile, SensorsMgr.mm), and it
+ * replaced a hand-built complementary filter that jittered with a resting hand:
  *
- * 1. FULL ATTITUDE, not two scalars. The look direction comes from the complete
- *    ZXY rotation (see attitude.ts). Taking altitude from `beta` alone and
- *    azimuth from the compass alone does not compose into a real direction, and
- *    produced a view where the target never left the screen.
+ * 1. THE OS FUSES THE SENSORS. The attitude is CoreMotion's on iOS and
+ *    TYPE_ROTATION_VECTOR on Android, both gyroscope, accelerometer and
+ *    magnetometer fused with bias and calibration models this app cannot
+ *    match. The previous version integrated the raw gyro itself and pulled it
+ *    toward the raw accelerometer and magnetometer, so their noise reached the
+ *    view through the drift correction.
  *
- * 2. SENSOR FUSION. The gyro-derived attitude is smooth and fast but its
- *    azimuth zero is arbitrary; the compass knows true north but is noisy. So
- *    the compass contributes ONLY a slowly-varying north offset, and the
- *    attitude does all the fast motion. Hard-smoothing a near-constant offset
- *    removes compass jitter without adding any lag to head movement.
+ * 2. READ ONCE A FRAME. The sensor callback only keeps the newest reading; the
+ *    frame loop reads it, as Stellarium's update() reads manager.deviceMotion.
+ *    Readings that reach JS in bunches cost nothing.
  *
- * 3. SMOOTHING RUNS ON THE FRAME CLOCK, not the sensor clock. Sensor callbacks
- *    only write to refs; a requestAnimationFrame loop eases the view toward
- *    them and publishes one state update per frame. Sensor noise and render
- *    rate stay decoupled, which is what removes the jitter.
+ * 3. AN AVERAGE THAT TIGHTENS AS THE VIEW NARROWS. Each frame moves the view
+ *    part of the way to the reading, by Stellarium's coefficient for the field
+ *    of view (attitude.sensorBlend): a time constant of 234 ms at the eye's
+ *    20 degree field, 325 ms at 5 degrees and closer, 93 ms at the widest. The
+ *    first reading is taken as it is. The trade is lag, on purpose: turning at
+ *    90 degrees a second at the eye's field, the view runs 21 degrees behind
+ *    and catches up when the hand stops.
  */
 
 export type OrientationMode = "sensor" | "drag";
 
 export interface SkyOrientationDebug {
-  betaDeg: number | null;
-  headingDeg: number | null;
   accuracy: number | null;
+  /** DeviceMotion readings since the view opened. */
   motionEvents: number;
   headingEvents: number;
   permission: string | null;
   /** Magnetic declination applied, degrees. */
   northOffset: number | null;
-  magEvents: number;
-  gyroEvents: number;
   /** Measured render rate, for deciding whether the renderer needs work. */
   fps: number;
   angularSpeed: number;
+  /** The sensor average's time constant at the current zoom, ms. */
+  smoothingMs: number;
 }
 
 export interface SkyOrientation {
@@ -76,11 +74,7 @@ export interface SkyOrientation {
   compassUnreliable: boolean;
   permissionDenied: boolean;
   setMode: (mode: OrientationMode) => void;
-  /** Detected accelerometer sign, before any manual override. */
-  detectedGravitySign: number;
-  flipGravity: boolean;
   flipHeading: boolean;
-  toggleFlipGravity: () => void;
   toggleFlipHeading: () => void;
   pan: (dx: number, dy: number, fovDeg: number, viewWidth: number) => void;
   /** The finger lifted at this velocity, points per second: the view coasts on. */
@@ -92,53 +86,10 @@ export interface SkyOrientation {
 
 export const MIN_USABLE_ACCURACY = 2;
 
-/**
- * Per-frame easing, scaled by field of view.
- *
- * A fixed factor is wrong: at 20 degrees FOV the same angular error is three
- * times the screen distance it is at 65, so identical smoothing reads as heavy
- * lag when zoomed in. Response therefore tightens as the view narrows.
- */
-function smoothingFor(fovDeg: number): number {
-  // Light. The complementary filter already delivers a smooth signal, so this
-  // is only a final polish pass — the heavy easing it used to do was
-  // compensating for raw accel/mag noise that the gyro now absorbs, and
-  // stacking both would just reintroduce the lag we set out to remove.
-  //
-  // A time constant in milliseconds, for lib/glide.ts. It was a per-frame
-  // factor (0.9 zoomed in, 0.65 wide), which ran twice as fast on a 120 Hz
-  // iPhone as on a 60 Hz phone; these are the same easing at 60 Hz.
-  const t = Math.max(0, Math.min(1, (fovDeg - 18) / (100 - 18)));
-  return 7 + t * 9; // 7 ms zoomed in -> 16 ms wide
-}
-/** Beyond this the view snaps instead of easing, so fast turns don't lag. */
-const SNAP_DEG = 45;
+const DEG = Math.PI / 180;
 
-/**
- * WHICH WAY THE ACCELEROMETER POINTS, PER PLATFORM.
- *
- * `lookDirectionFromSensors` wants `gravity` to be world UP expressed in device
- * coordinates. Lying flat with the screen up, that is (0, 0, +1). The raw
- * reading in that posture is not the same on both platforms, and expo-sensors
- * does not normalise it:
- *
- *   Android  AccelerometerModule.kt forwards Sensor.TYPE_ACCELEROMETER divided
- *            by GRAVITY_EARTH and nothing else. Android reports the REACTION to
- *            gravity, so screen-up reads (0, 0, +1). Sign +1.
- *   iOS      AccelerometerModule.swift forwards CMAccelerometerData.acceleration
- *            unchanged. CoreMotion reports the opposite, so screen-up reads
- *            (0, 0, -1). Sign -1.
- *
- * This was hardcoded to -1 for both, which is right on iOS and wrong on Android.
- * The symptom is specific and worth recognising: altitude inverts AND azimuth
- * mirrors, together, because east comes from `magnetic x gravity` and negating
- * gravity flips that cross product too. So a user turning on "Flip up/down"
- * appears to fix the left/right axis as well, which is what happened here.
- *
- * The manual overrides stay. Sensor conventions are a vendor decision and a
- * switch someone can flip in two seconds beats a default nobody can correct.
- */
-const GRAVITY_SIGN = Platform.OS === "android" ? 1 : -1;
+/** iOS sends CoreMotion's yaw, a quarter turn from W3C alpha; Android sends alpha. */
+const YAW_TO_ALPHA = Platform.OS === "ios" ? COREMOTION_YAW_TO_ALPHA : 0;
 
 /**
  * @param diagnostics whether the debug panel is open. Its numbers are published
@@ -170,7 +121,6 @@ export function useSkyOrientation(
    * screen's x-axis, so it never rotates when the phone turns to landscape.
    */
   const axesRef = useRef<WorldCameraAxes>(cameraAxesFromAngles(initialAzimuth, 25, 0));
-  const rollRef = useRef(0);
   // Throttled copy, for the on-screen labels only. Changes per compass
   // sector unless the debug panel is open.
   const [label, setLabel] = useState({ az: initialAzimuth, alt: 25 });
@@ -180,36 +130,30 @@ export function useSkyOrientation(
   const [motionAvailable, setMotionAvailable] = useState(false);
   const [headingAvailable, setHeadingAvailable] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
-  // Manual escape hatches. Sensor conventions vary by vendor and I would rather
-  // ship a switch the user can flip in two seconds than a wrong default.
-  const [flipGravity, setFlipGravity] = useState(false);
+  // A manual escape hatch. A switch someone can flip in two seconds beats a
+  // default nobody can correct.
   const [flipHeading, setFlipHeading] = useState(false);
   const [debug, setDebug] = useState<SkyOrientationDebug>({
-    betaDeg: null, headingDeg: null, accuracy: null,
-    motionEvents: 0, headingEvents: 0, permission: null, northOffset: null,
-    magEvents: 0, gyroEvents: 0, fps: 0, angularSpeed: 0,
+    accuracy: null, motionEvents: 0, headingEvents: 0, permission: null,
+    northOffset: null, fps: 0, angularSpeed: 0, smoothingMs: 0,
   });
 
-  // Sensor callbacks only ever write here — never setState, which would queue a
-  // React update per sensor sample.
-  const gravity = useRef<Vec3 | null>(null);
-  const magnetic = useRef<Vec3 | null>(null);
+  // The sensor callback only ever writes here — never setState, which would
+  // queue a React update per sensor sample.
+  /** The newest fused attitude, radians, as DeviceMotion sends it. */
+  const attitude = useRef<{ alpha: number; beta: number; gamma: number } | null>(null);
+  /**
+   * Stellarium's firstMeasure: the next reading is shown as it is rather than
+   * eased toward. Set on entering pointing, so the view does not swim across
+   * from wherever the drag left it.
+   */
+  const fresh = useRef(true);
   const declination = useRef(0);
-  const magCount = useRef(0);
-  const gyroCount = useRef(0);
-
-  /** Fused look direction, world frame. The gyro drives it, accel/mag corrects it. */
-  const look = useRef<Vec3 | null>(null);
-  /** Sensor clock of the last gyro reading, seconds. */
-  const lastGyroAt = useRef(0);
-  const smoothed = useRef({ az: initialAzimuth, alt: 25 });
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const motionCount = useRef(0);
   const headingCount = useRef(0);
   const angularSpeed = useRef(0);
-  const flipGravityRef = useRef(flipGravity);
-  flipGravityRef.current = flipGravity;
   const flipHeadingRef = useRef(flipHeading);
   flipHeadingRef.current = flipHeading;
   const fovRef = useRef(fovDeg);
@@ -219,116 +163,59 @@ export function useSkyOrientation(
   const headingAccuracyRef = useRef(headingAccuracy);
   headingAccuracyRef.current = headingAccuracy;
 
-  // Whether there is a motion sensor at all, asked once. Drag mode needs the
+  // Whether the fused sensor exists at all, asked once. Drag mode needs the
   // answer to say so when pointing cannot work, without running the sensors.
+  // On Android this is false without a gyroscope, because there is no
+  // rotation vector to read.
   useEffect(() => {
     let cancelled = false;
-    Accelerometer.isAvailableAsync()
+    DeviceMotion.isAvailableAsync()
       .then((available) => { if (!cancelled) setMotionAvailable(available); })
       .catch(() => { if (!cancelled) setMotionAvailable(false); });
     return () => { cancelled = true; };
   }, []);
 
-  // ---- Raw sensors -> absolute orientation ----
+  // ---- The fused attitude ----
   //
-  // Gravity comes from the RAW Accelerometer, not DeviceMotion's
-  // accelerationIncludingGravity. DeviceMotion is a composite sensor and on
-  // Android frequently ignores setUpdateInterval, delivering far slower than the
-  // magnetometer. Since altitude depends only on gravity while azimuth also uses
-  // the magnetometer, that mismatch made vertical motion visibly stepped while
-  // horizontal stayed smooth. Raw sensors, sampled at matched rates, fixes it.
-  //
-  // ONLY WHILE POINTING. Three sensors at 60 Hz ran for as long as the view was
-  // open, including in drag mode, where nothing reads them. They now start when
-  // pointing starts and stop when it stops, and the readings are dropped on the
-  // way out so a return to pointing cannot snap to where the phone used to be.
+  // ONLY WHILE POINTING. The sensors start when pointing starts and stop when
+  // it stops, and the reading is dropped on the way out so a return to
+  // pointing cannot snap to where the phone used to be.
   useEffect(() => {
     if (mode !== "sensor") return;
     let cancelled = false;
-    const subs: { remove: () => void }[] = [];
+    let sub: { remove: () => void } | null = null;
 
     (async () => {
       let available = false;
       try {
-        available = await Accelerometer.isAvailableAsync();
+        available = await DeviceMotion.isAvailableAsync();
       } catch {
         available = false;
       }
       if (cancelled || !available) return;
 
-      // The accelerometer and magnetometer smooth per reading, so their rate
-      // is part of their tuning. The gyro integrates real elapsed time, and at
-      // 60 Hz a 120 Hz screen gets a new heading only every other frame.
-      const HZ = 1000 / 60;
-      Accelerometer.setUpdateInterval(HZ);
-      Magnetometer.setUpdateInterval(HZ);
-      Gyroscope.setUpdateInterval(1000 / 120);
+      // CoreMotion's device motion tops out at 100 Hz. Android is not asked:
+      // DeviceMotionModule.kt sends once per display frame with the newest
+      // reading of each sensor, and an interval there only skips frames.
+      if (Platform.OS === "ios") DeviceMotion.setUpdateInterval(10);
 
-      subs.push(
-        Accelerometer.addListener((a) => {
-          const sg = GRAVITY_SIGN * (flipGravityRef.current ? -1 : 1);
-          // Track hard while turning, settle hard when still. A fixed constant
-          // has to choose between lag and jitter; this gets both.
-          const fast = angularSpeed.current > 20;
-          gravity.current = smoothVector(
-            gravity.current,
-            { x: a.x * sg, y: a.y * sg, z: a.z * sg },
-            fast ? 0.6 : 0.25
-          );
-          motionCount.current += 1;
-        })
-      );
-
-      subs.push(
-        Magnetometer.addListener((m) => {
-          const fast = angularSpeed.current > 20;
-          // Noisiest input here, so smoothed harder in every regime.
-          magnetic.current = smoothVector(magnetic.current, m, fast ? 0.45 : 0.12);
-          magCount.current += 1;
-        })
-      );
-
-      subs.push(
-        Gyroscope.addListener((g) => {
-          angularSpeed.current = (Math.hypot(g.x, g.y, g.z) * 180) / Math.PI;
-          gyroCount.current += 1;
-
-          // PREDICT. The gyro carries the fast motion; accel/mag only correct
-          // it. This is what makes the view track the hand instead of easing
-          // after it — smoothing a noisy absolute reading hard enough to look
-          // calm necessarily makes it lag, and that trade is what the
-          // complementary filter escapes.
-          //
-          // dt comes from the sensor's own clock, in seconds. Readings reach JS
-          // in bunches, so arrival time gave the later ones in a bunch a dt of
-          // 0 or 1 ms, their turn was dropped, and the drift correction pulled
-          // the view the rest of the way in a visible step.
-          const now = g.timestamp;
-          const dt = lastGyroAt.current ? now - lastGyroAt.current : 0;
-          lastGyroAt.current = now;
-          if (dt <= 0 || dt > 0.25) return; // first sample, or app was backgrounded
-
-          if (!look.current || !gravity.current || !magnetic.current) return;
-          const basis = deviceBasisFromSensors(gravity.current, magnetic.current);
-          if (!basis) return;
-          const omegaWorld = angularVelocityToWorld(basis, g);
-          look.current = integrateGyro(look.current, omegaWorld, dt);
-        })
-      );
-
+      sub = DeviceMotion.addListener((m) => {
+        // Android sends no rotation until the rotation vector has fired once.
+        if (m.rotation) attitude.current = m.rotation;
+        const r = m.rotationRate;
+        if (r) angularSpeed.current = Math.hypot(r.alpha, r.beta, r.gamma);
+        motionCount.current += 1;
+      });
     })();
 
     return () => {
       cancelled = true;
-      for (const s of subs) s.remove();
-      gravity.current = null;
-      magnetic.current = null;
-      look.current = null;
-      lastGyroAt.current = 0;
+      sub?.remove();
+      attitude.current = null;
     };
   }, [mode]);
 
-  // ---- Compass: north reference only ----
+  // ---- Compass: declination only ----
   //
   // Also only while pointing. It is the one thing in this view that needs the
   // location permission, so a person who only ever drags is never asked for it.
@@ -345,9 +232,7 @@ export function useSkyOrientation(
         sub = await Location.watchHeadingAsync((h) => {
           // Only DECLINATION is taken from the compass: the fixed angle between
           // magnetic and true north at this place. It does not depend on how the
-          // device is held, so unlike the previous north-offset it cannot form a
-          // feedback loop with rotation. (About 1 degree at Greenwich, far below the
-          // magnetometer's own error, so it is a refinement not a dependency.)
+          // device is held, so it cannot form a feedback loop with rotation.
           if (h.trueHeading >= 0 && h.magHeading >= 0) {
             declination.current = angleDelta(h.trueHeading, h.magHeading);
           }
@@ -373,6 +258,7 @@ export function useSkyOrientation(
     let fpsFrames = 0;
     let fpsSince = Date.now();
     let fps = 0;
+    let shownFlip = flipHeadingRef.current;
     // What the heading label last showed. It re-renders the screen, so it is
     // published only when the view has turned far enough to change it.
     const shown = { az: NaN, alt: NaN };
@@ -432,63 +318,42 @@ export function useSkyOrientation(
         if (++frames % 15 === 0) publishLabel(viewRef.current.az, viewRef.current.alt);
         return;
       }
-      if (!gravity.current || !magnetic.current) return;
+      const r = attitude.current;
+      if (!r) return;
 
-      const abs = lookDirectionFromSensors(gravity.current, magnetic.current);
-      // Null means the field is degenerate (a magnet nearby, or the phone
-      // aligned with the field line). Coast on the gyro rather than snapping
-      // somewhere confidently wrong.
-      const basis = deviceBasisFromSensors(gravity.current, magnetic.current);
-      if (basis) rollRef.current = rollFromAxes(cameraAxesFromBasis(basis));
+      // Declination and the manual flip turn the whole frame about the
+      // vertical. Alpha runs counterclockwise and a compass clockwise, so true
+      // north is magnetic north minus the declination here.
+      const flip = flipHeadingRef.current;
+      const alpha =
+        r.alpha + YAW_TO_ALPHA - declination.current * DEG - (flip ? Math.PI : 0);
+      const target = cameraAxesFromEuler(alpha, r.beta, r.gamma);
+      // A flip is half a turn, which no average can ease across, so it snaps
+      // like a first reading.
+      const axes =
+        fresh.current || flip !== shownFlip
+          ? target
+          : smoothAxes(axesRef.current, target, sensorBlend(fovRef.current, dt));
+      fresh.current = false;
+      shownFlip = flip;
+      axesRef.current = axes;
 
-      if (abs) {
-        const absVec = lookVector(abs.relativeAzimuthDeg, abs.altitudeDeg);
-        // CORRECT. Small factor: trust the gyro between corrections, and let
-        // accel/mag quietly cancel its drift. Against elapsed time, so a 120 Hz
-        // screen does not pull twice as hard; 470 ms is 0.035 a frame at 60 Hz.
-        look.current = look.current
-          ? blendToward(look.current, absVec, 1 - Math.exp(-Math.min(dt, 100) / 470))
-          : absVec;
-      }
-      if (!look.current) return;
-
-      const fused = lookAngles(look.current);
-      const targetAz = normalizeDeg(
-        fused.relativeAzimuthDeg + declination.current + (flipHeadingRef.current ? 180 : 0)
-      );
-      const targetAlt = fused.altitudeDeg;
-
-      const s = smoothed.current;
-      const tau = smoothingFor(fovRef.current);
-      // Snap on large moves so a quick turn doesn't drag behind the hand.
-      s.az = Math.abs(angleDelta(targetAz, s.az)) > SNAP_DEG
-        ? targetAz
-        : normalizeDeg(glide(s.az, s.az + angleDelta(targetAz, s.az), dt, tau));
-      s.alt = Math.abs(targetAlt - s.alt) > SNAP_DEG
-        ? targetAlt
-        : glide(s.alt, targetAlt, dt, tau);
-
-      viewRef.current.az = s.az;
-      viewRef.current.alt = s.alt;
-      // Roll comes straight from gravity — stable and drift-free — while the
-      // view direction comes from the fused estimate.
-      axesRef.current = cameraAxesFromAngles(s.az, s.alt, rollRef.current);
+      const look = lookAngles(axes.forward);
+      viewRef.current.az = look.relativeAzimuthDeg;
+      viewRef.current.alt = look.altitudeDeg;
 
       // Labels and diagnostics only — never the view itself.
-      if (++frames % 15 === 0) publishLabel(s.az, s.alt);
+      if (++frames % 15 === 0) publishLabel(look.relativeAzimuthDeg, look.altitudeDeg);
       if (frames % 30 === 0 && diagnosticsRef.current) {
         setDebug((d) => ({
           ...d,
-          betaDeg: gravity.current?.z ?? null,
-          headingDeg: magnetic.current?.z ?? null,
           accuracy: headingAccuracyRef.current,
           motionEvents: motionCount.current,
           headingEvents: headingCount.current,
           northOffset: declination.current,
-          magEvents: magCount.current,
-          gyroEvents: gyroCount.current,
           fps,
           angularSpeed: angularSpeed.current,
+          smoothingMs: sensorTimeConstantMs(fovRef.current),
         }));
       }
     };
@@ -503,15 +368,12 @@ export function useSkyOrientation(
     const id = setInterval(() => {
       setDebug((d) => ({
         ...d,
-        betaDeg: gravity.current?.z ?? null,
-        headingDeg: magnetic.current?.z ?? null,
         accuracy: headingAccuracyRef.current,
         motionEvents: motionCount.current,
         headingEvents: headingCount.current,
         northOffset: declination.current,
-        magEvents: magCount.current,
-        gyroEvents: gyroCount.current,
         angularSpeed: angularSpeed.current,
+        smoothingMs: sensorTimeConstantMs(fovRef.current),
       }));
     }, 500);
     return () => clearInterval(id);
@@ -526,8 +388,6 @@ export function useSkyOrientation(
       // No clamp beyond the poles: the view passes through the zenith and below
       // the horizon, which is what makes it feel like standing somewhere.
       t.alt = Math.max(-90, Math.min(90, t.alt + dy * perPoint));
-      smoothed.current.az = t.az;
-      smoothed.current.alt = t.alt;
     },
     []
   );
@@ -548,18 +408,9 @@ export function useSkyOrientation(
   }, []);
 
   const changeMode = useCallback((m: OrientationMode) => {
-    // Entering sensor mode: adopt the current sensor reading immediately rather
-    // than easing across from wherever the drag left the view.
-    if (m === "sensor" && gravity.current && magnetic.current) {
-      const abs = lookDirectionFromSensors(gravity.current, magnetic.current);
-      if (abs) {
-        look.current = lookVector(abs.relativeAzimuthDeg, abs.altitudeDeg);
-        smoothed.current = {
-          az: normalizeDeg(abs.relativeAzimuthDeg + declination.current),
-          alt: abs.altitudeDeg,
-        };
-      }
-    }
+    // Entering sensor mode: the first reading is adopted as it is rather than
+    // eased across from wherever the drag left the view.
+    if (m === "sensor") fresh.current = true;
     // Leaving sensor mode: the drag starts from wherever the phone was pointing.
     if (m === "drag") dragTarget.current = { ...viewRef.current };
     setMode(m);
@@ -576,15 +427,12 @@ export function useSkyOrientation(
     headingAccuracy,
     motionAvailable,
     headingAvailable,
-    canPoint: motionAvailable || headingAvailable,
+    canPoint: motionAvailable,
     compassUnreliable:
       headingAccuracy != null && headingAccuracy < MIN_USABLE_ACCURACY,
     permissionDenied,
     setMode: changeMode,
-    detectedGravitySign: GRAVITY_SIGN,
-    flipGravity,
     flipHeading,
-    toggleFlipGravity: () => setFlipGravity((v) => !v),
     toggleFlipHeading: () => setFlipHeading((v) => !v),
     pan,
     release,
