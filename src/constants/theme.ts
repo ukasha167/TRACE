@@ -118,6 +118,11 @@ export const Colors = {
    */
   space: "#000000",
   imageScrim: "rgba(0, 0, 0, 0.65)",
+  /**
+   * Under the sky view's first-visit guide. Light on purpose: the guide points
+   * at controls, and a heavy scrim hides the controls it is pointing at.
+   */
+  guideScrim: "rgba(0, 0, 0, 0.22)",
   controlOnSpace: "#626D80",
 
   /**

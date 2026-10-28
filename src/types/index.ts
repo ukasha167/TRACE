@@ -143,6 +143,8 @@ export interface AppSettings {
   hasCompletedOnboarding: boolean;
   /** The sky view's "drag to look around" tip has been seen once. */
   hasSeenDragHint: boolean;
+  /** The sky view's first-visit guide has been played through or skipped. */
+  hasSeenSkyGuide: boolean;
 }
 
 export interface MoonCarouselItem {
