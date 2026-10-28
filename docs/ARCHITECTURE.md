@@ -262,8 +262,8 @@ Records stay on the device; there is no backend to send them to. Two lookups lea
 the person asked: a typed place goes to the phone's geocoder (Apple on iOS, Google on Android), and
 a GPS fix goes to the same service for its name. Settings says so in those words.
 
-Saving with a place typed but not looked up runs the lookup before saving. If it finds nothing, the
-form asks rather than saving without a place (decision 42). A place taken from the phone stores the
+A place is required (decision 71). Saving with a place typed but not looked up runs the lookup before
+saving. If it finds nothing, the field turns red and the form does not save (decision 42). A place taken from the phone stores the
 phone's own offset on the record's date; a typed place stores the longitude estimate.
 
 ## Bundled data

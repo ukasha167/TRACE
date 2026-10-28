@@ -78,7 +78,7 @@ pulls back toward that shape is a regression.
 | Screen | Route | Purpose |
 |---|---|---|
 | Home | `/` | Swipe through thirty days either side of tonight, then saved dates. First run offers three starts. |
-| Add a date | `/milestone/new` | Title, date, place, optional note. |
+| Add a date | `/milestone/new` | Title, date, place (required), optional note. |
 | Edit a date | `/milestone/edit/[id]` | Same form, prefilled. |
 | Date page | `/milestone/[id]` | The order in the journey above. |
 | Immersive sky | `/sky/[id]` | Full-screen planetarium for that night, sunset to sunrise. `/sky/tonight` synthesises a record for now. |
