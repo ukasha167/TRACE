@@ -1,0 +1,22 @@
+name: Feature idea
+description: Something TRACE should do that it does not.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the backlog at the end of [docs/PRD.md](https://github.com/ukasha167/TRACE/blob/main/docs/PRD.md#backlog)
+        and the list of cut features in the same file first. Loose ideas fit better in
+        [Discussions](https://github.com/ukasha167/TRACE/discussions).
+  - type: textarea
+    id: need
+    attributes:
+      label: What you want to do
+      description: The thing you tried to do with TRACE and could not.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+      description: Optional. A sketch, a screen, or an app that already does it.

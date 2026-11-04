@@ -1,0 +1,45 @@
+name: Bug report
+description: Something in TRACE is wrong, broken or crashes.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If the bug is a number (a phase, a percentage, a rise time, a return year), it matters most.
+        TRACE's whole premise is that its numbers are real, so give the date, the place and what you
+        expected, and say where your expected value comes from.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: input
+    id: record
+    attributes:
+      label: Date and place
+      description: The record's date and place, if the bug is about a sky or a number. Use a public date if the real one is private.
+      placeholder: 20 January 2000, Lisbon
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android (APK from Releases)
+        - Android (Expo Go)
+        - iOS (Expo Go)
+        - iOS simulator
+        - Android emulator
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and OS version
+      placeholder: Pixel 7 Pro, Android 16
+  - type: textarea
+    id: shots
+    attributes:
+      label: Screenshots or a recording
+      description: Drag files in. Crop out anything private.
