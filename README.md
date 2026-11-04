@@ -1,8 +1,31 @@
-# TRACE
+<p align="center"><img src="assets/images/icon.png" width="96" alt="The TRACE icon, a crescent moon" /></p>
 
-An offline-first astronomy app about recurrence. Give it a date and a place, and it works out the moon that hung over that place that night, how uncommon that sky was, and the years it comes back.
+<h1 align="center">TRACE</h1>
 
-Built with Expo, React Native and TypeScript. Every astronomical calculation and the planetarium run on the phone. There is no backend.
+<p align="center">Give it a date and a place. It shows the moon that was over that night, how rare that moon was, and the years it comes back.</p>
+
+<p align="center">
+  <a href="https://github.com/ukasha167/TRACE/actions/workflows/ci.yml"><img src="https://github.com/ukasha167/TRACE/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
+  <a href="https://github.com/ukasha167/TRACE/releases/latest"><img src="https://img.shields.io/github/v/release/ukasha167/TRACE?label=Android%20APK" alt="Latest Android release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/ukasha167/TRACE" alt="MIT license" /></a>
+</p>
+
+<p align="center"><img src="docs/media/demo.gif" width="300" alt="TRACE revealing the full moon of 24 April 2024 at 99.3% lit, then the record page and the sky view" /></p>
+
+Offline-first, built with Expo, React Native and TypeScript. Every astronomical calculation and the planetarium run on the phone. There is no backend.
+
+## Try it
+
+- **Android:** install `TRACE-v1.0.0.apk` from the [latest release](https://github.com/ukasha167/TRACE/releases/latest).
+- **iOS or Android, from source,** in Expo Go or a simulator:
+
+  ```bash
+  git clone https://github.com/ukasha167/TRACE.git && cd TRACE && npm install && npx expo start
+  ```
+
+- **The 25-second launch film:**
+
+  [![TRACE launch film: the date wheel lands on 24 April 2024 and the full moon of that night appears](docs/media/launch-poster.jpg)](https://github.com/ukasha167/TRACE/releases/download/v1.0.0/trace-launch.mp4)
 
 ---
 
@@ -14,7 +37,7 @@ Built with Expo, React Native and TypeScript. Every astronomical calculation and
 - **Measured rarity.** How many days in a 29,220-day window carry a moon at least as full as the threshold this one clears, and how many of the record's own anniversaries so far have.
 - **Coming up and reminders.** The next anniversary, the moon it will bring, and an optional notification at 19:00 on the night.
 - **Life in moons.** Every anniversary's moon in one grid, full ones glowing and return years ringed, each opening onto NASA's Astronomy Picture of the Day for that date.
-- **The sky that night.** A star map on the record page, and a full-screen planetarium that follows the phone or a finger, scrubs from sunset to sunrise, draws the moon at its phase, shows a lunar eclipse's shadow, and names what you tap: 6,331 stars to magnitude 6.2, 88 constellations, 24 named nebulae and galaxies, the five planets you can see by eye.
+- **The sky that night.** A star map on the record page, and a full-screen planetarium that follows the phone or a finger, scrubs from sunset to sunrise, draws the moon at its phase, shows a lunar eclipse's shadow, and names what you tap: 6,331 stars to magnitude 6.2, 25 constellations drawn with their figures, and the five planets you can see by eye.
 - **Tonight.** Tonight's moon on Home, any other night's by a dial, the next full and new moon, moonrise and moonset, and the next 30 nights.
 - **Share cards.** A night card or a paper card, 1080 by 1920 or 1080 by 1080, with an optional line of your own.
 - **Backup and restore.** The records as one file through the share sheet, and back in without overwriting anything.
@@ -27,7 +50,7 @@ Built with Expo, React Native and TypeScript. Every astronomical calculation and
 ### Stack
 
 - **Framework**: [Expo](https://expo.dev) (~57) with [Expo Router](https://docs.expo.dev/router/introduction/) (file-based routing) and React Native (0.86). Fully compatible with Expo Go.
-- **Rendering & Shaders**: [@shopify/react-native-skia](https://shopify.github.io/react-native-skia/) & [React Native Reanimated](https://docs.swmansion.com/react-native-reanimated/) for 60 FPS celestial projection and SkSL custom lunar surface shaders.
+- **Rendering & Shaders**: [@shopify/react-native-skia](https://shopify.github.io/react-native-skia/) & [React Native Reanimated](https://docs.swmansion.com/react-native-reanimated/) for the celestial projection and the SkSL shader that lights the moon.
 - **Astronomy**: Coordinate transforms in plain TypeScript, with [`astronomy-engine`](https://github.com/cosinekitty/astronomy) for planets, rise and set, eclipses and cross-checks, and [`suncalc`](https://github.com/mourner/suncalc) for the moon's phase and angles.
 - **State Management**: [Zustand](https://github.com/pmndrs/zustand) with `@react-native-async-storage/async-storage` persistence.
 - **Pictures**: NASA's Astronomy Picture of the Day, read from its archive pages for past dates and its API for recent ones, cached in AsyncStorage.
@@ -55,7 +78,7 @@ src/
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18+ recommended)
+- [Node.js](https://nodejs.org/) 20.19.4 or newer (22 or 24 recommended)
 - [Expo Go](https://expo.dev/go) app on your mobile device, or an iOS Simulator / Android Emulator
 
 ### Installation
@@ -102,7 +125,7 @@ For unrestricted use (1,000 requests/hour):
 TRACE uses `tsx` with Node's built-in test runner for unit tests:
 
 ```bash
-# Run the unit tests (228)
+# Run the unit tests (253)
 npm test
 
 # Type check with TypeScript
@@ -120,6 +143,12 @@ npx tsc --noEmit
 - **Star colours (B-V)**: Yale Bright Star Catalog via VizieR V/50 (Public Domain)
 - **Milky Way**: [Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851), Ernie Wright, NASA Scientific Visualization Studio (Public Domain)
 - **Astronomy Picture of the Day**: NASA (Public Domain / respective authors)
+
+---
+
+## Contributing
+
+Bug reports, fixes and ideas are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), pick up an issue labelled [good first issue](https://github.com/ukasha167/TRACE/labels/good%20first%20issue), or ask in [Discussions](https://github.com/ukasha167/TRACE/discussions).
 
 ---
 
