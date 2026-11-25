@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { router, useFocusEffect, type Href } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -239,6 +240,18 @@ export default function HomeScreen() {
       </View>
 
       <View style={[styles.addWrap, { paddingBottom: insets.bottom || Spacing.md }]}>
+        {/* Rows fade into the paper instead of meeting a hard edge. */}
+        <View style={styles.addFade} pointerEvents="none" accessibilityElementsHidden>
+          <Svg width="100%" height="100%">
+            <Defs>
+              <LinearGradient id="addFade" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0" stopColor={Colors.paper} stopOpacity={0} />
+                <Stop offset="1" stopColor={Colors.paper} stopOpacity={1} />
+              </LinearGradient>
+            </Defs>
+            <Rect width="100%" height="100%" fill="url(#addFade)" />
+          </Svg>
+        </View>
         <Pressable
           style={({ pressed }) => [styles.addButton, pressed && styles.addPressed]}
           accessibilityRole="button"
@@ -312,6 +325,7 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
     backgroundColor: Colors.paper,
   },
+  addFade: { position: "absolute", left: 0, right: 0, top: -Spacing.xl, height: Spacing.xl },
   addButton: {
     backgroundColor: Colors.ink,
     borderRadius: Radius.pill,
