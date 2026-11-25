@@ -87,7 +87,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  skyHint: { ...Type.smallOnPlate, position: "absolute", bottom: Spacing.md, left: Spacing.page, right: Spacing.page, textAlign: "center" },
+  // Brighter than plateMuted: this hint is the only way people find the sky view.
+  skyHint: { ...Type.smallOnPlate, color: "#C9D3E3", position: "absolute", bottom: Spacing.md, left: Spacing.page, right: Spacing.page, textAlign: "center" },
   caption: {
     flexDirection: "row",
     justifyContent: "space-between",
