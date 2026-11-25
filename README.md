@@ -10,7 +10,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/ukasha167/TRACE" alt="MIT license" /></a>
 </p>
 
-<p align="center"><img src="docs/media/collage.jpg" alt="Six TRACE screens: tonight's moon on Home, the reveal of the 28 September 2015 supermoon, its record page, the year the moon comes back, every anniversary's moon in one grid, and the sky view at the horizon" /></p>
+<p align="center"><img src="docs/media/collage.jpg" alt="Five TRACE screens: tonight's moon on Home, the list of saved dates, the record page of the 28 September 2015 supermoon eclipse, every anniversary's moon in one grid, and the sky view at the horizon" /></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/React_Native-0.86-61DAFB?logo=react&logoColor=black" alt="React Native 0.86" />
