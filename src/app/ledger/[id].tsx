@@ -135,11 +135,16 @@ export default function LedgerScreen() {
           </Text>
         </View>
       )}
-      {apod.loading && (
+      {/* The row stays after loading so the grid below does not jump up. */}
+      {dates.length > 0 && (
         <View style={styles.progress}>
-          <ActivityIndicator size="small" color={Colors.inkMuted} />
+          {apod.loading && <ActivityIndicator size="small" color={Colors.inkMuted} />}
           <Text style={styles.progressText}>
-            {apod.total > 0 ? `Loading images ${apod.fetched}/${apod.total}` : "Checking cache"}
+            {apod.loading
+              ? apod.total > 0
+                ? `Loading images ${apod.fetched}/${apod.total}`
+                : "Checking cache"
+              : `NASA photos for ${apod.entries.size} of ${dates.length} years`}
           </Text>
         </View>
       )}
@@ -336,7 +341,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.paperDim,
   },
   noticeText: { ...Type.small, color: Colors.ink },
-  progress: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginTop: Spacing.md },
+  // minHeight matches the spinner, so the row keeps its height when it goes.
+  progress: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginTop: Spacing.md, minHeight: 20 },
   progressText: { fontFamily: FontFamily.mono, fontSize: FontSize.label, color: Colors.inkMuted },
 
   footer: {
