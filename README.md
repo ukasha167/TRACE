@@ -10,9 +10,31 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/ukasha167/TRACE" alt="MIT license" /></a>
 </p>
 
-<p align="center"><img src="docs/media/demo.gif" width="300" alt="TRACE revealing the full moon of 24 April 2024 at 99.3% lit, then the record page and the sky view" /></p>
+<p align="center"><img src="docs/media/collage.jpg" alt="Six TRACE screens: tonight's moon on Home, the reveal of the 28 September 2015 supermoon, its record page, the year the moon comes back, every anniversary's moon in one grid, and the sky view at the horizon" /></p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/React_Native-0.86-61DAFB?logo=react&logoColor=black" alt="React Native 0.86" />
+  <img src="https://img.shields.io/badge/Expo-SDK_57-000020?logo=expo&logoColor=white" alt="Expo SDK 57" />
+  <img src="https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white" alt="TypeScript 6.0" />
+  <img src="https://img.shields.io/badge/Skia-SkSL_shaders-E4405F" alt="Skia with SkSL shaders" />
+  <img src="https://img.shields.io/badge/Reanimated-4.5-6B52AE" alt="Reanimated 4.5" />
+  <img src="https://img.shields.io/badge/Zustand-5-433E38" alt="Zustand 5" />
+  <img src="https://img.shields.io/badge/tests-253_passing-2EA043" alt="253 tests passing" />
+  <img src="https://img.shields.io/badge/backend-none-555555" alt="No backend" />
+</p>
 
 Offline-first, built with Expo, React Native and TypeScript. Every astronomical calculation and the planetarium run on the phone. There is no backend.
+
+The screens above are from the iOS simulator. In the reveal, the app notices that the 2015 eclipse happened 10 hours before sunset in the Maldives, while the moon was below the horizon, and says so instead of claiming an eclipse you could have seen.
+
+## Numbers
+
+- **253 unit tests, all passing in 2.4 s** (`npm test`, run on 25 Nov 2026).
+- **Sky maths checked against an independent library.** The app's own sky transform agrees with `astronomy-engine` to 23.6 arcseconds at worst, over 100 comparisons from 1990 to 2050 at 5 places (`docs/ASTRONOMY.md`).
+- **Star projection: 0.70 ms a frame** with Hermes' interpreter as the stand-in (`node --jitless`), down from 1.38 ms after reordering the airmass step. With a JIT it is 0.135 ms. A 120 Hz frame has 8.3 ms.
+- **A 120 Hz regression found and fixed on a Pixel 7 Pro.** Creating Skia shaders every frame made Hermes count about 4 MB of garbage per frame, and frames over the 8.33 ms deadline went from 12.5% to 70.8%. The fix caches the recorder and shaders and writes uniforms in place.
+- **Moon tilt, measured.** An earlier approximation of the moon's tilt was up to 66° off near full moon against `astronomy-engine` over 2,000 samples. It now has a test that holds it within 1°.
+- **Home with 10 records decoded 22 moon textures at 1024 px.** It now decodes one shared texture and 256 px thumbnails.
 
 ## Try it
 
@@ -136,7 +158,7 @@ npx tsc --noEmit
 
 ## Data and attribution
 
-- **Stars (8,404 to mag 6.5)**: Yale Bright Star Catalog (5th Revised Ed., Public Domain)
+- **Stars (8,404 in the catalog to mag 6.5; the sky draws the 6,331 brighter than 6.2)**: Yale Bright Star Catalog (5th Revised Ed., Public Domain)
 - **Proper Star Names (333)**: IAU Working Group on Star Names (IAU-CSN)
 - **Constellation lines**: [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD-3-Clause)
 - **Constellation Illustrations**: Johan Meuris for Stellarium (Free Art License 1.3)
